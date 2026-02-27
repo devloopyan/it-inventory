@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #2f2f33;
+  --foreground: #161618;
 }
 
 @theme inline {
@@ -14,13 +14,189 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #2f2f33;
+    --foreground: #161618;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Segoe UI", "Trebuchet MS", Arial, sans-serif;
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+.app-bg {
+  min-height: 100vh;
+  padding: 10px;
+}
+
+.app-shell {
+  min-height: calc(100vh - 20px);
+  margin: 0 auto;
+  background: #f5f5f6;
+  border-radius: 28px;
+  display: flex;
+  overflow: hidden;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.28);
+}
+
+.app-sidebar {
+  width: 78px;
+  background: #29292e;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18px 10px;
+  gap: 22px;
+}
+
+.logo-box {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #3b3b41;
+  border: 1px solid #4c4c53;
+  color: #f4f4f7;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.icon-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.icon-link {
+  width: 38px;
+  height: 38px;
+  text-decoration: none;
+  border-radius: 12px;
+  background: #34343a;
+  border: 1px solid #4a4a52;
+  color: #e8e8ee;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+}
+
+.icon-link:hover {
+  background: #4a4aee;
+  border-color: #5c5cff;
+}
+
+.bottom-icon {
+  margin-top: auto;
+}
+
+.app-main {
+  flex: 1;
+  padding: 18px 22px 22px;
+}
+
+.app-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 4px 8px 12px;
+}
+
+.greet-title {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.greet-subtitle {
+  margin-top: 4px;
+  color: #7f838c;
+  font-size: 14px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-input {
+  width: 280px;
+  max-width: 40vw;
+  border: none;
+  outline: none;
+  background: #ebebee;
+  border-radius: 999px;
+  padding: 10px 14px;
+  color: #22242a;
+}
+
+.account-pill {
+  background: #29292e;
+  color: #fff;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.app-content {
+  margin-top: 8px;
+}
+
+.app-content > div {
+  background: #fff;
+  border: 1px solid #ececf0;
+  border-radius: 22px;
+  padding: 20px;
+}
+
+.dashboard-grid {
+  grid-template-columns: 2fr 1fr;
+}
+
+table {
+  background: transparent;
+}
+
+th {
+  color: #8f939d;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .app-bg {
+    padding: 0;
+  }
+
+  .app-shell {
+    border-radius: 0;
+    min-height: 100vh;
+  }
+
+  .app-topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-input {
+    width: 100%;
+    max-width: none;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
 }
