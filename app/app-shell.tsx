@@ -2,11 +2,35 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type AppShellProps = {
   children: React.ReactNode;
 };
+
+type ThemeMode = "light" | "dark";
+
+const THEME_STORAGE_KEY = "it-inventory-theme";
+
+function resolveInitialTheme(): ThemeMode {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (storedTheme === "dark" || storedTheme === "light") {
+    return storedTheme;
+  }
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(nextTheme: ThemeMode) {
+  if (typeof document === "undefined" || typeof window === "undefined") {
+    return;
+  }
+  document.documentElement.dataset.theme = nextTheme;
+  document.documentElement.style.colorScheme = nextTheme;
+  window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+}
 
 const navItems = [
   {
@@ -37,12 +61,35 @@ const navItems = [
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const themeRef = useRef<ThemeMode>("light");
+
+  useEffect(() => {
+    const initialTheme = resolveInitialTheme();
+    themeRef.current = initialTheme;
+    applyTheme(initialTheme);
+  }, []);
 
   return (
     <div className="app-bg">
       <div className="app-shell">
         <aside className={`app-sidebar ${sidebarOpen ? "open" : ""}`}>
-          <div className="logo-box">IT Inventory</div>
+          <div className="logo-box">
+            <div className="logo-mark" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 2L20 6.5V17.5L12 22L4 17.5V6.5L12 2Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+                <path d="M12 7V12L16 14.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div className="logo-copy">
+              <span>IT Invo.</span>
+              <small>Asset Desk</small>
+            </div>
+          </div>
           <nav className="side-nav">
             {navItems.map((item) => {
               const active = pathname === item.href;
@@ -65,39 +112,94 @@ export default function AppShell({ children }: AppShellProps) {
         <div className="app-main">
           <header className="app-topbar">
             <div className="topbar-left">
-              <button
-                className="mobile-menu-btn"
-                onClick={() => setSidebarOpen((prev) => !prev)}
-                aria-label="Toggle sidebar"
-                type="button"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M4 7H20" stroke="currentColor" strokeWidth="2" />
-                  <path d="M4 12H20" stroke="currentColor" strokeWidth="2" />
-                  <path d="M4 17H20" stroke="currentColor" strokeWidth="2" />
-                </svg>
-              </button>
-              <div>
-                <div className="greet-title">IT Inventory System</div>
-                <div className="greet-subtitle">Manage hardware inventory operations</div>
-              </div>
-            </div>
-
-            <div className="topbar-right">
               <div className="top-search-wrap">
+                <button
+                  className="mobile-menu-btn"
+                  onClick={() => setSidebarOpen((prev) => !prev)}
+                  aria-label="Toggle sidebar"
+                  type="button"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M4 7H20" stroke="currentColor" strokeWidth="2" />
+                    <path d="M4 12H20" stroke="currentColor" strokeWidth="2" />
+                    <path d="M4 17H20" stroke="currentColor" strokeWidth="2" />
+                  </svg>
+                </button>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
                   <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" />
                 </svg>
                 <input
                   className="top-search"
-                  placeholder="Search hardware assets..."
+                  placeholder="Tap to search"
                   aria-label="Global search"
                 />
               </div>
+            </div>
+
+            <div className="topbar-right">
+              <button className="top-icon-btn top-notify-btn" type="button" aria-label="Notifications">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M15 17H9M18 17H20L18.6 15.6C18.2 15.2 18 14.7 18 14.2V11C18 7.7 15.8 5 12.7 4.3C12.3 3.5 11.7 3 11 3C10.3 3 9.7 3.5 9.3 4.3C6.2 5 4 7.7 4 11V14.2C4 14.7 3.8 15.2 3.4 15.6L2 17H4M15 17C15 19.2 13.2 21 11 21C8.8 21 7 19.2 7 17"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="notify-badge">2</span>
+              </button>
+              <button
+                className="top-icon-btn theme-toggle"
+                type="button"
+                onClick={() => {
+                  const nextTheme = themeRef.current === "dark" ? "light" : "dark";
+                  themeRef.current = nextTheme;
+                  applyTheme(nextTheme);
+                }}
+                aria-label="Toggle dark mode"
+                title="Toggle dark mode"
+              >
+                <svg
+                  className="theme-icon theme-icon-moon"
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M21 12.79A9 9 0 1 1 11.21 3C11.39 3 11.57 3.01 11.75 3.03A7 7 0 0 0 21 12.79Z"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <svg
+                  className="theme-icon theme-icon-sun"
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M12 4V2M12 22V20M4 12H2M22 12H20M18.364 5.636L16.95 7.05M7.05 16.95L5.636 18.364M18.364 18.364L16.95 16.95M7.05 7.05L5.636 5.636M12 17A5 5 0 1 0 12 7A5 5 0 0 0 12 17Z"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
               <div className="avatar-chip">
                 <div className="avatar-dot">IT</div>
-                <div className="avatar-text">IT Operations</div>
+                <div className="avatar-copy">
+                  <div className="avatar-text">IT Operations</div>
+                  <div className="avatar-subtext">Admin Console</div>
+                </div>
               </div>
             </div>
           </header>

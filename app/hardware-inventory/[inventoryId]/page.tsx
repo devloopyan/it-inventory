@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
+import FileUploadCard from "../file-upload-card";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
+import { HARDWARE_ASSET_TYPES } from "@/lib/hardwareAssetTypes";
+import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
 
 const statuses = HARDWARE_STATUSES;
+const assetTypeOptions = HARDWARE_ASSET_TYPES;
+const departmentOptions = HARDWARE_DEPARTMENTS;
 const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRID"] as const;
 
 type FormState = {
@@ -18,9 +23,11 @@ type FormState = {
   specifications: string;
   serialNumber: string;
   locationPersonAssigned: string;
+  personAssigned: string;
   department: string;
   status: HardwareStatus;
   turnoverTo: string;
+  borrower: string;
   assignedDate: string;
   purchaseDate: string;
   warranty: string;
@@ -34,6 +41,8 @@ const statusColors: Record<HardwareStatus, { bg: string; text: string; border: s
   Assigned: { bg: "#e0f2fe", text: "#0369a1", border: "#7dd3fc" },
   "For Repair": { bg: "#fee2e2", text: "#b91c1c", border: "#fca5a5" },
   Retired: { bg: "#e5e7eb", text: "#374151", border: "#d1d5db" },
+  NEW: { bg: "#ede9fe", text: "#6d28d9", border: "#c4b5fd" },
+  "Pre-owned": { bg: "#fef3c7", text: "#b45309", border: "#fcd34d" },
 };
 
 function formatDate(value?: number) {
@@ -98,14 +107,37 @@ export default function HardwareInventoryDetailPage() {
 
   const row = useQuery(api.hardwareInventory.getById, { inventoryId });
   const updateAsset = useMutation(api.hardwareInventory.update);
+  const removeAsset = useMutation(api.hardwareInventory.remove);
+  const generateUploadUrl = useMutation(api.hardwareInventory.generateUploadUrl);
   const imageUrl = useQuery(
     api.hardwareInventory.getImageUrl,
     row && row.imageStorageId ? { storageId: row.imageStorageId } : "skip",
+  );
+  const turnoverFormUrl = useQuery(
+    api.hardwareInventory.getImageUrl,
+    row && row.turnoverFormStorageId ? { storageId: row.turnoverFormStorageId } : "skip",
+  );
+  const receivingFormStorageId = (row as Record<string, unknown> | undefined)?.receivingFormStorageId as
+    | Id<"_storage">
+    | undefined;
+  const receivingFormUrl = useQuery(
+    api.hardwareInventory.getImageUrl,
+    row && receivingFormStorageId ? { storageId: receivingFormStorageId } : "skip",
   );
 
   const [isEditing, setIsEditing] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [clearImage, setClearImage] = useState(false);
+  const [selectedReceivingFormFile, setSelectedReceivingFormFile] = useState<File | null>(null);
+  const [clearReceivingForm, setClearReceivingForm] = useState(false);
+  const [selectedTurnoverFormFile, setSelectedTurnoverFormFile] = useState<File | null>(null);
+  const [clearTurnoverForm, setClearTurnoverForm] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const receivingFormInputRef = useRef<HTMLInputElement | null>(null);
+  const turnoverFormInputRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<FormState>({
     assetTag: "",
     assetType: "",
@@ -113,9 +145,11 @@ export default function HardwareInventoryDetailPage() {
     specifications: "",
     serialNumber: "",
     locationPersonAssigned: "",
+    personAssigned: "",
     department: "",
     status: "Available" as HardwareStatus,
     turnoverTo: "",
+    borrower: "",
     assignedDate: "",
     purchaseDate: "",
     warranty: "",
@@ -139,6 +173,7 @@ export default function HardwareInventoryDetailPage() {
 
   const asset = row;
   const assetStatus = (asset.status as HardwareStatus) ?? "Available";
+  const isDesktopAsset = asset.assetType === "Desktop/PC";
 
   function openEditor() {
     setForm({
@@ -147,16 +182,38 @@ export default function HardwareInventoryDetailPage() {
       assetNameDescription: asset.assetNameDescription ?? "",
       specifications: asset.specifications ?? "",
       serialNumber: asset.serialNumber,
-      locationPersonAssigned: asset.locationPersonAssigned ?? "",
+      locationPersonAssigned: asset.location ?? asset.locationPersonAssigned ?? "",
+      personAssigned: asset.assignedTo ?? "",
       department: asset.department ?? "",
       status: asset.status as HardwareStatus,
-      turnoverTo: asset.turnoverTo ?? "",
-      assignedDate: asset.assignedDate ?? "",
+      turnoverTo: asset.assignedTo ?? asset.turnoverTo ?? "Unassigned",
+      borrower: asset.borrower ?? "",
+      assignedDate:
+        isDesktopAsset
+          ? (((asset as Record<string, unknown>).turnoverDate as string | undefined) ??
+            asset.assignedDate ??
+            "")
+          : (asset.assignedDate ?? ""),
       purchaseDate: asset.purchaseDate ?? "",
       warranty: asset.warranty ?? "",
       remarks: asset.remarks ?? "",
     });
     setFormError("");
+    setSelectedImageFile(null);
+    setClearImage(false);
+    setSelectedReceivingFormFile(null);
+    setClearReceivingForm(false);
+    setSelectedTurnoverFormFile(null);
+    setClearTurnoverForm(false);
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
+    if (receivingFormInputRef.current) {
+      receivingFormInputRef.current.value = "";
+    }
+    if (turnoverFormInputRef.current) {
+      turnoverFormInputRef.current.value = "";
+    }
     setIsEditing(true);
   }
 
@@ -171,17 +228,78 @@ export default function HardwareInventoryDetailPage() {
       !form.locationPersonAssigned ||
       !form.department ||
       !form.status ||
-      !form.turnoverTo ||
-      !form.assignedDate ||
-      !form.purchaseDate ||
       !form.warranty
     ) {
-      setFormError("All fields are required except Remarks.");
+      setFormError(
+        `Required fields are missing. ${
+          isDesktopAsset ? "Turnover Date" : "Assigned Date"
+        }, Purchase Date, and Remarks are optional.`,
+      );
       return;
     }
 
     try {
       setIsSaving(true);
+      let imageStorageId: Id<"_storage"> | undefined;
+      if (selectedImageFile) {
+        const uploadUrl = await generateUploadUrl();
+        const uploadResult = await fetch(uploadUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": selectedImageFile.type || "application/octet-stream",
+          },
+          body: selectedImageFile,
+        });
+        if (!uploadResult.ok) {
+          throw new Error("Asset image upload failed.");
+        }
+
+        const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
+        if (!uploadData.storageId) {
+          throw new Error("Asset image upload failed.");
+        }
+        imageStorageId = uploadData.storageId;
+      }
+      let receivingFormStorageIdToSave: Id<"_storage"> | undefined;
+      if (selectedReceivingFormFile) {
+        const uploadUrl = await generateUploadUrl();
+        const uploadResult = await fetch(uploadUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": selectedReceivingFormFile.type || "application/octet-stream",
+          },
+          body: selectedReceivingFormFile,
+        });
+        if (!uploadResult.ok) {
+          throw new Error("Receiving form upload failed.");
+        }
+
+        const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
+        if (!uploadData.storageId) {
+          throw new Error("Receiving form upload failed.");
+        }
+        receivingFormStorageIdToSave = uploadData.storageId;
+      }
+      let turnoverFormStorageId: Id<"_storage"> | undefined;
+      if (selectedTurnoverFormFile) {
+        const uploadUrl = await generateUploadUrl();
+        const uploadResult = await fetch(uploadUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": selectedTurnoverFormFile.type || "application/octet-stream",
+          },
+          body: selectedTurnoverFormFile,
+        });
+        if (!uploadResult.ok) {
+          throw new Error("Signed turnover form upload failed.");
+        }
+
+        const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
+        if (!uploadData.storageId) {
+          throw new Error("Signed turnover form upload failed.");
+        }
+        turnoverFormStorageId = uploadData.storageId;
+      }
       await updateAsset({
         inventoryId,
         assetTag: form.assetTag,
@@ -190,14 +308,38 @@ export default function HardwareInventoryDetailPage() {
         specifications: form.specifications,
         serialNumber: form.serialNumber,
         locationPersonAssigned: form.locationPersonAssigned,
+        personAssigned: form.personAssigned || undefined,
         department: form.department,
         status: form.status,
-        turnoverTo: form.turnoverTo,
-        assignedDate: form.assignedDate,
+        turnoverTo: form.personAssigned || "Unassigned",
+        borrower: form.borrower || undefined,
+        assignedDate: isDesktopAsset ? undefined : form.assignedDate,
+        turnoverDate: isDesktopAsset ? form.assignedDate || undefined : undefined,
         purchaseDate: form.purchaseDate,
         warranty: form.warranty,
         remarks: form.remarks || undefined,
+        imageStorageId,
+        receivingFormStorageId: receivingFormStorageIdToSave,
+        turnoverFormStorageId,
+        clearImage,
+        clearReceivingForm,
+        clearTurnoverForm,
       });
+      setSelectedImageFile(null);
+      setClearImage(false);
+      setSelectedReceivingFormFile(null);
+      setClearReceivingForm(false);
+      setSelectedTurnoverFormFile(null);
+      setClearTurnoverForm(false);
+      if (imageInputRef.current) {
+        imageInputRef.current.value = "";
+      }
+      if (receivingFormInputRef.current) {
+        receivingFormInputRef.current.value = "";
+      }
+      if (turnoverFormInputRef.current) {
+        turnoverFormInputRef.current.value = "";
+      }
       setIsEditing(false);
       router.refresh();
     } catch (error) {
@@ -207,9 +349,40 @@ export default function HardwareInventoryDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (isDeleting || isSaving) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete hardware asset ${asset.assetTag}? This action cannot be undone.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      await removeAsset({ inventoryId });
+      router.push("/hardware-inventory");
+    } catch (error) {
+      console.error(error);
+      window.alert("Delete failed. Please try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   const selectedLocationInOptions = locationOptions.includes(
     form.locationPersonAssigned as (typeof locationOptions)[number],
   );
+  const selectedAssetTypeInOptions = assetTypeOptions.includes(
+    form.assetType as (typeof assetTypeOptions)[number],
+  );
+  const selectedDepartmentInOptions = departmentOptions.includes(
+    form.department as (typeof departmentOptions)[number],
+  );
+  const canEditBorrower = form.status === "Borrowed";
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -242,18 +415,115 @@ export default function HardwareInventoryDetailPage() {
           </div>
 
           <div style={{ display: "flex", gap: 8 }}>
-            <Link href="/hardware-inventory" className="btn-secondary">
-              Back
+            <Link
+              href="/hardware-inventory"
+              className="asset-action-btn"
+              aria-label="Back to Hardware Inventory"
+              title="Back to Hardware Inventory"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M15 6L9 12L15 18"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </Link>
             {!isEditing ? (
-              <button className="btn-primary" onClick={openEditor} type="button">
-                Edit
+              <button
+                className="asset-action-btn asset-action-btn-primary"
+                onClick={openEditor}
+                type="button"
+                aria-label="Edit Asset"
+                title="Edit Asset"
+                disabled={isDeleting}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 20H21"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M16.5 3.5C17.3284 2.67157 18.6716 2.67157 19.5 3.5C20.3284 4.32843 20.3284 5.67157 19.5 6.5L7 19L3 20L4 16L16.5 3.5Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </button>
             ) : (
-              <button className="btn-secondary" onClick={() => setIsEditing(false)} type="button">
-                Cancel Editing
+              <button
+                className="asset-action-btn"
+                onClick={() => setIsEditing(false)}
+                type="button"
+                aria-label="Cancel Editing"
+                title="Cancel Editing"
+                disabled={isDeleting}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M6 6L18 18"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M18 6L6 18"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
               </button>
             )}
+            <button
+              className="asset-action-btn asset-action-btn-danger"
+              onClick={handleDelete}
+              type="button"
+              aria-label={isDeleting ? "Deleting Asset" : "Delete Asset"}
+              title={isDeleting ? "Deleting Asset" : "Delete Asset"}
+              disabled={isDeleting || isSaving}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M4 7H20"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M10 11V17"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M14 11V17"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M6 7L7 19C7.05 19.59 7.52 20 8.11 20H15.89C16.48 20 16.95 19.59 17 19L18 7"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M9 7V5C9 4.45 9.45 4 10 4H14C14.55 4 15 4.45 15 5V7"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
           </div>
         </div>
       </section>
@@ -283,6 +553,50 @@ export default function HardwareInventoryDetailPage() {
               <div style={{ color: "var(--muted)" }}>No image uploaded.</div>
             )}
           </section>
+          <section className="panel" style={{ padding: 14 }}>
+            <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>
+              Receiving Form (Admin)
+            </div>
+            {receivingFormStorageId ? (
+              receivingFormUrl ? (
+                <a
+                  href={receivingFormUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-secondary"
+                  style={{ display: "inline-block", textDecoration: "none" }}
+                >
+                  Open Receiving Form
+                </a>
+              ) : (
+                <div style={{ color: "var(--muted)" }}>Loading form...</div>
+              )
+            ) : (
+              <div style={{ color: "var(--muted)" }}>No receiving form attached.</div>
+            )}
+          </section>
+          <section className="panel" style={{ padding: 14 }}>
+            <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>
+              Signed Turnover/Acknowledgment Form
+            </div>
+            {asset.turnoverFormStorageId ? (
+              turnoverFormUrl ? (
+                <a
+                  href={turnoverFormUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-secondary"
+                  style={{ display: "inline-block", textDecoration: "none" }}
+                >
+                  Open Signed Form
+                </a>
+              ) : (
+                <div style={{ color: "var(--muted)" }}>Loading form...</div>
+              )
+            ) : (
+              <div style={{ color: "var(--muted)" }}>No signed turnover form attached.</div>
+            )}
+          </section>
 
           <section
             className="panel"
@@ -297,10 +611,19 @@ export default function HardwareInventoryDetailPage() {
             <DetailItem label="Asset Name / Description" value={asset.assetNameDescription} />
             <DetailItem label="Serial Number" value={asset.serialNumber} />
             <DetailItem label="Specifications" value={asset.specifications} multiline />
-            <DetailItem label="Location / Person Assigned" value={asset.locationPersonAssigned} />
+            <DetailItem label="Location" value={asset.location ?? asset.locationPersonAssigned} />
             <DetailItem label="Department" value={asset.department} />
-            <DetailItem label="Turnover To / Borrower" value={asset.turnoverTo} />
-            <DetailItem label="Assigned Date" value={asset.assignedDate} />
+            <DetailItem label="Turnover To" value={asset.assignedTo ?? asset.turnoverTo} />
+            <DetailItem label="Borrower" value={asset.borrower} />
+            <DetailItem
+              label={isDesktopAsset ? "Turnover Date" : "Assigned Date"}
+              value={
+                isDesktopAsset
+                  ? ((asset as Record<string, unknown>).turnoverDate as string | undefined) ??
+                    asset.assignedDate
+                  : asset.assignedDate
+              }
+            />
             <DetailItem label="Purchase Date" value={asset.purchaseDate} />
             <DetailItem label="Warranty" value={asset.warranty} />
             <DetailItem label="Remarks" value={asset.remarks} multiline />
@@ -343,12 +666,21 @@ export default function HardwareInventoryDetailPage() {
               onChange={(e) => setForm((prev) => ({ ...prev, assetTag: e.target.value }))}
               placeholder="Asset Tag"
             />
-            <input
+            <select
               className="input-base"
               value={form.assetType}
               onChange={(e) => setForm((prev) => ({ ...prev, assetType: e.target.value }))}
-              placeholder="Asset Type"
-            />
+            >
+              {!selectedAssetTypeInOptions && form.assetType ? (
+                <option value={form.assetType}>{form.assetType}</option>
+              ) : null}
+              <option value="">Select asset type</option>
+              {assetTypeOptions.map((assetType) => (
+                <option key={assetType} value={assetType}>
+                  {assetType}
+                </option>
+              ))}
+            </select>
             <input
               className="input-base"
               value={form.assetNameDescription}
@@ -379,7 +711,7 @@ export default function HardwareInventoryDetailPage() {
               {!selectedLocationInOptions && form.locationPersonAssigned ? (
                 <option value={form.locationPersonAssigned}>{form.locationPersonAssigned}</option>
               ) : null}
-              <option value="">Select Location / Person Assigned</option>
+              <option value="">Select Location</option>
               {locationOptions.map((location) => (
                 <option key={location} value={location}>
                   {location}
@@ -388,35 +720,74 @@ export default function HardwareInventoryDetailPage() {
             </select>
             <input
               className="input-base"
-              value={form.department}
-              onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
-              placeholder="Department"
+              value={form.personAssigned}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  personAssigned: e.target.value,
+                  turnoverTo: e.target.value.trim() ? e.target.value : "Unassigned",
+                }))
+              }
+              placeholder="Turnover To (optional)"
             />
             <select
               className="input-base"
-              value={form.status}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, status: e.target.value as HardwareStatus }))
-              }
+              value={form.department}
+              onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
             >
-              {statuses.map((status) => (
-                <option key={status} value={status}>
-                  {status}
+              {!selectedDepartmentInOptions && form.department ? (
+                <option value={form.department}>{form.department}</option>
+              ) : null}
+              <option value="">Select department</option>
+              {departmentOptions.map((department) => (
+                <option key={department} value={department}>
+                  {department}
                 </option>
               ))}
             </select>
+              <select
+                className="input-base status-select"
+                style={{
+                  color: statusColors[form.status]?.text ?? "var(--foreground)",
+                  borderColor: statusColors[form.status]?.border ?? "#e8eff9",
+                  fontWeight: 600,
+                }}
+                value={form.status}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, status: e.target.value as HardwareStatus }))
+                }
+              >
+                {statuses.map((status) => (
+                  <option
+                    key={status}
+                    value={status}
+                    style={{
+                      backgroundColor: "#ffffff",
+                      color: statusColors[status]?.text ?? "var(--foreground)",
+                    }}
+                  >
+                    {status}
+                  </option>
+                ))}
+              </select>
             <input
               className="input-base"
-              value={form.turnoverTo}
-              onChange={(e) => setForm((prev) => ({ ...prev, turnoverTo: e.target.value }))}
-              placeholder="Turnover to / Borrower"
+              value={canEditBorrower ? form.borrower : "none"}
+              onChange={(e) => setForm((prev) => ({ ...prev, borrower: e.target.value }))}
+              placeholder="Borrower"
+              disabled={!canEditBorrower}
+              style={
+                canEditBorrower
+                  ? undefined
+                  : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
+              }
             />
             <input
               className="input-base"
               type="date"
               value={form.assignedDate}
               onChange={(e) => setForm((prev) => ({ ...prev, assignedDate: e.target.value }))}
-              placeholder="Assigned Date"
+              placeholder={isDesktopAsset ? "Turnover Date (optional)" : "Assigned Date (optional)"}
             />
             <input
               className="input-base"
@@ -437,6 +808,137 @@ export default function HardwareInventoryDetailPage() {
               onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
               placeholder="Remarks (optional)"
             />
+            <div style={{ display: "grid", gap: 6 }}>
+              <FileUploadCard
+                label="Asset Image"
+                inputRef={imageInputRef}
+                accept="image/*"
+                onFileChange={(file) => {
+                  setSelectedImageFile(file);
+                  if (file) {
+                    setClearImage(false);
+                  }
+                }}
+                hasAttachment={Boolean(selectedImageFile || (asset.imageStorageId && !clearImage))}
+                displayName={
+                  selectedImageFile
+                    ? selectedImageFile.name
+                    : asset.imageStorageId && !clearImage
+                      ? "Current asset image"
+                      : "Asset image"
+                }
+                helperText={
+                  selectedImageFile
+                    ? "New image selected. Save to replace the current image."
+                    : asset.imageStorageId && !clearImage
+                      ? "An asset image is already attached."
+                      : "No image attached."
+                }
+                badge="IMG"
+                ariaLabel="Asset image upload"
+                onRemove={() => {
+                  if (selectedImageFile) {
+                    setSelectedImageFile(null);
+                    if (imageInputRef.current) {
+                      imageInputRef.current.value = "";
+                    }
+                    return;
+                  }
+                  if (asset.imageStorageId) {
+                    setClearImage(true);
+                  }
+                }}
+              />
+            </div>
+            <div style={{ display: "grid", gap: 6 }}>
+              <FileUploadCard
+                label="Receiving Form (Admin)"
+                inputRef={receivingFormInputRef}
+                accept=".pdf,image/*"
+                onFileChange={(file) => {
+                  setSelectedReceivingFormFile(file);
+                  if (file) {
+                    setClearReceivingForm(false);
+                  }
+                }}
+                hasAttachment={Boolean(
+                  selectedReceivingFormFile || (receivingFormStorageId && !clearReceivingForm),
+                )}
+                displayName={
+                  selectedReceivingFormFile
+                    ? selectedReceivingFormFile.name
+                    : receivingFormStorageId && !clearReceivingForm
+                      ? "Current receiving form"
+                      : "Receiving form"
+                }
+                helperText={
+                  selectedReceivingFormFile
+                    ? "New file selected. Save to replace the current receiving form."
+                    : receivingFormStorageId && !clearReceivingForm
+                      ? "A receiving form is already attached."
+                      : "No receiving form attached."
+                }
+                badge="PDF"
+                ariaLabel="Receiving form upload"
+                onRemove={() => {
+                  if (selectedReceivingFormFile) {
+                    setSelectedReceivingFormFile(null);
+                    if (receivingFormInputRef.current) {
+                      receivingFormInputRef.current.value = "";
+                    }
+                    return;
+                  }
+                  if (receivingFormStorageId) {
+                    setClearReceivingForm(true);
+                  }
+                }}
+              />
+            </div>
+            <div style={{ display: "grid", gap: 6 }}>
+              <FileUploadCard
+                label="Signed Turnover/Acknowledgment Form"
+                inputRef={turnoverFormInputRef}
+                accept=".pdf,image/*"
+                onFileChange={(file) => {
+                  setSelectedTurnoverFormFile(file);
+                  if (file) {
+                    setClearTurnoverForm(false);
+                    setForm((prev) => ({ ...prev, status: "Assigned" }));
+                  }
+                }}
+                hasAttachment={Boolean(
+                  selectedTurnoverFormFile || (asset.turnoverFormStorageId && !clearTurnoverForm),
+                )}
+                displayName={
+                  selectedTurnoverFormFile
+                    ? selectedTurnoverFormFile.name
+                    : asset.turnoverFormStorageId && !clearTurnoverForm
+                      ? "Current signed turnover form"
+                      : "Signed turnover form"
+                }
+                helperText={
+                  selectedTurnoverFormFile
+                    ? "New file selected. Save to replace the current turnover form."
+                    : asset.turnoverFormStorageId && !clearTurnoverForm
+                      ? "A signed turnover form is already attached."
+                      : "No signed turnover form attached."
+                }
+                badge="PDF"
+                ariaLabel="Signed turnover form upload"
+                onRemove={() => {
+                  if (selectedTurnoverFormFile) {
+                    setSelectedTurnoverFormFile(null);
+                    if (turnoverFormInputRef.current) {
+                      turnoverFormInputRef.current.value = "";
+                    }
+                    return;
+                  }
+                  if (asset.turnoverFormStorageId) {
+                    setClearTurnoverForm(true);
+                  }
+                }}
+              />
+            </div>
           </div>
 
           {formError ? <p style={{ color: "#b91c1c", margin: 0 }}>{formError}</p> : null}

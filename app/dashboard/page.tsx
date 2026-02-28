@@ -5,13 +5,28 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
 
-type TabKey = "workstation" | "master" | "storage" | "borrowed" | "available";
+type TabKey = "workstation" | "master" | "storage" | "borrowed" | "available" | "reserved";
+type ReservationStatus = "Reserved" | "Claimed" | "Cancelled" | "Expired";
+type ActivityTone = "blue" | "green" | "amber" | "red" | "slate";
+type HardwareActivityRecord = {
+  _id: string;
+  inventoryId?: string;
+  assetTag: string;
+  assetNameDescription?: string;
+  eventType: string;
+  message: string;
+  relatedPerson?: string;
+  location?: string;
+  status?: string;
+  createdAt: number;
+};
 
 const tabs: { key: TabKey; label: string }[] = [
-  { key: "workstation", label: "Workstation" },
   { key: "master", label: "Master Tracker" },
+  { key: "workstation", label: "Workstation" },
   { key: "storage", label: "Storage" },
   { key: "borrowed", label: "Borrowed" },
+  { key: "reserved", label: "Reserved" },
   { key: "available", label: "Available" },
 ];
 
@@ -22,6 +37,8 @@ const statusIconColor: Record<HardwareStatus, string> = {
   Retired: "#6b7280",
   Available: "#3b82f6",
   Working: "#06b6d4",
+  NEW: "#8b5cf6",
+  "Pre-owned": "#f59e0b",
 };
 
 function matchesSearch(
@@ -53,11 +70,177 @@ function groupBy<T>(rows: T[], key: (row: T) => string) {
   return map;
 }
 
+function isOfficialTurnover(row: {
+  department?: string;
+  turnoverTo?: string;
+  turnoverFormStorageId?: unknown;
+}) {
+  const department = (row.department ?? "").trim();
+  const turnoverTo = (row.turnoverTo ?? "").trim();
+  return (
+    department.length > 0 &&
+    turnoverTo.length > 0 &&
+    turnoverTo.toLowerCase() !== "unassigned" &&
+    Boolean(row.turnoverFormStorageId)
+  );
+}
+
+function isWorkstationRecord(row: {
+  registerMode?: string;
+  workstationType?: string;
+}) {
+  if (row.registerMode === "workstation") return true;
+  if (row.workstationType === "Laptop" || row.workstationType === "Desktop/PC") return true;
+  return false;
+}
+
+function getReservationStatus(row: Record<string, unknown>) {
+  return row.reservationStatus as ReservationStatus | undefined;
+}
+
+function isReservedRecord(row: Record<string, unknown>) {
+  return getReservationStatus(row) === "Reserved";
+}
+
+function getReservationBorrower(row: Record<string, unknown>) {
+  return (row.reservationBorrower as string | undefined) ?? "";
+}
+
+function getReservationRequestedDate(row: Record<string, unknown>) {
+  return (row.reservationRequestedDate as string | undefined) ?? "";
+}
+
+function getReservationPickupDate(row: Record<string, unknown>) {
+  return (row.reservationPickupDate as string | undefined) ?? "";
+}
+
+function getActivityMeta(eventType: string): {
+  label: string;
+  tone: ActivityTone;
+  urgent?: boolean;
+} {
+  switch (eventType) {
+    case "asset_created":
+      return { label: "Created", tone: "blue" };
+    case "asset_updated":
+      return { label: "Updated", tone: "slate" };
+    case "status_changed":
+      return { label: "Status Change", tone: "slate" };
+    case "asset_assigned":
+      return { label: "Assigned", tone: "blue" };
+    case "asset_borrowed":
+      return { label: "Borrowed", tone: "amber", urgent: true };
+    case "asset_for_repair":
+      return { label: "For Repair", tone: "red", urgent: true };
+    case "asset_retired":
+      return { label: "Retired", tone: "slate" };
+    case "reservation_created":
+      return { label: "Reserved", tone: "blue" };
+    case "reservation_claimed":
+      return { label: "Claimed", tone: "green" };
+    case "reservation_cancelled":
+      return { label: "Reservation Cancelled", tone: "amber" };
+    case "receiving_form_uploaded":
+      return { label: "Receiving Form", tone: "green" };
+    case "turnover_form_uploaded":
+      return { label: "Turnover Form", tone: "blue" };
+    case "asset_deleted":
+      return { label: "Deleted", tone: "red", urgent: true };
+    default:
+      return { label: "Activity", tone: "slate" };
+  }
+}
+
+function formatActivityTime(value: number) {
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function renderActivityIcon(eventType: string) {
+  switch (eventType) {
+    case "reservation_created":
+    case "reservation_claimed":
+    case "reservation_cancelled":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 4H17V8H7V4Z" stroke="currentColor" strokeWidth="2" />
+          <path d="M7 12H17V20H7V12Z" stroke="currentColor" strokeWidth="2" />
+          <path d="M9 8V12" stroke="currentColor" strokeWidth="2" />
+          <path d="M15 8V12" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      );
+    case "asset_borrowed":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M12 5L19 12L12 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+    case "asset_for_repair":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M14 6L18 10L10 18H6V14L14 6Z"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+    case "receiving_form_uploaded":
+    case "turnover_form_uploaded":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M8 3H16L20 7V21H4V3H8Z" stroke="currentColor" strokeWidth="2" />
+          <path d="M16 3V7H20" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      );
+    default:
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      );
+  }
+}
+
 export default function DashboardPage() {
   const allRows = useQuery(api.hardwareInventory.listAll, {});
+  const activityFeed = useQuery(
+    (api.hardwareInventory as Record<string, unknown>)["listRecentActivity"] as never,
+    { limit: 8 } as never,
+  ) as unknown as HardwareActivityRecord[] | undefined;
   const migrateLegacy = useMutation(api.hardwareInventory.migrateLegacy);
+  const reserveAsset = useMutation(
+    (api.hardwareInventory as Record<string, unknown>)["reserveAsset"] as never,
+  ) as unknown as (args: {
+    inventoryId: never;
+    borrowerName: string;
+    requestedDate: string;
+    expectedPickupDate?: string;
+    slipNote?: string;
+  }) => Promise<unknown>;
+  const claimReservation = useMutation(
+    (api.hardwareInventory as Record<string, unknown>)["claimReservation"] as never,
+  ) as unknown as (args: { inventoryId: never }) => Promise<unknown>;
+  const cancelReservation = useMutation(
+    (api.hardwareInventory as Record<string, unknown>)["cancelReservation"] as never,
+  ) as unknown as (args: { inventoryId: never }) => Promise<unknown>;
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("workstation");
+  const [departmentDrilldown, setDepartmentDrilldown] = useState("");
+  const [activityExpanded, setActivityExpanded] = useState(false);
+  const [reservationTargetId, setReservationTargetId] = useState<string>("");
+  const [reservationBorrower, setReservationBorrower] = useState("");
+  const [reservationRequestedDate, setReservationRequestedDate] = useState("");
+  const [reservationPickupDate, setReservationPickupDate] = useState("");
+  const [reservationSlipNote, setReservationSlipNote] = useState("");
+  const [reservationError, setReservationError] = useState("");
+  const [reservationBusyId, setReservationBusyId] = useState("");
   const migrationRan = useRef(false);
 
   useEffect(() => {
@@ -71,14 +254,81 @@ export default function DashboardPage() {
         !row.locationPersonAssigned ||
         !row.department ||
         !row.turnoverTo ||
-        !row.assignedDate ||
-        !row.purchaseDate ||
         !row.warranty,
     );
     if (!needsMigration) return;
     migrationRan.current = true;
     void migrateLegacy();
   }, [allRows, migrateLegacy]);
+
+  function resetReservationForm() {
+    setReservationTargetId("");
+    setReservationBorrower("");
+    setReservationRequestedDate("");
+    setReservationPickupDate("");
+    setReservationSlipNote("");
+    setReservationError("");
+    setReservationBusyId("");
+  }
+
+  async function handleReserveSubmit() {
+    if (!reservationTargetId) {
+      setReservationError("Select an asset to reserve.");
+      return;
+    }
+    if (!reservationBorrower.trim()) {
+      setReservationError("Borrower name is required.");
+      return;
+    }
+    if (!reservationRequestedDate) {
+      setReservationError("Requested date is required.");
+      return;
+    }
+
+    try {
+      setReservationBusyId(reservationTargetId);
+      setReservationError("");
+      await reserveAsset({
+        inventoryId: reservationTargetId as never,
+        borrowerName: reservationBorrower,
+        requestedDate: reservationRequestedDate,
+        expectedPickupDate: reservationPickupDate || undefined,
+        slipNote: reservationSlipNote || undefined,
+      });
+      setActiveTab("reserved");
+      resetReservationForm();
+    } catch (error) {
+      setReservationError(error instanceof Error ? error.message : "Reservation failed.");
+      setReservationBusyId("");
+    }
+  }
+
+  async function handleClaimReservation(inventoryId: string) {
+    try {
+      setReservationBusyId(inventoryId);
+      setReservationError("");
+      await claimReservation({ inventoryId: inventoryId as never });
+    } catch (error) {
+      setReservationError(error instanceof Error ? error.message : "Claim failed.");
+    } finally {
+      setReservationBusyId("");
+    }
+  }
+
+  async function handleCancelReservation(inventoryId: string) {
+    try {
+      setReservationBusyId(inventoryId);
+      setReservationError("");
+      await cancelReservation({ inventoryId: inventoryId as never });
+      if (reservationTargetId === inventoryId) {
+        resetReservationForm();
+      }
+    } catch (error) {
+      setReservationError(error instanceof Error ? error.message : "Cancel failed.");
+    } finally {
+      setReservationBusyId("");
+    }
+  }
 
   const counts = useMemo(() => {
     const base: { total: number; byStatus: Record<HardwareStatus, number> } = {
@@ -113,20 +363,25 @@ export default function DashboardPage() {
   const tabRows = useMemo(() => {
     switch (activeTab) {
       case "workstation":
-        return searched.filter((row) => row.turnoverTo);
+        return searched.filter((row) => isWorkstationRecord(row));
       case "master":
         return searched;
       case "storage":
         return searched.filter((row) => row.locationPersonAssigned === "MAIN STORAGE");
       case "borrowed":
+        return searched.filter((row) => row.status === "Borrowed");
+      case "reserved":
         return searched.filter(
-          (row) => row.locationPersonAssigned === "MAIN STORAGE" && row.status === "Borrowed",
+          (row) =>
+            row.locationPersonAssigned === "MAIN STORAGE" &&
+            isReservedRecord(row as Record<string, unknown>),
         );
       case "available":
         return searched.filter(
           (row) =>
             row.locationPersonAssigned === "MAIN STORAGE" &&
-            availableStatuses.includes(row.status as HardwareStatus),
+            availableStatuses.includes(row.status as HardwareStatus) &&
+            !isReservedRecord(row as Record<string, unknown>),
         );
       default:
         return searched;
@@ -137,23 +392,98 @@ export default function DashboardPage() {
     if (activeTab === "workstation") {
       return groupBy(tabRows, (row) => row.turnoverTo ?? "");
     }
-    if (activeTab === "storage" || activeTab === "borrowed" || activeTab === "available") {
+    if (
+      activeTab === "storage" ||
+      activeTab === "borrowed" ||
+      activeTab === "available" ||
+      activeTab === "reserved"
+    ) {
+      if (activeTab === "reserved") {
+        return groupBy(tabRows, (row) => getReservationBorrower(row as Record<string, unknown>));
+      }
       return groupBy(tabRows, (row) => row.locationPersonAssigned ?? "");
     }
     return new Map<string, typeof tabRows>();
   }, [tabRows, activeTab]);
 
   const recentRows = useMemo(() => (allRows ?? []).slice(0, 5), [allRows]);
-
-  const analyticsBars = useMemo(() => {
-    const values = HARDWARE_STATUSES.map((status) => counts.byStatus[status]);
-    const maxValue = Math.max(...values, 1);
-    return HARDWARE_STATUSES.map((status) => ({
-      label: status,
-      height: Math.max(20, Math.round((counts.byStatus[status] / maxValue) * 120)),
-      active: status === "Available",
-    }));
-  }, [counts]);
+  const reservedMainStorageRows = useMemo(
+    () =>
+      (allRows ?? [])
+        .filter(
+          (row) =>
+            row.locationPersonAssigned === "MAIN STORAGE" &&
+            isReservedRecord(row as Record<string, unknown>),
+        )
+        .sort((left, right) => {
+          const leftPickup =
+            getReservationPickupDate(left as Record<string, unknown>) ||
+            getReservationRequestedDate(left as Record<string, unknown>);
+          const rightPickup =
+            getReservationPickupDate(right as Record<string, unknown>) ||
+            getReservationRequestedDate(right as Record<string, unknown>);
+          return leftPickup.localeCompare(rightPickup);
+        }),
+    [allRows],
+  );
+  const reservableMainStorageRows = useMemo(
+    () =>
+      (allRows ?? []).filter(
+        (row) =>
+          row.locationPersonAssigned === "MAIN STORAGE" &&
+          availableStatuses.includes(row.status as HardwareStatus) &&
+          !isReservedRecord(row as Record<string, unknown>),
+      ),
+    [allRows, availableStatuses],
+  );
+  const adjustedAvailableCount = useMemo(
+    () =>
+      (allRows ?? []).filter(
+        (row) =>
+          row.status === "Available" && !isReservedRecord(row as Record<string, unknown>),
+      ).length,
+    [allRows],
+  );
+  const unassignedCount = useMemo(
+    () =>
+      (allRows ?? []).filter(
+        (row) => !row.turnoverTo || row.turnoverTo.trim().toLowerCase() === "unassigned",
+      ).length,
+    [allRows],
+  );
+  const storageCount = useMemo(
+    () => (allRows ?? []).filter((row) => row.locationPersonAssigned === "MAIN STORAGE").length,
+    [allRows],
+  );
+  const reservedCount = reservedMainStorageRows.length;
+  const trulyAvailableStorageCount = reservableMainStorageRows.length;
+  const priorityRows = useMemo(
+    () =>
+      (allRows ?? [])
+        .filter((row) => row.status === "For Repair" || row.status === "Borrowed")
+        .slice(0, 5),
+    [allRows],
+  );
+  const visibleActivityFeed = useMemo(
+    () => (activityExpanded ? activityFeed ?? [] : (activityFeed ?? []).slice(0, 3)),
+    [activityFeed, activityExpanded],
+  );
+  const hasMoreActivity = (activityFeed?.length ?? 0) > 3;
+  const assetsPerDepartment = useMemo(() => {
+    const grouped = new Map<string, number>();
+    for (const row of allRows ?? []) {
+      if (!isOfficialTurnover(row)) continue;
+      const department = row.department?.trim() ?? "";
+      grouped.set(department, (grouped.get(department) ?? 0) + 1);
+    }
+    return [...grouped.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [allRows]);
+  const masterRowsWithDepartmentDrilldown = useMemo(() => {
+    if (!departmentDrilldown) return tabRows;
+    return tabRows.filter(
+      (row) => isOfficialTurnover(row) && (row.department?.trim() ?? "") === departmentDrilldown,
+    );
+  }, [tabRows, departmentDrilldown]);
 
   const renderTable = (rows: typeof tabRows) => (
     <div className="saas-table-wrap">
@@ -167,19 +497,31 @@ export default function DashboardPage() {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row._id} className="table-row-hover">
-              <td>{row.assetTag}</td>
-              <td>{row.assetType ?? "-"}</td>
-              <td>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <div>{row.assetNameDescription ?? "-"}</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.specifications ?? "-"}</div>
-                </div>
-              </td>
-              <td>{row.locationPersonAssigned ?? "-"}</td>
-              <td>{row.status}</td>
-              <td>{row.turnoverTo ?? "-"}</td>
-            </tr>
+            (() => {
+              const reservationRow = row as Record<string, unknown>;
+              const reserved = isReservedRecord(reservationRow);
+              const reservationBorrower = getReservationBorrower(reservationRow);
+              return (
+                <tr key={row._id} className="table-row-hover">
+                  <td>{row.assetTag}</td>
+                  <td>{row.assetType ?? "-"}</td>
+                  <td>
+                    <div style={{ display: "grid", gap: 4 }}>
+                      <div>{row.assetNameDescription ?? "-"}</div>
+                      <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.specifications ?? "-"}</div>
+                      {reserved ? (
+                        <div style={{ fontSize: 12, color: "#2563eb", fontWeight: 600 }}>
+                          Reserved for {reservationBorrower || "Pending borrower"}
+                        </div>
+                      ) : null}
+                    </div>
+                  </td>
+                  <td>{row.locationPersonAssigned ?? "-"}</td>
+                  <td>{reserved ? "Reserved" : row.status}</td>
+                  <td>{reserved ? reservationBorrower || "-" : row.turnoverTo ?? "-"}</td>
+                </tr>
+              );
+            })()
           ))}
           {!rows.length ? (
             <tr>
@@ -192,13 +534,13 @@ export default function DashboardPage() {
   );
 
   return (
-    <div>
-      <h1 style={{ fontSize: 30, fontWeight: 700, marginBottom: 4 }}>Dashboard</h1>
-      <p style={{ color: "var(--muted)", marginBottom: 16 }}>
+    <div className="dashboard-page">
+      <h1 className="dashboard-title">Dashboard</h1>
+      <p className="dashboard-subtitle">
         Hardware performance and operations overview.
       </p>
 
-      <div className="search-field" style={{ marginBottom: 16 }}>
+      <div className="search-field dashboard-search">
         <span className="search-icon">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
@@ -213,7 +555,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="metric-strip" style={{ marginBottom: 16 }}>
+      <div className="metric-strip dashboard-metric-strip">
         <div className="metric-item">
           <div className="metric-head">
             <span className="metric-icon" style={{ background: "#fb923c" }} />
@@ -231,58 +573,457 @@ export default function DashboardPage() {
               {status}
             </div>
             <div className="metric-value">
-              <strong>{counts.byStatus[status]}</strong>
+              <strong>{status === "Available" ? adjustedAvailableCount : counts.byStatus[status]}</strong>
               <span className="trend-chip">live</span>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="dashboard-row" style={{ marginBottom: 16 }}>
-        <div className="panel" style={{ padding: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>Status Distribution</div>
-          <div style={{ fontSize: 32, fontWeight: 700, marginTop: 4 }}>{counts.total}</div>
-          <div className="analytics-bars">
-            {analyticsBars.map((bar) => (
-              <div key={bar.label} style={{ textAlign: "center" }}>
-                <div className={`analytics-bar ${bar.active ? "active" : ""}`} style={{ height: bar.height }} />
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>{bar.label.slice(0, 3)}</div>
+      <div className="dashboard-row">
+        <div className="panel dashboard-panel" style={{ padding: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>Operations Queue</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
+                Quick actions for assets that need immediate handling.
               </div>
-            ))}
+            </div>
+            <button
+              className="btn-secondary"
+              type="button"
+              onClick={() => {
+                setActiveTab("master");
+                setDepartmentDrilldown("");
+              }}
+            >
+              Open Master Tracker
+            </button>
           </div>
+          <div
+            style={{
+              marginTop: 12,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              gap: 8,
+            }}
+          >
+            <button
+              className="btn-secondary"
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setActiveTab("borrowed");
+                setDepartmentDrilldown("");
+              }}
+            >
+              Borrowed: {counts.byStatus.Borrowed}
+            </button>
+            <button
+              className="btn-secondary"
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setActiveTab("storage");
+                setDepartmentDrilldown("");
+              }}
+            >
+              In Storage: {storageCount}
+            </button>
+            <button
+              className="btn-secondary"
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setActiveTab("reserved");
+                setDepartmentDrilldown("");
+              }}
+            >
+              Reserved: {reservedCount}
+            </button>
+            <button
+              className="btn-secondary"
+              type="button"
+              onClick={() => {
+                setActiveTab("master");
+                setSearch("Unassigned");
+                setDepartmentDrilldown("");
+              }}
+            >
+              Unassigned: {unassignedCount}
+            </button>
+          </div>
+          <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 8 }}>
+              {priorityRows.map((row) => (
+                <div
+                  key={row._id}
+                  className="activity-item"
+                  style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.status}</div>
+                    <div style={{ fontWeight: 700 }}>{row.assetTag}</div>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                      {row.assetNameDescription ?? "-"} | {row.locationPersonAssigned ?? "-"}
+                    </div>
+                  </div>
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("master");
+                      setSearch(row.assetTag);
+                      setDepartmentDrilldown("");
+                    }}
+                    style={{ whiteSpace: "nowrap" }}
+                  >
+                    Locate
+                  </button>
+                </div>
+              ))}
+              {!priorityRows.length ? (
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                  No urgent borrowed or for-repair assets right now.
+                </div>
+              ) : null}
+            </div>
+
+            <div className="reservation-section reservation-section-reserved">
+              <div className="reservation-section-head">
+                <div>
+                  <div className="reservation-section-titlebar">
+                    <div className="reservation-section-title">Reserved in Main Storage</div>
+                    <span className="reservation-count-badge">{reservedCount}</span>
+                  </div>
+                  <div className="reservation-section-subtitle">
+                    Reserved items are held for approved borrower slips and excluded from free availability.
+                  </div>
+                </div>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setActiveTab("reserved");
+                    setDepartmentDrilldown("");
+                  }}
+                >
+                  View Reserved
+                </button>
+              </div>
+              {reservedMainStorageRows.slice(0, 4).map((row) => {
+                const reservationRow = row as Record<string, unknown>;
+                const pickupDate = getReservationPickupDate(reservationRow);
+                const requestDate = getReservationRequestedDate(reservationRow);
+                const reserveLabel = pickupDate ? `Pickup ${pickupDate}` : `Requested ${requestDate}`;
+                return (
+                  <div key={row._id} className="reservation-card reservation-card-reserved">
+                    <div className="reservation-card-row">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="reservation-card-topline">
+                          <span className="reservation-tag">{row.assetTag}</span>
+                          <span className="reservation-chip reservation-chip-reserved">Reserved</span>
+                        </div>
+                        <div className="reservation-card-text">
+                          {row.assetNameDescription ?? "-"} | Reserved for {getReservationBorrower(reservationRow)}
+                        </div>
+                        <div className="reservation-card-meta">{reserveLabel}</div>
+                      </div>
+                      <div className="reservation-card-actions">
+                        <button
+                          className="btn-primary"
+                          type="button"
+                          disabled={reservationBusyId === row._id}
+                          onClick={() => void handleClaimReservation(String(row._id))}
+                        >
+                          Claim
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          type="button"
+                          disabled={reservationBusyId === row._id}
+                          onClick={() => void handleCancelReservation(String(row._id))}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          type="button"
+                          onClick={() => {
+                            setActiveTab("master");
+                            setSearch(row.assetTag);
+                            setDepartmentDrilldown("");
+                          }}
+                        >
+                          View
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {!reservedMainStorageRows.length ? (
+                <div className="reservation-empty">No reserved main-storage assets right now.</div>
+              ) : null}
+            </div>
+
+            <div className="reservation-section reservation-section-available">
+              <div>
+                <div className="reservation-section-titlebar">
+                  <div className="reservation-section-title">Reserve from Main Storage</div>
+                  <span className="reservation-count-badge reservation-count-badge-available">
+                    {trulyAvailableStorageCount}
+                  </span>
+                </div>
+                <div className="reservation-section-subtitle">
+                  Ready to reserve now: {trulyAvailableStorageCount}
+                </div>
+              </div>
+              <div className="reservation-list">
+                {reservableMainStorageRows.slice(0, 4).map((row) => (
+                  <div key={row._id} className="reservation-card reservation-card-available">
+                    <div className="reservation-card-row">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="reservation-card-topline">
+                          <span className="reservation-tag">{row.assetTag}</span>
+                          <span className="reservation-chip reservation-chip-available">{row.status}</span>
+                        </div>
+                        <div className="reservation-card-text">
+                          {row.assetNameDescription ?? "-"} | {row.status}
+                        </div>
+                      </div>
+                    <button
+                      className={reservationTargetId === String(row._id) ? "btn-primary" : "btn-secondary"}
+                      type="button"
+                      onClick={() => {
+                        setReservationTargetId(String(row._id));
+                        setReservationError("");
+                      }}
+                    >
+                      Reserve
+                    </button>
+                    </div>
+                  </div>
+                ))}
+                {!reservableMainStorageRows.length ? (
+                  <div className="reservation-empty">No main-storage assets are currently free to reserve.</div>
+                ) : null}
+              </div>
+              {reservationTargetId ? (
+                <div className="reservation-form-wrap">
+                  <div className="reservation-form-title">
+                    Reserving{" "}
+                    {(
+                      reservableMainStorageRows.find((row) => String(row._id) === reservationTargetId) ??
+                      allRows?.find((row) => String(row._id) === reservationTargetId)
+                    )?.assetTag ?? "selected asset"}
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                      Borrower Name
+                    </div>
+                    <input
+                      className="input-base reservation-input"
+                      value={reservationBorrower}
+                      onChange={(e) => setReservationBorrower(e.target.value)}
+                      placeholder="Enter borrower name"
+                    />
+                  </div>
+                  <div className="reservation-form-grid">
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                        Requested Date
+                      </div>
+                      <input
+                        className="input-base reservation-input"
+                        type="date"
+                        value={reservationRequestedDate}
+                        onChange={(e) => setReservationRequestedDate(e.target.value)}
+                        aria-label="Requested date"
+                      />
+                    </div>
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                        Expected Pickup Date
+                      </div>
+                      <input
+                        className="input-base reservation-input"
+                        type="date"
+                        value={reservationPickupDate}
+                        onChange={(e) => setReservationPickupDate(e.target.value)}
+                        aria-label="Expected pickup date"
+                      />
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                      Borrower Slip Note
+                    </div>
+                    <textarea
+                      className="input-base reservation-input reservation-textarea"
+                      value={reservationSlipNote}
+                      onChange={(e) => setReservationSlipNote(e.target.value)}
+                      placeholder="Enter borrower slip reference or note"
+                    />
+                  </div>
+                  {reservationError ? (
+                    <div className="reservation-error">{reservationError}</div>
+                  ) : null}
+                  <div className="reservation-form-actions">
+                    <button className="btn-secondary" type="button" onClick={resetReservationForm}>
+                      Cancel
+                    </button>
+                    <button
+                      className="btn-primary"
+                      type="button"
+                      onClick={() => void handleReserveSubmit()}
+                      disabled={reservationBusyId === reservationTargetId}
+                    >
+                      {reservationBusyId === reservationTargetId ? "Saving..." : "Save Reservation"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+          {reservationError && !reservationTargetId ? (
+            <div className="reservation-error reservation-error-inline">{reservationError}</div>
+          ) : null}
         </div>
-        <div className="promo-card">
-          <span className="promo-pill">NEW</span>
-          <h3 style={{ margin: "14px 0 8px 0", fontSize: 28, lineHeight: 1.2 }}>
-            Hardware dashboard upgraded
-          </h3>
-          <p style={{ margin: 0, opacity: 0.92, lineHeight: 1.5 }}>
-            Faster insights, cleaner views, and actionable lifecycle tracking.
+        <div className="panel dashboard-panel" style={{ padding: 16 }}>
+          <h3 style={{ marginTop: 0, marginBottom: 6 }}>Assets per Department</h3>
+          <p style={{ marginTop: 0, marginBottom: 10, fontSize: 12, color: "var(--muted)" }}>
+            Includes only officially turned-over assets with signed turnover forms attached.
           </p>
-          <button className="btn-secondary" style={{ marginTop: 20, width: "100%" }}>
-            Explore Overview
-          </button>
+          <div className="department-card-grid">
+            {assetsPerDepartment.map(([department, count]) => (
+              <button
+                key={department}
+                type="button"
+                className={`department-card${
+                  departmentDrilldown === department ? " active" : ""
+                }`}
+                onClick={() => {
+                  setActiveTab("master");
+                  setSearch("");
+                  setDepartmentDrilldown(department);
+                }}
+              >
+                <span className="department-card-label">Qualified Assets</span>
+                <div className="department-card-row">
+                  <span className="department-card-name">{department}</span>
+                  <strong className="department-card-count">{count}</strong>
+                </div>
+              </button>
+            ))}
+            {!assetsPerDepartment.length ? (
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                No departments meet the turnover + signed-form requirement yet.
+              </div>
+            ) : null}
+            {departmentDrilldown ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setDepartmentDrilldown("")}
+                style={{ marginTop: 4 }}
+              >
+                Clear Department Drilldown
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      <div className="dashboard-row" style={{ marginBottom: 16 }}>
-        <div className="panel" style={{ padding: 16 }}>
-          <h3 style={{ marginTop: 0, marginBottom: 10 }}>Activities</h3>
-          <div className="activity-list">
-            {recentRows.map((row) => (
-              <div key={row._id} className="activity-item">
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.status}</div>
-                <div style={{ fontWeight: 600, marginTop: 2 }}>{row.assetTag}</div>
-                <div style={{ color: "var(--muted)", fontSize: 13 }}>
-                  {row.turnoverTo ?? "Unassigned"} • {row.locationPersonAssigned ?? "-"}
+      <div className="dashboard-row">
+        <div className="panel dashboard-panel" style={{ padding: 16 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+              marginBottom: 10,
+            }}
+          >
+            <h3 style={{ margin: 0 }}>Activities</h3>
+            {hasMoreActivity ? (
+              <button
+                type="button"
+                className="activity-feed-toggle"
+                onClick={() => setActivityExpanded((prev) => !prev)}
+              >
+                {activityExpanded ? "Show Less" : "View More"}
+              </button>
+            ) : null}
+          </div>
+          <div className="activity-feed">
+            {visibleActivityFeed.map((event) => {
+              const meta = getActivityMeta(event.eventType);
+              return (
+                <div
+                  key={event._id}
+                  className={`activity-feed-card${meta.urgent ? " urgent" : ""}`}
+                >
+                  <div className="activity-feed-main">
+                    <div className={`activity-feed-icon tone-${meta.tone}`}>
+                      {renderActivityIcon(event.eventType)}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="activity-feed-topline">
+                        <span className={`activity-feed-chip tone-${meta.tone}`}>{meta.label}</span>
+                        <span className="activity-feed-time">{formatActivityTime(event.createdAt)}</span>
+                      </div>
+                      <div className="activity-feed-title">
+                        {event.assetTag}
+                        {event.assetNameDescription ? ` - ${event.assetNameDescription}` : ""}
+                      </div>
+                      <div className="activity-feed-message">{event.message}</div>
+                      <div className="activity-feed-meta">
+                        <span>{event.relatedPerson || "No person linked"}</span>
+                        <span>{event.location || "-"}</span>
+                        <span>{event.status || "-"}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="activity-feed-actions">
+                    <button
+                      className="btn-secondary activity-feed-action-btn"
+                      type="button"
+                      onClick={() => {
+                        setActiveTab("master");
+                        setSearch(event.assetTag);
+                        setDepartmentDrilldown("");
+                      }}
+                    >
+                      View
+                    </button>
+                    <button
+                      className="btn-secondary activity-feed-action-btn"
+                      type="button"
+                      onClick={() => {
+                        setActiveTab("master");
+                        setSearch(event.assetTag);
+                        setDepartmentDrilldown("");
+                      }}
+                    >
+                      Locate
+                    </button>
+                  </div>
                 </div>
+              );
+            })}
+            {!visibleActivityFeed.length ? (
+              <div className="activity-feed-empty">
+                No structured activity events yet. New inventory actions will start appearing here.
               </div>
-            ))}
-            {!recentRows.length ? <div style={{ color: "var(--muted)" }}>No recent activity.</div> : null}
+            ) : null}
           </div>
         </div>
 
-        <div className="panel" style={{ padding: 16 }}>
+        <div className="panel dashboard-panel" style={{ padding: 16 }}>
           <h3 style={{ marginTop: 0, marginBottom: 10 }}>Recent Assets</h3>
           <div className="saas-table-wrap">
             <table className="saas-table" style={{ minWidth: 0 }}>
@@ -312,7 +1053,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="panel" style={{ padding: 12 }}>
+      <div className="panel dashboard-panel" style={{ padding: 12 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           {tabs.map((tab) => {
             const active = tab.key === activeTab;
@@ -320,7 +1061,10 @@ export default function DashboardPage() {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => {
+                  setActiveTab(tab.key);
+                  setDepartmentDrilldown("");
+                }}
                 className={active ? "btn-primary" : "btn-secondary"}
               >
                 {tab.label}
@@ -328,9 +1072,14 @@ export default function DashboardPage() {
             );
           })}
         </div>
+        {departmentDrilldown ? (
+          <div style={{ marginBottom: 10, fontSize: 13, color: "var(--muted)" }}>
+            Department drilldown: <strong style={{ color: "var(--foreground)" }}>{departmentDrilldown}</strong>
+          </div>
+        ) : null}
 
         {activeTab === "master" ? (
-          renderTable(tabRows)
+          renderTable(masterRowsWithDepartmentDrilldown)
         ) : (
           <div style={{ display: "grid", gap: 16 }}>
             {[...groupedRows.entries()].map(([group, rows]) => (
