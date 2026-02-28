@@ -2,6 +2,10 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
+type RemoveBorrowerArgs = {
+  borrowerId: Id<"borrowers">;
+};
+
 export const list = query({
   args: {},
   handler: async (ctx) => {
@@ -24,10 +28,6 @@ export const create = mutation({
   },
 });
 
-type RemoveBorrowerArgs = {
-  borrowerId: Id<"borrowers">;
-};
-
 export const remove = mutation({
   args: {
     borrowerId: v.id("borrowers"),
@@ -44,21 +44,6 @@ export const remove = mutation({
         status: "AVAILABLE",
         borrowerId: undefined,
       });
-
-      const inventory = await ctx.db
-        .query("hardwareInventory")
-        .withIndex("by_assetId", (q) => q.eq("assetId", asset._id))
-        .first();
-
-      if (inventory) {
-        await ctx.db.patch(inventory._id, {
-          status: "AVAILABLE",
-          personAssigned: undefined,
-          department: undefined,
-          turnoverAssignedDate: undefined,
-          updatedAt: now,
-        });
-      }
 
       await ctx.db.insert("assetLogs", {
         assetId: asset._id,

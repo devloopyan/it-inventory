@@ -22,23 +22,34 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_assetId", ["assetId"]),
   hardwareInventory: defineTable({
-    assetId: v.id("assets"),
-    assetNumber: v.string(),
-    assetType: v.string(),
-    assetNameDescription: v.string(),
-    specifications: v.optional(v.string()),
-    serialNumber: v.optional(v.string()),
+    // Legacy fields kept temporarily for migration compatibility.
+    assetTag: v.string(),
+    brand: v.optional(v.string()),
+    category: v.optional(v.string()),
+    assignedTo: v.optional(v.string()),
     location: v.optional(v.string()),
-    personAssigned: v.optional(v.string()),
+    model: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    dateAcquired: v.optional(v.number()),
+    assetType: v.optional(v.string()),
+    assetNameDescription: v.optional(v.string()),
+    specifications: v.optional(v.string()),
+    serialNumber: v.string(),
+    locationPersonAssigned: v.optional(v.string()),
     department: v.optional(v.string()),
     status: v.string(),
-    turnoverAssignedDate: v.optional(v.number()),
+    turnoverTo: v.optional(v.string()),
+    assignedDate: v.optional(v.string()),
     purchaseDate: v.optional(v.string()),
-    warrantyNotesRemarks: v.optional(v.string()),
-    sourceSheet: v.optional(v.string()),
+    warranty: v.optional(v.string()),
+    remarks: v.optional(v.string()),
+    imageStorageId: v.optional(v.id("_storage")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_assetId", ["assetId"])
-    .index("by_assetNumber", ["assetNumber"]),
+    .index("by_assetTag", ["assetTag"])
+    .index("by_serialNumber", ["serialNumber"])
+    .index("by_status", ["status"])
+    .index("by_locationPersonAssigned", ["locationPersonAssigned"])
+    .index("by_turnoverTo", ["turnoverTo"]),
 });

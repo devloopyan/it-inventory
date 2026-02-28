@@ -2,6 +2,19 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 
+type AssignBorrowerArgs = {
+  assetId: Id<"assets">;
+  borrowerId: Id<"borrowers">;
+};
+
+type ReturnAssetArgs = {
+  assetId: Id<"assets">;
+};
+
+type RemoveAssetArgs = {
+  assetId: Id<"assets">;
+};
+
 export const list = query({
   args: {},
   handler: async (ctx) => {
@@ -37,39 +50,9 @@ export const create = mutation({
       });
     }
 
-    const existingInventory = await ctx.db
-      .query("hardwareInventory")
-      .withIndex("by_assetNumber", (q) => q.eq("assetNumber", args.assetTag))
-      .first();
-
-    if (existingInventory) {
-      await ctx.db.patch(existingInventory._id, {
-        assetId,
-        assetType: args.category,
-        status: "AVAILABLE",
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.insert("hardwareInventory", {
-        assetId,
-        assetNumber: args.assetTag,
-        assetType: args.category,
-        assetNameDescription: args.assetTag,
-        status: "AVAILABLE",
-        sourceSheet: "Assets Page",
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
     return assetId;
   },
 });
-
-type AssignBorrowerArgs = {
-  assetId: Id<"assets">;
-  borrowerId: Id<"borrowers">;
-};
 
 export const assignBorrower = mutation({
   args: {
@@ -77,28 +60,11 @@ export const assignBorrower = mutation({
     borrowerId: v.id("borrowers"),
   },
   handler: async (ctx, args: AssignBorrowerArgs) => {
-    const borrower = await ctx.db.get(args.borrowerId);
     const now = Date.now();
-
     await ctx.db.patch(args.assetId, {
       borrowerId: args.borrowerId,
       status: "BORROWED",
     });
-
-    const inventory = await ctx.db
-      .query("hardwareInventory")
-      .withIndex("by_assetId", (q) => q.eq("assetId", args.assetId))
-      .first();
-
-    if (inventory) {
-      await ctx.db.patch(inventory._id, {
-        status: "BORROWED",
-        personAssigned: borrower?.fullName,
-        department: borrower?.department,
-        turnoverAssignedDate: now,
-        updatedAt: now,
-      });
-    }
 
     await ctx.db.insert("assetLogs", {
       assetId: args.assetId,
@@ -109,10 +75,6 @@ export const assignBorrower = mutation({
     });
   },
 });
-
-type ReturnAssetArgs = {
-  assetId: Id<"assets">;
-};
 
 export const returnAsset = mutation({
   args: {
@@ -127,21 +89,6 @@ export const returnAsset = mutation({
       borrowerId: undefined,
     });
 
-    const inventory = await ctx.db
-      .query("hardwareInventory")
-      .withIndex("by_assetId", (q) => q.eq("assetId", args.assetId))
-      .first();
-
-    if (inventory) {
-      await ctx.db.patch(inventory._id, {
-        status: "AVAILABLE",
-        personAssigned: undefined,
-        department: undefined,
-        turnoverAssignedDate: undefined,
-        updatedAt: now,
-      });
-    }
-
     await ctx.db.insert("assetLogs", {
       assetId: args.assetId,
       action: "RETURN",
@@ -152,24 +99,11 @@ export const returnAsset = mutation({
   },
 });
 
-type RemoveAssetArgs = {
-  assetId: Id<"assets">;
-};
-
 export const remove = mutation({
   args: {
     assetId: v.id("assets"),
   },
   handler: async (ctx, args: RemoveAssetArgs) => {
-    const inventory = await ctx.db
-      .query("hardwareInventory")
-      .withIndex("by_assetId", (q) => q.eq("assetId", args.assetId))
-      .first();
-
-    if (inventory) {
-      await ctx.db.delete(inventory._id);
-    }
-
     const logs = await ctx.db
       .query("assetLogs")
       .withIndex("by_assetId", (q) => q.eq("assetId", args.assetId))

@@ -1,201 +1,347 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
 
-const chipStyle = {
-  display: "inline-block",
-  padding: "6px 10px",
-  borderRadius: 999,
-  fontSize: 12,
-  fontWeight: 700,
+type TabKey = "workstation" | "master" | "storage" | "borrowed" | "available";
+
+const tabs: { key: TabKey; label: string }[] = [
+  { key: "workstation", label: "Workstation" },
+  { key: "master", label: "Master Tracker" },
+  { key: "storage", label: "Storage" },
+  { key: "borrowed", label: "Borrowed" },
+  { key: "available", label: "Available" },
+];
+
+const statusIconColor: Record<HardwareStatus, string> = {
+  Borrowed: "#f97316",
+  Assigned: "#22c55e",
+  "For Repair": "#ef4444",
+  Retired: "#6b7280",
+  Available: "#3b82f6",
+  Working: "#06b6d4",
 };
 
+function matchesSearch(
+  row: {
+    assetTag: string;
+    serialNumber: string;
+    assetNameDescription?: string;
+    turnoverTo?: string;
+  },
+  search: string,
+) {
+  if (!search) return true;
+  const term = search.toLowerCase();
+  return [
+    row.assetTag,
+    row.serialNumber,
+    row.assetNameDescription ?? "",
+    row.turnoverTo ?? "",
+  ].some((value) => String(value).toLowerCase().includes(term));
+}
+
+function groupBy<T>(rows: T[], key: (row: T) => string) {
+  const map = new Map<string, T[]>();
+  rows.forEach((row) => {
+    const groupKey = key(row) || "Unassigned";
+    if (!map.has(groupKey)) map.set(groupKey, []);
+    map.get(groupKey)?.push(row);
+  });
+  return map;
+}
+
 export default function DashboardPage() {
-  const assets = useQuery(api.assets.list, {});
+  const allRows = useQuery(api.hardwareInventory.listAll, {});
+  const migrateLegacy = useMutation(api.hardwareInventory.migrateLegacy);
+  const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<TabKey>("workstation");
+  const migrationRan = useRef(false);
 
-  const totalAssets = assets?.length ?? 0;
-  const availableCount =
-    assets?.filter((asset) => asset.status === "AVAILABLE").length ?? 0;
-  const borrowedCount =
-    assets?.filter((asset) => asset.status === "BORROWED").length ?? 0;
+  useEffect(() => {
+    if (migrationRan.current) return;
+    if (!allRows?.length) return;
+    const needsMigration = allRows.some(
+      (row) =>
+        !row.assetType ||
+        !row.assetNameDescription ||
+        !row.specifications ||
+        !row.locationPersonAssigned ||
+        !row.department ||
+        !row.turnoverTo ||
+        !row.assignedDate ||
+        !row.purchaseDate ||
+        !row.warranty,
+    );
+    if (!needsMigration) return;
+    migrationRan.current = true;
+    void migrateLegacy();
+  }, [allRows, migrateLegacy]);
 
-  const borrowedPercent =
-    totalAssets > 0 ? Math.round((borrowedCount / totalAssets) * 100) : 0;
-  const availablePercent = 100 - borrowedPercent;
+  const counts = useMemo(() => {
+    const base: { total: number; byStatus: Record<HardwareStatus, number> } = {
+      total: 0,
+      byStatus: Object.fromEntries(
+        HARDWARE_STATUSES.map((status) => [status, 0]),
+      ) as Record<HardwareStatus, number>,
+    };
+    for (const row of allRows ?? []) {
+      base.total += 1;
+      if (HARDWARE_STATUSES.includes(row.status as HardwareStatus)) {
+        base.byStatus[row.status as HardwareStatus] += 1;
+      }
+    }
+    return base;
+  }, [allRows]);
 
-  const ringStyle = {
-    width: 188,
-    height: 188,
-    borderRadius: "50%",
-    background: `conic-gradient(#7cb1f8 0% ${availablePercent}%, #2f3137 ${availablePercent}% 100%)`,
-    position: "relative" as const,
-    margin: "8px auto 12px",
-  };
+  const availableStatuses = useMemo(
+    () =>
+      HARDWARE_STATUSES.filter(
+        (status): status is HardwareStatus =>
+          status === "Available" || status === "Working",
+      ),
+    [],
+  );
+
+  const searched = useMemo(
+    () => (allRows ?? []).filter((row) => matchesSearch(row, search)),
+    [allRows, search],
+  );
+
+  const tabRows = useMemo(() => {
+    switch (activeTab) {
+      case "workstation":
+        return searched.filter((row) => row.turnoverTo);
+      case "master":
+        return searched;
+      case "storage":
+        return searched.filter((row) => row.locationPersonAssigned === "MAIN STORAGE");
+      case "borrowed":
+        return searched.filter(
+          (row) => row.locationPersonAssigned === "MAIN STORAGE" && row.status === "Borrowed",
+        );
+      case "available":
+        return searched.filter(
+          (row) =>
+            row.locationPersonAssigned === "MAIN STORAGE" &&
+            availableStatuses.includes(row.status as HardwareStatus),
+        );
+      default:
+        return searched;
+    }
+  }, [searched, activeTab, availableStatuses]);
+
+  const groupedRows = useMemo(() => {
+    if (activeTab === "workstation") {
+      return groupBy(tabRows, (row) => row.turnoverTo ?? "");
+    }
+    if (activeTab === "storage" || activeTab === "borrowed" || activeTab === "available") {
+      return groupBy(tabRows, (row) => row.locationPersonAssigned ?? "");
+    }
+    return new Map<string, typeof tabRows>();
+  }, [tabRows, activeTab]);
+
+  const recentRows = useMemo(() => (allRows ?? []).slice(0, 5), [allRows]);
+
+  const analyticsBars = useMemo(() => {
+    const values = HARDWARE_STATUSES.map((status) => counts.byStatus[status]);
+    const maxValue = Math.max(...values, 1);
+    return HARDWARE_STATUSES.map((status) => ({
+      label: status,
+      height: Math.max(20, Math.round((counts.byStatus[status] / maxValue) * 120)),
+      active: status === "Available",
+    }));
+  }, [counts]);
+
+  const renderTable = (rows: typeof tabRows) => (
+    <div className="saas-table-wrap">
+      <table className="saas-table">
+        <thead>
+          <tr>
+            {["Asset Tag", "Asset Type", "Asset Name / Specs", "Location", "Status", "Turnover to"].map((header) => (
+              <th key={header}>{header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row._id} className="table-row-hover">
+              <td>{row.assetTag}</td>
+              <td>{row.assetType ?? "-"}</td>
+              <td>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <div>{row.assetNameDescription ?? "-"}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.specifications ?? "-"}</div>
+                </div>
+              </td>
+              <td>{row.locationPersonAssigned ?? "-"}</td>
+              <td>{row.status}</td>
+              <td>{row.turnoverTo ?? "-"}</td>
+            </tr>
+          ))}
+          {!rows.length ? (
+            <tr>
+              <td colSpan={6}>No assets match this tab and search.</td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <div>
-      <div
-        className="dashboard-grid"
-        style={{
-          display: "grid",
-          gap: 16,
-        }}
-      >
-        <section>
-          <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 14 }}>Cards</h2>
+      <h1 style={{ fontSize: 30, fontWeight: 700, marginBottom: 4 }}>Dashboard</h1>
+      <p style={{ color: "var(--muted)", marginBottom: 16 }}>
+        Hardware performance and operations overview.
+      </p>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div
-              style={{
-                background: "#2f3137",
-                color: "#fff",
-                borderRadius: 22,
-                padding: 20,
-                minHeight: 150,
-              }}
-            >
-              <div style={{ fontSize: 18, opacity: 0.8 }}>Total Assets</div>
-              <div style={{ fontSize: 46, fontWeight: 800, marginTop: 4 }}>{totalAssets}</div>
-              <div style={{ opacity: 0.7, marginTop: 18 }}>Inventory cards</div>
+      <div className="search-field" style={{ marginBottom: 16 }}>
+        <span className="search-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+            <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" />
+          </svg>
+        </span>
+        <input
+          className="input-base"
+          placeholder="Tap to search assets"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      <div className="metric-strip" style={{ marginBottom: 16 }}>
+        <div className="metric-item">
+          <div className="metric-head">
+            <span className="metric-icon" style={{ background: "#fb923c" }} />
+            Total Assets
+          </div>
+          <div className="metric-value">
+            <strong>{counts.total}</strong>
+            <span className="trend-chip">+6%</span>
+          </div>
+        </div>
+        {HARDWARE_STATUSES.slice(0, 5).map((status) => (
+          <div key={status} className="metric-item">
+            <div className="metric-head">
+              <span className="metric-icon" style={{ background: statusIconColor[status] }} />
+              {status}
             </div>
-
-            <div
-              style={{
-                background: "#fff",
-                color: "#1f2127",
-                borderRadius: 22,
-                padding: 20,
-                border: "1px solid #ececf1",
-                minHeight: 150,
-              }}
-            >
-              <div style={{ fontSize: 18, opacity: 0.8 }}>Borrowed Now</div>
-              <div style={{ fontSize: 46, fontWeight: 800, marginTop: 4 }}>{borrowedCount}</div>
-              <div style={{ opacity: 0.7, marginTop: 18 }}>In active use</div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
-            <div style={{ ...chipStyle, background: "#8fbaf7", color: "#fff" }}>Assets</div>
-            <div style={{ ...chipStyle, background: "#f0f1f4", color: "#2c2d30" }}>
-              Borrowers
-            </div>
-            <div style={{ ...chipStyle, background: "#f0f1f4", color: "#2c2d30" }}>Logs</div>
-            <div style={{ ...chipStyle, background: "#f0f1f4", color: "#2c2d30" }}>Reports</div>
-          </div>
-
-          <div style={{ marginTop: 20 }}>
-            <h3 style={{ fontSize: 28, fontWeight: 800, marginBottom: 12 }}>Recent Activity</h3>
-            <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 10px" }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: "left", padding: "0 10px" }}>Asset</th>
-                  <th style={{ textAlign: "left", padding: "0 10px" }}>Category</th>
-                  <th style={{ textAlign: "left", padding: "0 10px" }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(assets ?? []).slice(0, 5).map((asset) => (
-                  <tr key={asset._id}>
-                    <td
-                      style={{
-                        background: "#f7f7f9",
-                        padding: 12,
-                        borderTopLeftRadius: 12,
-                        borderBottomLeftRadius: 12,
-                      }}
-                    >
-                      {asset.assetTag}
-                    </td>
-                    <td style={{ background: "#f7f7f9", padding: 12 }}>{asset.category}</td>
-                    <td
-                      style={{
-                        background: "#f7f7f9",
-                        padding: 12,
-                        borderTopRightRadius: 12,
-                        borderBottomRightRadius: 12,
-                      }}
-                    >
-                      <span
-                        style={{
-                          ...chipStyle,
-                          background:
-                            asset.status === "AVAILABLE" ? "rgba(70, 180, 93, 0.15)" : "#fce3ae",
-                          color: asset.status === "AVAILABLE" ? "#198c30" : "#9a6400",
-                        }}
-                      >
-                        {asset.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <aside
-          style={{
-            background: "#f7f7f9",
-            borderRadius: 24,
-            padding: 18,
-            border: "1px solid #ececf1",
-            height: "fit-content",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ fontSize: 30, fontWeight: 800 }}>Statistic</h3>
-            <div style={{ ...chipStyle, background: "#fff", color: "#7c7f88" }}>This week</div>
-          </div>
-
-          <div style={ringStyle}>
-            <div
-              style={{
-                position: "absolute",
-                inset: 18,
-                background: "#f7f7f9",
-                borderRadius: "50%",
-                display: "grid",
-                placeItems: "center",
-                textAlign: "center",
-                fontWeight: 700,
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 15, color: "#7f838c" }}>Total</div>
-                <div style={{ fontSize: 38, color: "#1f2127" }}>{totalAssets}</div>
-              </div>
+            <div className="metric-value">
+              <strong>{counts.byStatus[status]}</strong>
+              <span className="trend-chip">live</span>
             </div>
           </div>
+        ))}
+      </div>
 
-          <div style={{ display: "flex", gap: 10, marginBottom: 16, justifyContent: "center" }}>
-            <div style={{ ...chipStyle, background: "#dce9ff", color: "#2e5ea7" }}>
-              Available {availableCount}
-            </div>
-            <div style={{ ...chipStyle, background: "#ececf1", color: "#3a3b41" }}>
-              Borrowed {borrowedCount}
-            </div>
-          </div>
-
-          <div>
-            {(assets ?? []).slice(0, 5).map((asset) => (
-              <div
-                key={asset._id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "10px 0",
-                  borderBottom: "1px solid #ececf1",
-                  fontSize: 13,
-                }}
-              >
-                <span style={{ color: "#3a3b41" }}>{asset.assetTag}</span>
-                <span style={{ color: "#7f838c" }}>{asset.status}</span>
+      <div className="dashboard-row" style={{ marginBottom: 16 }}>
+        <div className="panel" style={{ padding: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>Status Distribution</div>
+          <div style={{ fontSize: 32, fontWeight: 700, marginTop: 4 }}>{counts.total}</div>
+          <div className="analytics-bars">
+            {analyticsBars.map((bar) => (
+              <div key={bar.label} style={{ textAlign: "center" }}>
+                <div className={`analytics-bar ${bar.active ? "active" : ""}`} style={{ height: bar.height }} />
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>{bar.label.slice(0, 3)}</div>
               </div>
             ))}
           </div>
-        </aside>
+        </div>
+        <div className="promo-card">
+          <span className="promo-pill">NEW</span>
+          <h3 style={{ margin: "14px 0 8px 0", fontSize: 28, lineHeight: 1.2 }}>
+            Hardware dashboard upgraded
+          </h3>
+          <p style={{ margin: 0, opacity: 0.92, lineHeight: 1.5 }}>
+            Faster insights, cleaner views, and actionable lifecycle tracking.
+          </p>
+          <button className="btn-secondary" style={{ marginTop: 20, width: "100%" }}>
+            Explore Overview
+          </button>
+        </div>
+      </div>
+
+      <div className="dashboard-row" style={{ marginBottom: 16 }}>
+        <div className="panel" style={{ padding: 16 }}>
+          <h3 style={{ marginTop: 0, marginBottom: 10 }}>Activities</h3>
+          <div className="activity-list">
+            {recentRows.map((row) => (
+              <div key={row._id} className="activity-item">
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.status}</div>
+                <div style={{ fontWeight: 600, marginTop: 2 }}>{row.assetTag}</div>
+                <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                  {row.turnoverTo ?? "Unassigned"} • {row.locationPersonAssigned ?? "-"}
+                </div>
+              </div>
+            ))}
+            {!recentRows.length ? <div style={{ color: "var(--muted)" }}>No recent activity.</div> : null}
+          </div>
+        </div>
+
+        <div className="panel" style={{ padding: 16 }}>
+          <h3 style={{ marginTop: 0, marginBottom: 10 }}>Recent Assets</h3>
+          <div className="saas-table-wrap">
+            <table className="saas-table" style={{ minWidth: 0 }}>
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th>Status</th>
+                  <th>Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentRows.map((row) => (
+                  <tr key={row._id} className="table-row-hover">
+                    <td>{row.assetTag}</td>
+                    <td>{row.status}</td>
+                    <td>{row.locationPersonAssigned ?? "-"}</td>
+                  </tr>
+                ))}
+                {!recentRows.length ? (
+                  <tr>
+                    <td colSpan={3}>No assets yet.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="panel" style={{ padding: 12 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          {tabs.map((tab) => {
+            const active = tab.key === activeTab;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={active ? "btn-primary" : "btn-secondary"}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {activeTab === "master" ? (
+          renderTable(tabRows)
+        ) : (
+          <div style={{ display: "grid", gap: 16 }}>
+            {[...groupedRows.entries()].map(([group, rows]) => (
+              <div key={group} className="saas-card" style={{ padding: 12 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>{group}</div>
+                {renderTable(rows)}
+              </div>
+            ))}
+            {!groupedRows.size ? renderTable([]) : null}
+          </div>
+        )}
       </div>
     </div>
   );
