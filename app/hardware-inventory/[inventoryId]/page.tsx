@@ -748,6 +748,7 @@ export default function HardwareInventoryDetailPage() {
               <select
                 className="input-base status-select"
                 style={{
+                  background: statusColors[form.status]?.bg ?? "#ffffff",
                   color: statusColors[form.status]?.text ?? "var(--foreground)",
                   borderColor: statusColors[form.status]?.border ?? "#e8eff9",
                   fontWeight: 600,

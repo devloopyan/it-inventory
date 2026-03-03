@@ -29,6 +29,29 @@ type ExtraComponent = {
   specifications: string;
 };
 
+type DesktopFormState = {
+  monitorAssetTag: string;
+  monitorSlot: MonitorSlot | "";
+  monitorSpecs: string;
+  monitorConsumables: string;
+  systemUnitAssetTag: string;
+  systemUnitSpecs: string;
+  systemUnitMotherboard: string;
+  systemUnitCpu: string;
+  systemUnitRam: string;
+  systemUnitHdd: string;
+  systemUnitSsd: string;
+  systemUnitGraphicsCard: string;
+  systemUnitPsu: string;
+  systemUnitCase: string;
+  caseBrand: string;
+  mouseAssetTag: string;
+  mouseSpecs: string;
+  keyboardAssetTag: string;
+  keyboardSpecs: string;
+  extraComponents: ExtraComponent[];
+};
+
 type SortKey =
   | "assetTag"
   | "assetType"
@@ -78,26 +101,21 @@ const defaultForm: FormState = {
   remarks: "",
 };
 
-const defaultDesktopForm: {
-  monitorAssetTag: string;
-  monitorSlot: MonitorSlot | "";
-  monitorSpecs: string;
-  monitorConsumables: string;
-  systemUnitAssetTag: string;
-  systemUnitSpecs: string;
-  caseBrand: string;
-  mouseAssetTag: string;
-  mouseSpecs: string;
-  keyboardAssetTag: string;
-  keyboardSpecs: string;
-  extraComponents: ExtraComponent[];
-} = {
+const defaultDesktopForm: DesktopFormState = {
   monitorAssetTag: "",
   monitorSlot: "Monitor 1",
   monitorSpecs: "",
   monitorConsumables: "",
   systemUnitAssetTag: "",
   systemUnitSpecs: "",
+  systemUnitMotherboard: "",
+  systemUnitCpu: "",
+  systemUnitRam: "",
+  systemUnitHdd: "",
+  systemUnitSsd: "",
+  systemUnitGraphicsCard: "",
+  systemUnitPsu: "",
+  systemUnitCase: "",
   caseBrand: "",
   mouseAssetTag: "",
   mouseSpecs: "",
@@ -166,6 +184,36 @@ function buildDesktopSpecificationsSummary(args: {
   return summaryParts.join(" | ");
 }
 
+function buildSystemUnitSpecs(args: Pick<
+  DesktopFormState,
+  | "systemUnitSpecs"
+  | "systemUnitMotherboard"
+  | "systemUnitCpu"
+  | "systemUnitRam"
+  | "systemUnitHdd"
+  | "systemUnitSsd"
+  | "systemUnitGraphicsCard"
+  | "systemUnitPsu"
+  | "systemUnitCase"
+>) {
+  if (args.systemUnitSpecs.trim()) {
+    return args.systemUnitSpecs.trim();
+  }
+
+  const specParts = [
+    `MOTHERBOARD: ${args.systemUnitMotherboard.trim()}`,
+    `CPU: ${args.systemUnitCpu.trim()}`,
+    `RAM: ${args.systemUnitRam.trim()}`,
+    `HDD: ${args.systemUnitHdd.trim()}`,
+    `SSD: ${args.systemUnitSsd.trim()}`,
+    `GRAPHICS CARD: ${args.systemUnitGraphicsCard.trim()}`,
+    `PSU: ${args.systemUnitPsu.trim()}`,
+    `CASE: ${args.systemUnitCase.trim()}`,
+  ];
+
+  return specParts.join(" | ");
+}
+
 export default function HardwareInventoryPage() {
   const router = useRouter();
   const [registerMode, setRegisterMode] = useState<RegisterMode>("general");
@@ -178,6 +226,7 @@ export default function HardwareInventoryPage() {
   const [page, setPage] = useState(1);
   const [form, setForm] = useState<FormState>(defaultForm);
   const [formError, setFormError] = useState("");
+  const [formSuccess, setFormSuccess] = useState<{ id: number; message: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [selectedReceivingFormFile, setSelectedReceivingFormFile] = useState<File | null>(null);
@@ -244,6 +293,17 @@ export default function HardwareInventoryPage() {
       Object.values(inlineSaveTimers).forEach((timer) => clearTimeout(timer));
     };
   }, []);
+  useEffect(() => {
+    if (!formSuccess) return;
+
+    const timeout = window.setTimeout(() => {
+      setFormSuccess(null);
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [formSuccess]);
 
   const tableRows = result?.items ?? [];
 
@@ -271,7 +331,9 @@ export default function HardwareInventoryPage() {
 
   async function handleCreate() {
     setFormError("");
+    setFormSuccess(null);
     const desktopBaseAssetTag = desktopForm.systemUnitAssetTag.trim();
+    const systemUnitSpecsToSave = isDesktopWorkstation ? buildSystemUnitSpecs(desktopForm) : "";
     const assetTagToSave = isDesktopWorkstation
       ? `${desktopBaseAssetTag}-SET`
       : form.assetTag.trim();
@@ -287,7 +349,7 @@ export default function HardwareInventoryPage() {
           monitorSpecs: desktopForm.monitorSpecs,
           monitorConsumables: desktopForm.monitorConsumables,
           systemUnitAssetTag: desktopForm.systemUnitAssetTag,
-          systemUnitSpecs: desktopForm.systemUnitSpecs,
+          systemUnitSpecs: systemUnitSpecsToSave,
           caseBrand: desktopForm.caseBrand,
           mouseAssetTag: desktopForm.mouseAssetTag,
           mouseSpecs: desktopForm.mouseSpecs,
@@ -329,7 +391,7 @@ export default function HardwareInventoryPage() {
         !desktopForm.monitorSlot ||
         !desktopForm.monitorSpecs ||
         !desktopForm.systemUnitAssetTag ||
-        !desktopForm.systemUnitSpecs ||
+        !systemUnitSpecsToSave ||
         !desktopForm.caseBrand
       ) {
         setFormError(
@@ -467,7 +529,7 @@ export default function HardwareInventoryPage() {
           ? desktopForm.systemUnitAssetTag || undefined
           : undefined,
         desktopSystemUnitSpecs: isDesktopWorkstation
-          ? desktopForm.systemUnitSpecs || undefined
+          ? systemUnitSpecsToSave || undefined
           : undefined,
         desktopCaseBrand: isDesktopWorkstation ? desktopForm.caseBrand || undefined : undefined,
         desktopMouseAssetTag: isDesktopWorkstation ? desktopForm.mouseAssetTag || undefined : undefined,
@@ -502,7 +564,9 @@ export default function HardwareInventoryPage() {
         turnoverFormInputRef.current.value = "";
       }
       setPage(1);
+      setFormSuccess({ id: Date.now(), message: "Asset created successfully." });
     } catch (error) {
+      setFormSuccess(null);
       setFormError(error instanceof Error ? error.message : "Unable to save asset.");
     } finally {
       setIsSaving(false);
@@ -623,6 +687,11 @@ export default function HardwareInventoryPage() {
 
   return (
     <div>
+      {formSuccess ? (
+        <div className="floating-toast floating-toast-success" role="status" aria-live="polite">
+          {formSuccess.message}
+        </div>
+      ) : null}
       <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>Hardware Inventory</h1>
       <p style={{ color: "var(--muted)", marginBottom: 16 }}>
         Track lifecycle, ownership, and location for all hardware assets.
@@ -640,7 +709,7 @@ export default function HardwareInventoryPage() {
           }}
         >
           <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Hardware Asset Register</h2>
-          <div style={{ fontSize: 12, color: "#b91c1c", fontWeight: 700 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>
             Fields marked <span style={{ color: "#dc2626" }}>*</span> are required
           </div>
         </div>
@@ -852,6 +921,7 @@ export default function HardwareInventoryPage() {
               <select
                 className="input-base status-select"
                 style={{
+                  background: statusStyles[form.status]?.background ?? "#ffffff",
                   color: statusStyles[form.status]?.color ?? "var(--foreground)",
                   borderColor: statusStyles[form.status]?.borderColor ?? "#e8eff9",
                   fontWeight: 600,
@@ -1477,6 +1547,8 @@ export default function HardwareInventoryPage() {
             style={
               statusFilter
                 ? {
+                    background:
+                      statusStyles[statusFilter as HardwareStatus]?.background ?? "#ffffff",
                     color:
                       statusStyles[statusFilter as HardwareStatus]?.color ?? "var(--foreground)",
                     borderColor:
@@ -1606,7 +1678,10 @@ export default function HardwareInventoryPage() {
                       className="input-base status-select"
                       style={{
                         ...smallInput,
-                        background: "#ffffff",
+                        background:
+                          statusStyles[
+                            (inlineEdits[row._id]?.status ?? row.status) as HardwareStatus
+                          ]?.background ?? "#ffffff",
                         color:
                           statusStyles[
                             (inlineEdits[row._id]?.status ?? row.status) as HardwareStatus

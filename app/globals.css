@@ -60,7 +60,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-nunito);
   --font-mono: var(--font-geist-mono);
 }
 
@@ -72,7 +72,7 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-nunito), "Segoe UI", Arial, sans-serif;
   overflow-x: hidden;
   transition: background-color 200ms ease-in-out, color 200ms ease-in-out;
 }
@@ -439,10 +439,53 @@ a {
   color: var(--success-text);
 }
 
+.floating-toast {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 80;
+  min-width: min(320px, calc(100vw - 32px));
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--success-bg);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(10px);
+  animation: toast-slide-in 180ms ease-out;
+}
+
+.floating-toast-success {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (max-width: 640px) {
+  .floating-toast {
+    top: 16px;
+    right: 16px;
+    left: 16px;
+    min-width: 0;
+    max-width: none;
+  }
+}
+
 .dashboard-row {
   display: grid;
   gap: 18px;
   grid-template-columns: 2fr 1fr;
+  align-items: start;
 }
 
 .analytics-bars {
@@ -918,6 +961,58 @@ a {
   font-size: 14px;
 }
 
+.recent-assets-card {
+  display: flex;
+  flex-direction: column;
+  height: 320px;
+  min-height: 320px;
+}
+
+.recent-assets-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+}
+
+.recent-assets-table-wrap::-webkit-scrollbar {
+  width: 10px;
+}
+
+.recent-assets-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.recent-assets-table-wrap::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.recent-assets-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.62);
+  background-clip: padding-box;
+}
+
+.recent-assets-table-wrap .saas-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.recent-assets-table-wrap .saas-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.recent-assets-table-wrap .saas-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 .table-row-hover {
   transition: background 180ms ease-in-out;
 }
@@ -1196,6 +1291,130 @@ select.status-select optgroup {
   border-radius: 24px;
 }
 
+.dashboard-side-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.dashboard-reminder-card {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid #2c5ee5;
+  background:
+    radial-gradient(circle at 88% 100%, rgba(191, 219, 254, 0.34), transparent 30%),
+    radial-gradient(circle at 74% 118%, rgba(219, 234, 254, 0.22), transparent 34%),
+    linear-gradient(145deg, #1d4ed8, #2563eb 58%, #3b82f6);
+  color: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 20px 34px rgba(37, 99, 235, 0.24);
+}
+
+.dashboard-reminder-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -14% -44% 42%;
+  height: 138px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  transform: rotate(-8deg);
+  pointer-events: none;
+}
+
+.dashboard-reminder-badge,
+.dashboard-reminder-title,
+.dashboard-reminder-copy,
+.dashboard-reminder-btn {
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-reminder-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-reminder-title {
+  font-size: 22px;
+  line-height: 1.22;
+  font-weight: 800;
+  max-width: 240px;
+}
+
+.dashboard-reminder-copy {
+  font-size: 13px;
+  line-height: 1.55;
+  color: rgba(239, 246, 255, 0.92);
+  max-width: 260px;
+}
+
+.dashboard-reminder-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+}
+
+.dashboard-reminder-btn:hover {
+  background: #ffffff;
+}
+
+.dashboard-group-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.dashboard-group-list {
+  max-height: 760px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  padding-right: 4px;
+}
+
+.dashboard-group-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.dashboard-group-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dashboard-group-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.dashboard-group-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.62);
+  background-clip: padding-box;
+}
+
 .dashboard-search {
   margin: 0;
 }
@@ -1209,22 +1428,55 @@ select.status-select optgroup {
   gap: 10px;
 }
 
+.department-card-scroll {
+  display: grid;
+  gap: 10px;
+  max-height: 320px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  padding-right: 4px;
+  align-content: start;
+}
+
+.department-card-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.department-card-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.department-card-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.department-card-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.62);
+  background-clip: padding-box;
+}
+
 .department-card {
   position: relative;
   display: grid;
   gap: 10px;
   width: 100%;
   padding: 14px 16px;
-  border: 1px solid #d9e7ff;
+  border: 1px solid #d9e2ef;
   border-radius: 18px;
   background:
-    radial-gradient(circle at 88% 100%, rgba(34, 211, 238, 0.22), transparent 28%),
-    radial-gradient(circle at 72% 118%, rgba(59, 130, 246, 0.2), transparent 32%),
-    linear-gradient(145deg, #1f5bde, #0f44ba);
-  color: #ffffff;
+    radial-gradient(circle at 88% 100%, rgba(191, 219, 254, 0.3), transparent 28%),
+    radial-gradient(circle at 72% 118%, rgba(219, 234, 254, 0.48), transparent 34%),
+    linear-gradient(180deg, #ffffff, #f8fbff);
+  color: var(--foreground);
   cursor: pointer;
   text-align: left;
-  box-shadow: 0 16px 30px rgba(29, 78, 216, 0.22);
+  box-shadow: 0 16px 28px rgba(148, 163, 184, 0.12);
   transition: transform 180ms ease-in-out, box-shadow 180ms ease-in-out, border-color 180ms ease-in-out;
   overflow: hidden;
 }
@@ -1235,20 +1487,20 @@ select.status-select optgroup {
   inset: auto -10% -48% 38%;
   height: 120px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.5);
   transform: rotate(-8deg);
   pointer-events: none;
 }
 
 .department-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 20px 34px rgba(29, 78, 216, 0.28);
-  border-color: rgba(219, 234, 254, 0.9);
+  box-shadow: 0 20px 34px rgba(148, 163, 184, 0.18);
+  border-color: #c9d7ea;
 }
 
 .department-card.active {
-  border-color: #ffffff;
-  box-shadow: 0 0 0 2px rgba(219, 234, 254, 0.3), 0 22px 38px rgba(29, 78, 216, 0.3);
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 2px rgba(147, 197, 253, 0.24), 0 22px 38px rgba(148, 163, 184, 0.18);
 }
 
 .department-card-label {
@@ -1259,7 +1511,8 @@ select.status-select optgroup {
   width: fit-content;
   border-radius: 999px;
   padding: 4px 9px;
-  background: rgba(255, 255, 255, 0.16);
+  background: #eff6ff;
+  color: #1d4ed8;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -1280,6 +1533,7 @@ select.status-select optgroup {
   font-weight: 700;
   line-height: 1.35;
   max-width: calc(100% - 52px);
+  color: var(--foreground);
 }
 
 .department-card-count {
@@ -1287,13 +1541,13 @@ select.status-select optgroup {
   min-width: 38px;
   height: 38px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.16);
+  background: #eff6ff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   font-weight: 800;
-  color: #ffffff;
+  color: #1d4ed8;
 }
 
 .reservation-section {
@@ -1389,16 +1643,53 @@ select.status-select optgroup {
   gap: 8px;
 }
 
+.reservation-list-scroll {
+  max-height: 336px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  padding-right: 4px;
+}
+
+.reservation-section-available .reservation-list-scroll {
+  max-height: 260px;
+  padding-right: 6px;
+}
+
+.reservation-list-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.reservation-list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.reservation-list-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.reservation-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.62);
+  background-clip: padding-box;
+}
+
 .reservation-card {
   position: relative;
   display: grid;
   gap: 10px;
-  padding: 14px;
+  padding: 16px 14px;
   padding-left: 16px;
+  min-height: 78px;
   border-radius: 18px;
   border: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.86);
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 10px 24px rgba(148, 163, 184, 0.12);
 }
 
@@ -1433,11 +1724,14 @@ select.status-select optgroup {
 }
 
 .reservation-card-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  flex-wrap: wrap;
+}
+
+.reservation-card-row > :first-child {
+  min-width: 0;
 }
 
 .reservation-card-topline {
@@ -1491,6 +1785,19 @@ select.status-select optgroup {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.reservation-card-row > button {
+  flex-shrink: 0;
+  align-self: center;
+  min-height: 42px;
+}
+
+.reservation-card-available .reservation-card-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .reservation-form-wrap {
@@ -1498,6 +1805,21 @@ select.status-select optgroup {
   gap: 10px;
   padding-top: 12px;
   border-top: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 640px) {
+  .reservation-card {
+    min-height: 0;
+  }
+
+  .reservation-card-row {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .reservation-card-row > button {
+    justify-self: flex-start;
+  }
 }
 
 .reservation-form-title {
@@ -1801,33 +2123,87 @@ select.status-select optgroup {
 }
 
 :root[data-theme="dark"] .department-card {
-  border-color: #2b4774;
+  border-color: #1f2e43;
   background:
-    radial-gradient(circle at 88% 100%, rgba(34, 211, 238, 0.16), transparent 28%),
-    radial-gradient(circle at 72% 118%, rgba(96, 165, 250, 0.16), transparent 32%),
-    linear-gradient(145deg, #14377f, #0d2557);
+    radial-gradient(circle at 88% 100%, rgba(59, 130, 246, 0.12), transparent 28%),
+    radial-gradient(circle at 72% 118%, rgba(30, 41, 59, 0.28), transparent 34%),
+    linear-gradient(180deg, rgba(14, 20, 31, 0.98), rgba(10, 16, 26, 0.98));
   box-shadow: 0 18px 32px rgba(0, 0, 0, 0.28);
 }
 
+:root[data-theme="dark"] .department-card::after {
+  background: rgba(148, 163, 184, 0.08);
+}
+
 :root[data-theme="dark"] .department-card:hover {
-  border-color: #5d87d8;
+  border-color: #385172;
   box-shadow: 0 22px 36px rgba(0, 0, 0, 0.34);
 }
 
 :root[data-theme="dark"] .department-card.active {
-  border-color: #8fb5ff;
+  border-color: #6c95ff;
   box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.24), 0 22px 36px rgba(0, 0, 0, 0.36);
 }
 
 :root[data-theme="dark"] .department-card-label,
 :root[data-theme="dark"] .department-card-count {
-  background: rgba(255, 255, 255, 0.12);
+  background: #101827;
+}
+
+:root[data-theme="dark"] .department-card-scroll {
+  scrollbar-color: rgba(71, 85, 105, 0.7) transparent;
+}
+
+:root[data-theme="dark"] .department-card-scroll::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.66);
+  background-clip: padding-box;
+}
+
+:root[data-theme="dark"] .department-card-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.76);
+  background-clip: padding-box;
+}
+
+:root[data-theme="dark"] .department-card-label {
+  color: #93c5fd;
+}
+
+:root[data-theme="dark"] .department-card-count {
+  color: #bfdbfe;
 }
 
 :root[data-theme="dark"] .saas-table th {
   background: #101725;
   color: #9fb0c9;
   border-bottom-color: #1d2839;
+}
+
+:root[data-theme="dark"] .recent-assets-table-wrap {
+  scrollbar-color: rgba(71, 85, 105, 0.7) transparent;
+}
+
+:root[data-theme="dark"] .recent-assets-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.66);
+  background-clip: padding-box;
+}
+
+:root[data-theme="dark"] .recent-assets-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.76);
+  background-clip: padding-box;
+}
+
+:root[data-theme="dark"] .dashboard-group-list {
+  scrollbar-color: rgba(71, 85, 105, 0.7) transparent;
+}
+
+:root[data-theme="dark"] .dashboard-group-list::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.66);
+  background-clip: padding-box;
+}
+
+:root[data-theme="dark"] .dashboard-group-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.76);
+  background-clip: padding-box;
 }
 
 :root[data-theme="dark"] .dashboard-page .saas-table thead,
@@ -1908,6 +2284,20 @@ select.status-select optgroup {
 :root[data-theme="dark"] .reservation-section-subtitle,
 :root[data-theme="dark"] .reservation-empty {
   color: #94a3b8;
+}
+
+:root[data-theme="dark"] .reservation-list-scroll {
+  scrollbar-color: rgba(71, 85, 105, 0.7) transparent;
+}
+
+:root[data-theme="dark"] .reservation-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.66);
+  background-clip: padding-box;
+}
+
+:root[data-theme="dark"] .reservation-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.76);
+  background-clip: padding-box;
 }
 
 :root[data-theme="dark"] .reservation-card-meta {

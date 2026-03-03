@@ -937,6 +937,7 @@ export const reserveAsset = mutation({
   args: {
     inventoryId: v.id("hardwareInventory"),
     borrowerName: v.string(),
+    department: v.string(),
     requestedDate: v.string(),
     expectedPickupDate: v.optional(v.string()),
     slipNote: v.optional(v.string()),
@@ -946,6 +947,7 @@ export const reserveAsset = mutation({
     if (!existing) throw new Error("Hardware asset not found.");
 
     const borrowerName = normalizeRequired(args.borrowerName, "Borrower Name");
+    const department = normalizeRequired(args.department, "Department");
     const requestedDate = normalizeRequired(args.requestedDate, "Requested Date");
     const expectedPickupDate = normalizeOptional(args.expectedPickupDate);
     const slipNote = normalizeOptional(args.slipNote);
@@ -966,6 +968,7 @@ export const reserveAsset = mutation({
       args.inventoryId,
       {
         reservationBorrower: borrowerName,
+        reservationDepartment: department,
         reservationRequestedDate: requestedDate,
         reservationPickupDate: expectedPickupDate,
         reservationSlipNote: slipNote,
@@ -1037,6 +1040,9 @@ export const claimReservation = mutation({
       ((existing as Record<string, unknown>).reservationBorrower as string | undefined) ?? "",
       "Reserved Borrower",
     );
+    const reservationDepartment = normalizeOptional(
+      (existing as Record<string, unknown>).reservationDepartment as string | undefined,
+    );
     const nextTurnoverTo =
       existing.turnoverTo && existing.turnoverTo.trim().toLowerCase() !== "unassigned"
         ? existing.turnoverTo
@@ -1049,6 +1055,7 @@ export const claimReservation = mutation({
       {
         status: "Borrowed",
         borrower: borrowerName,
+        department: reservationDepartment ?? existing.department,
         turnoverTo: nextTurnoverTo,
         reservationStatus: "Claimed",
         updatedAt: Date.now(),

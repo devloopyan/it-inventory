@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
 
 type TabKey = "workstation" | "master" | "storage" | "borrowed" | "available" | "reserved";
@@ -104,6 +105,10 @@ function isReservedRecord(row: Record<string, unknown>) {
 
 function getReservationBorrower(row: Record<string, unknown>) {
   return (row.reservationBorrower as string | undefined) ?? "";
+}
+
+function getReservationDepartment(row: Record<string, unknown>) {
+  return (row.reservationDepartment as string | undefined) ?? "";
 }
 
 function getReservationRequestedDate(row: Record<string, unknown>) {
@@ -220,6 +225,7 @@ export default function DashboardPage() {
   ) as unknown as (args: {
     inventoryId: never;
     borrowerName: string;
+    department: string;
     requestedDate: string;
     expectedPickupDate?: string;
     slipNote?: string;
@@ -236,6 +242,7 @@ export default function DashboardPage() {
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [reservationTargetId, setReservationTargetId] = useState<string>("");
   const [reservationBorrower, setReservationBorrower] = useState("");
+  const [reservationDepartment, setReservationDepartment] = useState("");
   const [reservationRequestedDate, setReservationRequestedDate] = useState("");
   const [reservationPickupDate, setReservationPickupDate] = useState("");
   const [reservationSlipNote, setReservationSlipNote] = useState("");
@@ -264,6 +271,7 @@ export default function DashboardPage() {
   function resetReservationForm() {
     setReservationTargetId("");
     setReservationBorrower("");
+    setReservationDepartment("");
     setReservationRequestedDate("");
     setReservationPickupDate("");
     setReservationSlipNote("");
@@ -280,6 +288,10 @@ export default function DashboardPage() {
       setReservationError("Borrower name is required.");
       return;
     }
+    if (!reservationDepartment.trim()) {
+      setReservationError("Department is required.");
+      return;
+    }
     if (!reservationRequestedDate) {
       setReservationError("Requested date is required.");
       return;
@@ -291,6 +303,7 @@ export default function DashboardPage() {
       await reserveAsset({
         inventoryId: reservationTargetId as never,
         borrowerName: reservationBorrower,
+        department: reservationDepartment,
         requestedDate: reservationRequestedDate,
         expectedPickupDate: reservationPickupDate || undefined,
         slipNote: reservationSlipNote || undefined,
@@ -444,26 +457,8 @@ export default function DashboardPage() {
       ).length,
     [allRows],
   );
-  const unassignedCount = useMemo(
-    () =>
-      (allRows ?? []).filter(
-        (row) => !row.turnoverTo || row.turnoverTo.trim().toLowerCase() === "unassigned",
-      ).length,
-    [allRows],
-  );
-  const storageCount = useMemo(
-    () => (allRows ?? []).filter((row) => row.locationPersonAssigned === "MAIN STORAGE").length,
-    [allRows],
-  );
   const reservedCount = reservedMainStorageRows.length;
   const trulyAvailableStorageCount = reservableMainStorageRows.length;
-  const priorityRows = useMemo(
-    () =>
-      (allRows ?? [])
-        .filter((row) => row.status === "For Repair" || row.status === "Borrowed")
-        .slice(0, 5),
-    [allRows],
-  );
   const visibleActivityFeed = useMemo(
     () => (activityExpanded ? activityFeed ?? [] : (activityFeed ?? []).slice(0, 3)),
     [activityFeed, activityExpanded],
@@ -501,6 +496,10 @@ export default function DashboardPage() {
               const reservationRow = row as Record<string, unknown>;
               const reserved = isReservedRecord(reservationRow);
               const reservationBorrower = getReservationBorrower(reservationRow);
+              const reservationDepartment = getReservationDepartment(reservationRow);
+              const reservationAssignee = [reservationBorrower, reservationDepartment]
+                .filter(Boolean)
+                .join(" | ");
               return (
                 <tr key={row._id} className="table-row-hover">
                   <td>{row.assetTag}</td>
@@ -511,14 +510,14 @@ export default function DashboardPage() {
                       <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.specifications ?? "-"}</div>
                       {reserved ? (
                         <div style={{ fontSize: 12, color: "#2563eb", fontWeight: 600 }}>
-                          Reserved for {reservationBorrower || "Pending borrower"}
+                          Reserved for {reservationAssignee || "Pending borrower"}
                         </div>
                       ) : null}
                     </div>
                   </td>
                   <td>{row.locationPersonAssigned ?? "-"}</td>
                   <td>{reserved ? "Reserved" : row.status}</td>
-                  <td>{reserved ? reservationBorrower || "-" : row.turnoverTo ?? "-"}</td>
+                  <td>{reserved ? reservationAssignee || "-" : row.turnoverTo ?? "-"}</td>
                 </tr>
               );
             })()
@@ -536,9 +535,7 @@ export default function DashboardPage() {
   return (
     <div className="dashboard-page">
       <h1 className="dashboard-title">Dashboard</h1>
-      <p className="dashboard-subtitle">
-        Hardware performance and operations overview.
-      </p>
+      <p className="dashboard-subtitle">Hardware performance and operations overview.</p>
 
       <div className="search-field dashboard-search">
         <span className="search-icon">
@@ -582,113 +579,7 @@ export default function DashboardPage() {
 
       <div className="dashboard-row">
         <div className="panel dashboard-panel" style={{ padding: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>Operations Queue</div>
-              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
-                Quick actions for assets that need immediate handling.
-              </div>
-            </div>
-            <button
-              className="btn-secondary"
-              type="button"
-              onClick={() => {
-                setActiveTab("master");
-                setDepartmentDrilldown("");
-              }}
-            >
-              Open Master Tracker
-            </button>
-          </div>
-          <div
-            style={{
-              marginTop: 12,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-              gap: 8,
-            }}
-          >
-            <button
-              className="btn-secondary"
-              type="button"
-              onClick={() => {
-                setSearch("");
-                setActiveTab("borrowed");
-                setDepartmentDrilldown("");
-              }}
-            >
-              Borrowed: {counts.byStatus.Borrowed}
-            </button>
-            <button
-              className="btn-secondary"
-              type="button"
-              onClick={() => {
-                setSearch("");
-                setActiveTab("storage");
-                setDepartmentDrilldown("");
-              }}
-            >
-              In Storage: {storageCount}
-            </button>
-            <button
-              className="btn-secondary"
-              type="button"
-              onClick={() => {
-                setSearch("");
-                setActiveTab("reserved");
-                setDepartmentDrilldown("");
-              }}
-            >
-              Reserved: {reservedCount}
-            </button>
-            <button
-              className="btn-secondary"
-              type="button"
-              onClick={() => {
-                setActiveTab("master");
-                setSearch("Unassigned");
-                setDepartmentDrilldown("");
-              }}
-            >
-              Unassigned: {unassignedCount}
-            </button>
-          </div>
-          <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
-            <div style={{ display: "grid", gap: 8 }}>
-              {priorityRows.map((row) => (
-                <div
-                  key={row._id}
-                  className="activity-item"
-                  style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.status}</div>
-                    <div style={{ fontWeight: 700 }}>{row.assetTag}</div>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                      {row.assetNameDescription ?? "-"} | {row.locationPersonAssigned ?? "-"}
-                    </div>
-                  </div>
-                  <button
-                    className="btn-secondary"
-                    type="button"
-                    onClick={() => {
-                      setActiveTab("master");
-                      setSearch(row.assetTag);
-                      setDepartmentDrilldown("");
-                    }}
-                    style={{ whiteSpace: "nowrap" }}
-                  >
-                    Locate
-                  </button>
-                </div>
-              ))}
-              {!priorityRows.length ? (
-                <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                  No urgent borrowed or for-repair assets right now.
-                </div>
-              ) : null}
-            </div>
-
+          <div style={{ display: "grid", gap: 12 }}>
             <div className="reservation-section reservation-section-reserved">
               <div className="reservation-section-head">
                 <div>
@@ -699,7 +590,7 @@ export default function DashboardPage() {
                   <div className="reservation-section-subtitle">
                     Reserved items are held for approved borrower slips and excluded from free availability.
                   </div>
-                </div>
+                </div>  
                 <button
                   className="btn-secondary"
                   type="button"
@@ -712,60 +603,68 @@ export default function DashboardPage() {
                   View Reserved
                 </button>
               </div>
-              {reservedMainStorageRows.slice(0, 4).map((row) => {
-                const reservationRow = row as Record<string, unknown>;
-                const pickupDate = getReservationPickupDate(reservationRow);
-                const requestDate = getReservationRequestedDate(reservationRow);
-                const reserveLabel = pickupDate ? `Pickup ${pickupDate}` : `Requested ${requestDate}`;
-                return (
-                  <div key={row._id} className="reservation-card reservation-card-reserved">
-                    <div className="reservation-card-row">
-                      <div style={{ minWidth: 0 }}>
-                        <div className="reservation-card-topline">
-                          <span className="reservation-tag">{row.assetTag}</span>
-                          <span className="reservation-chip reservation-chip-reserved">Reserved</span>
+              <div className="reservation-list reservation-list-scroll">
+                {reservedMainStorageRows.map((row) => {
+                  const reservationRow = row as Record<string, unknown>;
+                  const pickupDate = getReservationPickupDate(reservationRow);
+                  const requestDate = getReservationRequestedDate(reservationRow);
+                  const reservationAssignee = [
+                    getReservationBorrower(reservationRow),
+                    getReservationDepartment(reservationRow),
+                  ]
+                    .filter(Boolean)
+                    .join(" | ");
+                  const reserveLabel = pickupDate ? `Pickup ${pickupDate}` : `Requested ${requestDate}`;
+                  return (
+                    <div key={row._id} className="reservation-card reservation-card-reserved">
+                      <div className="reservation-card-row">
+                        <div style={{ minWidth: 0 }}>
+                          <div className="reservation-card-topline">
+                            <span className="reservation-tag">{row.assetTag}</span>
+                            <span className="reservation-chip reservation-chip-reserved">Reserved</span>
+                          </div>
+                          <div className="reservation-card-text">
+                            {row.assetNameDescription ?? "-"} | Reserved for {reservationAssignee || "Pending borrower"}
+                          </div>
+                          <div className="reservation-card-meta">{reserveLabel}</div>
                         </div>
-                        <div className="reservation-card-text">
-                          {row.assetNameDescription ?? "-"} | Reserved for {getReservationBorrower(reservationRow)}
+                        <div className="reservation-card-actions">
+                          <button
+                            className="btn-primary"
+                            type="button"
+                            disabled={reservationBusyId === row._id}
+                            onClick={() => void handleClaimReservation(String(row._id))}
+                          >
+                            Claim
+                          </button>
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            disabled={reservationBusyId === row._id}
+                            onClick={() => void handleCancelReservation(String(row._id))}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            onClick={() => {
+                              setActiveTab("master");
+                              setSearch(row.assetTag);
+                              setDepartmentDrilldown("");
+                            }}
+                          >
+                            View
+                          </button>
                         </div>
-                        <div className="reservation-card-meta">{reserveLabel}</div>
-                      </div>
-                      <div className="reservation-card-actions">
-                        <button
-                          className="btn-primary"
-                          type="button"
-                          disabled={reservationBusyId === row._id}
-                          onClick={() => void handleClaimReservation(String(row._id))}
-                        >
-                          Claim
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          type="button"
-                          disabled={reservationBusyId === row._id}
-                          onClick={() => void handleCancelReservation(String(row._id))}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          type="button"
-                          onClick={() => {
-                            setActiveTab("master");
-                            setSearch(row.assetTag);
-                            setDepartmentDrilldown("");
-                          }}
-                        >
-                          View
-                        </button>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-              {!reservedMainStorageRows.length ? (
-                <div className="reservation-empty">No reserved main-storage assets right now.</div>
-              ) : null}
+                  );
+                })}
+                {!reservedMainStorageRows.length ? (
+                  <div className="reservation-empty">No reserved main-storage assets right now.</div>
+                ) : null}
+              </div>
             </div>
 
             <div className="reservation-section reservation-section-available">
@@ -780,8 +679,8 @@ export default function DashboardPage() {
                   Ready to reserve now: {trulyAvailableStorageCount}
                 </div>
               </div>
-              <div className="reservation-list">
-                {reservableMainStorageRows.slice(0, 4).map((row) => (
+              <div className="reservation-list reservation-list-scroll">
+                {reservableMainStorageRows.map((row) => (
                   <div key={row._id} className="reservation-card reservation-card-available">
                     <div className="reservation-card-row">
                       <div style={{ minWidth: 0 }}>
@@ -819,16 +718,37 @@ export default function DashboardPage() {
                       allRows?.find((row) => String(row._id) === reservationTargetId)
                     )?.assetTag ?? "selected asset"}
                   </div>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                      Borrower Name
+                  <div className="reservation-form-grid">
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                        Borrower Name
+                      </div>
+                      <input
+                        className="input-base reservation-input"
+                        value={reservationBorrower}
+                        onChange={(e) => setReservationBorrower(e.target.value)}
+                        placeholder="Enter borrower name"
+                        aria-label="Borrower name"
+                      />
                     </div>
-                    <input
-                      className="input-base reservation-input"
-                      value={reservationBorrower}
-                      onChange={(e) => setReservationBorrower(e.target.value)}
-                      placeholder="Enter borrower name"
-                    />
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                        Department
+                      </div>
+                      <select
+                        className="input-base reservation-input"
+                        value={reservationDepartment}
+                        onChange={(e) => setReservationDepartment(e.target.value)}
+                        aria-label="Reservation department"
+                      >
+                        <option value="">Select department</option>
+                        {HARDWARE_DEPARTMENTS.map((department) => (
+                          <option key={department} value={department}>
+                            {department}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div className="reservation-form-grid">
                     <div style={{ display: "grid", gap: 6 }}>
@@ -891,47 +811,68 @@ export default function DashboardPage() {
             <div className="reservation-error reservation-error-inline">{reservationError}</div>
           ) : null}
         </div>
-        <div className="panel dashboard-panel" style={{ padding: 16 }}>
-          <h3 style={{ marginTop: 0, marginBottom: 6 }}>Assets per Department</h3>
-          <p style={{ marginTop: 0, marginBottom: 10, fontSize: 12, color: "var(--muted)" }}>
-            Includes only officially turned-over assets with signed turnover forms attached.
-          </p>
-          <div className="department-card-grid">
-            {assetsPerDepartment.map(([department, count]) => (
-              <button
-                key={department}
-                type="button"
-                className={`department-card${
-                  departmentDrilldown === department ? " active" : ""
-                }`}
-                onClick={() => {
-                  setActiveTab("master");
-                  setSearch("");
-                  setDepartmentDrilldown(department);
-                }}
-              >
-                <span className="department-card-label">Qualified Assets</span>
-                <div className="department-card-row">
-                  <span className="department-card-name">{department}</span>
-                  <strong className="department-card-count">{count}</strong>
+        <div className="dashboard-side-stack">
+          <div className="dashboard-reminder-card">
+            <span className="dashboard-reminder-badge">REMINDER</span>
+            <div className="dashboard-reminder-title">Follow up on reserved assets before pickup.</div>
+            <div className="dashboard-reminder-copy">
+              Review borrower, department, and pickup details so reservations stay accurate and
+              ready to claim.
+            </div>
+            <button
+              className="dashboard-reminder-btn"
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setActiveTab("reserved");
+                setDepartmentDrilldown("");
+              }}
+            >
+              Review Now
+            </button>
+          </div>
+          <div className="panel dashboard-panel" style={{ padding: 16 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>Assets per Department</h3>
+            <p style={{ marginTop: 0, marginBottom: 10, fontSize: 12, color: "var(--muted)" }}>
+              Includes only officially turned-over assets with signed turnover forms attached.
+            </p>
+            <div className="department-card-grid">
+              {assetsPerDepartment.map(([department, count]) => (
+                <button
+                  key={department}
+                  type="button"
+                  className={`department-card${
+                    departmentDrilldown === department ? " active" : ""
+                  }`}
+                  onClick={() => {
+                    setActiveTab("master");
+                    setSearch("");
+                    setDepartmentDrilldown(department);
+                  }}
+                >
+                  <span className="department-card-label">Qualified Assets</span>
+                  <div className="department-card-row">
+                    <span className="department-card-name">{department}</span>
+                    <strong className="department-card-count">{count}</strong>
+                  </div>
+                </button>
+              ))}
+              {!assetsPerDepartment.length ? (
+                <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                  No departments meet the turnover + signed-form requirement yet.
                 </div>
-              </button>
-            ))}
-            {!assetsPerDepartment.length ? (
-              <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                No departments meet the turnover + signed-form requirement yet.
-              </div>
-            ) : null}
-            {departmentDrilldown ? (
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => setDepartmentDrilldown("")}
-                style={{ marginTop: 4 }}
-              >
-                Clear Department Drilldown
-              </button>
-            ) : null}
+              ) : null}
+              {departmentDrilldown ? (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setDepartmentDrilldown("")}
+                  style={{ marginTop: 4 }}
+                >
+                  Clear Department Drilldown
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
@@ -1023,9 +964,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="panel dashboard-panel" style={{ padding: 16 }}>
+        <div className="panel dashboard-panel recent-assets-card" style={{ padding: 16 }}>
           <h3 style={{ marginTop: 0, marginBottom: 10 }}>Recent Assets</h3>
-          <div className="saas-table-wrap">
+          <div className="saas-table-wrap recent-assets-table-wrap">
             <table className="saas-table" style={{ minWidth: 0 }}>
               <thead>
                 <tr>
@@ -1081,9 +1022,9 @@ export default function DashboardPage() {
         {activeTab === "master" ? (
           renderTable(masterRowsWithDepartmentDrilldown)
         ) : (
-          <div style={{ display: "grid", gap: 16 }}>
+          <div className="dashboard-group-list" style={{ display: "grid", gap: 16 }}>
             {[...groupedRows.entries()].map(([group, rows]) => (
-              <div key={group} className="saas-card" style={{ padding: 12 }}>
+              <div key={group} className="saas-card dashboard-group-card" style={{ padding: 12 }}>
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>{group}</div>
                 {renderTable(rows)}
               </div>

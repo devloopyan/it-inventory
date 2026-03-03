@@ -69,6 +69,7 @@ export default defineSchema({
     warranty: v.optional(v.string()),
     remarks: v.optional(v.string()),
     reservationBorrower: v.optional(v.string()),
+    reservationDepartment: v.optional(v.string()),
     reservationRequestedDate: v.optional(v.string()),
     reservationPickupDate: v.optional(v.string()),
     reservationSlipNote: v.optional(v.string()),
