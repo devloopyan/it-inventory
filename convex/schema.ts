@@ -45,14 +45,17 @@ export default defineSchema({
     specsTier: v.optional(v.string()),
     desktopMonitorAssetTag: v.optional(v.string()),
     desktopMonitorSlot: v.optional(v.string()),
+    desktopMonitorSerialNumber: v.optional(v.string()),
     desktopMonitorSpecs: v.optional(v.string()),
     desktopMonitorConsumables: v.optional(v.string()),
     desktopSystemUnitAssetTag: v.optional(v.string()),
     desktopSystemUnitSpecs: v.optional(v.string()),
     desktopCaseBrand: v.optional(v.string()),
     desktopMouseAssetTag: v.optional(v.string()),
+    desktopMouseSerialNumber: v.optional(v.string()),
     desktopMouseSpecs: v.optional(v.string()),
     desktopKeyboardAssetTag: v.optional(v.string()),
+    desktopKeyboardSerialNumber: v.optional(v.string()),
     desktopKeyboardSpecs: v.optional(v.string()),
     workstationComponents: v.optional(
       v.array(
@@ -77,6 +80,8 @@ export default defineSchema({
     imageStorageId: v.optional(v.id("_storage")),
     receivingFormStorageId: v.optional(v.id("_storage")),
     turnoverFormStorageId: v.optional(v.id("_storage")),
+    droneFlightReportStorageId: v.optional(v.id("_storage")),
+    droneMissingPartsNote: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

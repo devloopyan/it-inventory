@@ -389,7 +389,7 @@ export default function DashboardPage() {
             row.locationPersonAssigned === "MAIN STORAGE" &&
             isReservedRecord(row as Record<string, unknown>),
         );
-      case "available":
+      case "available": 
         return searched.filter(
           (row) =>
             row.locationPersonAssigned === "MAIN STORAGE" &&
@@ -577,9 +577,9 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="dashboard-row">
-        <div className="panel dashboard-panel" style={{ padding: 16 }}>
-          <div style={{ display: "grid", gap: 12 }}>
+      <div className="dashboard-row dashboard-row-primary">
+        <div className="panel dashboard-panel dashboard-primary-panel" style={{ padding: 16 }}>
+          <div className="dashboard-reservation-stack">
             <div className="reservation-section reservation-section-reserved">
               <div className="reservation-section-head">
                 <div>
@@ -831,12 +831,12 @@ export default function DashboardPage() {
               Review Now
             </button>
           </div>
-          <div className="panel dashboard-panel" style={{ padding: 16 }}>
+          <div className="panel dashboard-panel dashboard-department-panel" style={{ padding: 16 }}>
             <h3 style={{ marginTop: 0, marginBottom: 6 }}>Assets per Department</h3>
             <p style={{ marginTop: 0, marginBottom: 10, fontSize: 12, color: "var(--muted)" }}>
               Includes only officially turned-over assets with signed turnover forms attached.
             </p>
-            <div className="department-card-grid">
+            <div className="department-card-grid department-card-scroll">
               {assetsPerDepartment.map(([department, count]) => (
                 <button
                   key={department}
@@ -877,8 +877,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="dashboard-row">
-        <div className="panel dashboard-panel" style={{ padding: 16 }}>
+      <div className="dashboard-row dashboard-row-secondary">
+        <div className="panel dashboard-panel dashboard-activity-panel" style={{ padding: 16 }}>
           <div
             style={{
               display: "flex",
@@ -900,7 +900,7 @@ export default function DashboardPage() {
               </button>
             ) : null}
           </div>
-          <div className="activity-feed">
+          <div className="activity-feed activity-feed-scroll">
             {visibleActivityFeed.map((event) => {
               const meta = getActivityMeta(event.eventType);
               return (
@@ -964,7 +964,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="panel dashboard-panel recent-assets-card" style={{ padding: 16 }}>
+        <div className="panel dashboard-panel dashboard-secondary-panel recent-assets-card" style={{ padding: 16 }}>
           <h3 style={{ marginTop: 0, marginBottom: 10 }}>Recent Assets</h3>
           <div className="saas-table-wrap recent-assets-table-wrap">
             <table className="saas-table" style={{ minWidth: 0 }}>

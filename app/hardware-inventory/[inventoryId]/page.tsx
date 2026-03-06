@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
@@ -15,6 +15,7 @@ const statuses = HARDWARE_STATUSES;
 const assetTypeOptions = HARDWARE_ASSET_TYPES;
 const departmentOptions = HARDWARE_DEPARTMENTS;
 const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRID"] as const;
+const hardwareInventoryPendingToastKey = "hardware-inventory:pending-toast";
 
 type FormState = {
   assetTag: string;
@@ -100,6 +101,15 @@ function DetailItem({
   );
 }
 
+function EditField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: "grid", gap: 6 }}>
+      <div className="form-action-label">{label}</div>
+      {children}
+    </div>
+  );
+}
+
 export default function HardwareInventoryDetailPage() {
   const params = useParams<{ inventoryId: string }>();
   const router = useRouter();
@@ -120,24 +130,34 @@ export default function HardwareInventoryDetailPage() {
   const receivingFormStorageId = (row as Record<string, unknown> | undefined)?.receivingFormStorageId as
     | Id<"_storage">
     | undefined;
+  const droneFlightReportStorageId = (row as Record<string, unknown> | undefined)
+    ?.droneFlightReportStorageId as Id<"_storage"> | undefined;
   const receivingFormUrl = useQuery(
     api.hardwareInventory.getImageUrl,
     row && receivingFormStorageId ? { storageId: receivingFormStorageId } : "skip",
+  );
+  const droneFlightReportUrl = useQuery(
+    api.hardwareInventory.getImageUrl,
+    row && droneFlightReportStorageId ? { storageId: droneFlightReportStorageId } : "skip",
   );
 
   const [isEditing, setIsEditing] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [actionToast, setActionToast] = useState<{ id: number; message: string } | null>(null);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [clearImage, setClearImage] = useState(false);
   const [selectedReceivingFormFile, setSelectedReceivingFormFile] = useState<File | null>(null);
   const [clearReceivingForm, setClearReceivingForm] = useState(false);
   const [selectedTurnoverFormFile, setSelectedTurnoverFormFile] = useState<File | null>(null);
   const [clearTurnoverForm, setClearTurnoverForm] = useState(false);
+  const [selectedDroneFlightReportFile, setSelectedDroneFlightReportFile] = useState<File | null>(null);
+  const [clearDroneFlightReport, setClearDroneFlightReport] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const receivingFormInputRef = useRef<HTMLInputElement | null>(null);
   const turnoverFormInputRef = useRef<HTMLInputElement | null>(null);
+  const droneFlightReportInputRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<FormState>({
     assetTag: "",
     assetType: "",
@@ -155,6 +175,18 @@ export default function HardwareInventoryDetailPage() {
     warranty: "",
     remarks: "",
   });
+
+  useEffect(() => {
+    if (!actionToast) return;
+
+    const timeout = window.setTimeout(() => {
+      setActionToast(null);
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [actionToast]);
 
   if (row === undefined) {
     return <div className="panel" style={{ padding: 16 }}>Loading asset details...</div>;
@@ -174,6 +206,7 @@ export default function HardwareInventoryDetailPage() {
   const asset = row;
   const assetStatus = (asset.status as HardwareStatus) ?? "Available";
   const isDesktopAsset = asset.assetType === "Desktop/PC";
+  const isDroneAsset = asset.assetType === "Drone";
 
   function openEditor() {
     setForm({
@@ -205,6 +238,8 @@ export default function HardwareInventoryDetailPage() {
     setClearReceivingForm(false);
     setSelectedTurnoverFormFile(null);
     setClearTurnoverForm(false);
+    setSelectedDroneFlightReportFile(null);
+    setClearDroneFlightReport(false);
     if (imageInputRef.current) {
       imageInputRef.current.value = "";
     }
@@ -214,7 +249,23 @@ export default function HardwareInventoryDetailPage() {
     if (turnoverFormInputRef.current) {
       turnoverFormInputRef.current.value = "";
     }
+    if (droneFlightReportInputRef.current) {
+      droneFlightReportInputRef.current.value = "";
+    }
     setIsEditing(true);
+  }
+
+  function showActionToast(message: string, persistForNextPage = false) {
+    if (persistForNextPage) {
+      try {
+        window.sessionStorage.setItem(hardwareInventoryPendingToastKey, message);
+      } catch {
+        // If storage is unavailable, let the action continue without cross-page toast handoff.
+      }
+      return;
+    }
+
+    setActionToast({ id: Date.now(), message });
   }
 
   async function handleSave() {
@@ -235,6 +286,14 @@ export default function HardwareInventoryDetailPage() {
           isDesktopAsset ? "Turnover Date" : "Assigned Date"
         }, Purchase Date, and Remarks are optional.`,
       );
+      return;
+    }
+
+    const isDroneEdit = form.assetType.trim().toLowerCase() === "drone";
+    const isReturningBorrowedDrone = isDroneEdit && assetStatus === "Borrowed" && form.status !== "Borrowed";
+    const hasCurrentDroneFlightReport = Boolean(droneFlightReportStorageId && !clearDroneFlightReport);
+    if (isReturningBorrowedDrone && !selectedDroneFlightReportFile && !hasCurrentDroneFlightReport) {
+      setFormError("Drone flight report is required when returning a borrowed drone.");
       return;
     }
 
@@ -300,6 +359,26 @@ export default function HardwareInventoryDetailPage() {
         }
         turnoverFormStorageId = uploadData.storageId;
       }
+      let droneFlightReportStorageIdToSave: Id<"_storage"> | undefined;
+      if (selectedDroneFlightReportFile) {
+        const uploadUrl = await generateUploadUrl();
+        const uploadResult = await fetch(uploadUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": selectedDroneFlightReportFile.type || "application/octet-stream",
+          },
+          body: selectedDroneFlightReportFile,
+        });
+        if (!uploadResult.ok) {
+          throw new Error("Drone flight report upload failed.");
+        }
+
+        const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
+        if (!uploadData.storageId) {
+          throw new Error("Drone flight report upload failed.");
+        }
+        droneFlightReportStorageIdToSave = uploadData.storageId;
+      }
       await updateAsset({
         inventoryId,
         assetTag: form.assetTag,
@@ -321,9 +400,11 @@ export default function HardwareInventoryDetailPage() {
         imageStorageId,
         receivingFormStorageId: receivingFormStorageIdToSave,
         turnoverFormStorageId,
+        droneFlightReportStorageId: droneFlightReportStorageIdToSave,
         clearImage,
         clearReceivingForm,
         clearTurnoverForm,
+        clearDroneFlightReport,
       });
       setSelectedImageFile(null);
       setClearImage(false);
@@ -331,6 +412,8 @@ export default function HardwareInventoryDetailPage() {
       setClearReceivingForm(false);
       setSelectedTurnoverFormFile(null);
       setClearTurnoverForm(false);
+      setSelectedDroneFlightReportFile(null);
+      setClearDroneFlightReport(false);
       if (imageInputRef.current) {
         imageInputRef.current.value = "";
       }
@@ -340,7 +423,11 @@ export default function HardwareInventoryDetailPage() {
       if (turnoverFormInputRef.current) {
         turnoverFormInputRef.current.value = "";
       }
+      if (droneFlightReportInputRef.current) {
+        droneFlightReportInputRef.current.value = "";
+      }
       setIsEditing(false);
+      showActionToast("Asset details updated successfully.");
       router.refresh();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Unable to update asset.");
@@ -364,6 +451,7 @@ export default function HardwareInventoryDetailPage() {
     try {
       setIsDeleting(true);
       await removeAsset({ inventoryId });
+      showActionToast(`Asset ${asset.assetTag} deleted successfully.`, true);
       router.push("/hardware-inventory");
     } catch (error) {
       console.error(error);
@@ -383,9 +471,15 @@ export default function HardwareInventoryDetailPage() {
     form.department as (typeof departmentOptions)[number],
   );
   const canEditBorrower = form.status === "Borrowed";
+  const isDroneAssetSelected = form.assetType.trim().toLowerCase() === "drone";
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      {actionToast ? (
+        <div className="floating-toast floating-toast-success" role="status" aria-live="polite">
+          {actionToast.message}
+        </div>
+      ) : null}
       <section className="panel saas-card-hover" style={{ padding: 18 }}>
         <div
           style={{
@@ -597,6 +691,32 @@ export default function HardwareInventoryDetailPage() {
               <div style={{ color: "var(--muted)" }}>No signed turnover form attached.</div>
             )}
           </section>
+          {isDroneAsset ? (
+            <section className="panel" style={{ padding: 14 }}>
+              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>
+                Drone Flight Report
+              </div>
+              {droneFlightReportStorageId ? (
+                droneFlightReportUrl ? (
+                  <a
+                    href={droneFlightReportUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary"
+                    style={{ display: "inline-block", textDecoration: "none" }}
+                  >
+                    Open Drone Flight Report
+                  </a>
+                ) : (
+                  <div style={{ color: "var(--muted)" }}>Loading report...</div>
+                )
+              ) : (
+                <div style={{ color: "var(--muted)" }}>
+                  No drone flight report attached yet.
+                </div>
+              )}
+            </section>
+          ) : null}
 
           <section
             className="panel"
@@ -660,91 +780,109 @@ export default function HardwareInventoryDetailPage() {
               gap: 8,
             }}
           >
-            <input
-              className="input-base"
-              value={form.assetTag}
-              onChange={(e) => setForm((prev) => ({ ...prev, assetTag: e.target.value }))}
-              placeholder="Asset Tag"
-            />
-            <select
-              className="input-base"
-              value={form.assetType}
-              onChange={(e) => setForm((prev) => ({ ...prev, assetType: e.target.value }))}
-            >
-              {!selectedAssetTypeInOptions && form.assetType ? (
-                <option value={form.assetType}>{form.assetType}</option>
-              ) : null}
-              <option value="">Select asset type</option>
-              {assetTypeOptions.map((assetType) => (
-                <option key={assetType} value={assetType}>
-                  {assetType}
-                </option>
-              ))}
-            </select>
-            <input
-              className="input-base"
-              value={form.assetNameDescription}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, assetNameDescription: e.target.value }))
-              }
-              placeholder="Asset Name or Description"
-            />
-            <input
-              className="input-base"
-              value={form.specifications}
-              onChange={(e) => setForm((prev) => ({ ...prev, specifications: e.target.value }))}
-              placeholder="Specifications"
-            />
-            <input
-              className="input-base"
-              value={form.serialNumber}
-              onChange={(e) => setForm((prev) => ({ ...prev, serialNumber: e.target.value }))}
-              placeholder="Serial Number"
-            />
-            <select
-              className="input-base"
-              value={form.locationPersonAssigned}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, locationPersonAssigned: e.target.value }))
-              }
-            >
-              {!selectedLocationInOptions && form.locationPersonAssigned ? (
-                <option value={form.locationPersonAssigned}>{form.locationPersonAssigned}</option>
-              ) : null}
-              <option value="">Select Location</option>
-              {locationOptions.map((location) => (
-                <option key={location} value={location}>
-                  {location}
-                </option>
-              ))}
-            </select>
-            <input
-              className="input-base"
-              value={form.personAssigned}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  personAssigned: e.target.value,
-                  turnoverTo: e.target.value.trim() ? e.target.value : "Unassigned",
-                }))
-              }
-              placeholder="Turnover To (optional)"
-            />
-            <select
-              className="input-base"
-              value={form.department}
-              onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
-            >
-              {!selectedDepartmentInOptions && form.department ? (
-                <option value={form.department}>{form.department}</option>
-              ) : null}
-              <option value="">Select department</option>
-              {departmentOptions.map((department) => (
-                <option key={department} value={department}>
-                  {department}
-                </option>
-              ))}
-            </select>
+            <EditField label="Asset Tag">
+              <input
+                className="input-base input-readonly-tone"
+                value={form.assetTag}
+                placeholder="Asset Tag"
+                readOnly
+                aria-label="Asset tag (read only)"
+              />
+            </EditField>
+            <EditField label="Asset Type">
+              <select
+                className="input-base"
+                value={form.assetType}
+                onChange={(e) => setForm((prev) => ({ ...prev, assetType: e.target.value }))}
+              >
+                {!selectedAssetTypeInOptions && form.assetType ? (
+                  <option value={form.assetType}>{form.assetType}</option>
+                ) : null}
+                <option value="">Select asset type</option>
+                {assetTypeOptions.map((assetType) => (
+                  <option key={assetType} value={assetType}>
+                    {assetType}
+                  </option>
+                ))}
+              </select>
+            </EditField>
+            <EditField label="Asset Name / Description">
+              <input
+                className="input-base"
+                value={form.assetNameDescription}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, assetNameDescription: e.target.value }))
+                }
+                placeholder="Asset Name or Description"
+              />
+            </EditField>
+            <EditField label="Specifications">
+              <input
+                className="input-base"
+                value={form.specifications}
+                onChange={(e) => setForm((prev) => ({ ...prev, specifications: e.target.value }))}
+                placeholder="Specifications"
+              />
+            </EditField>
+            <EditField label="Serial Number">
+              <input
+                className="input-base"
+                value={form.serialNumber}
+                onChange={(e) => setForm((prev) => ({ ...prev, serialNumber: e.target.value }))}
+                placeholder="Serial Number"
+              />
+            </EditField>
+            <EditField label="Location">
+              <select
+                className="input-base"
+                value={form.locationPersonAssigned}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, locationPersonAssigned: e.target.value }))
+                }
+              >
+                {!selectedLocationInOptions && form.locationPersonAssigned ? (
+                  <option value={form.locationPersonAssigned}>{form.locationPersonAssigned}</option>
+                ) : null}
+                <option value="">Select Location</option>
+                {locationOptions.map((location) => (
+                  <option key={location} value={location}>
+                    {location}
+                  </option>
+                ))}
+              </select>
+            </EditField>
+            <EditField label="Turnover To">
+              <input
+                className="input-base"
+                value={form.personAssigned}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    personAssigned: e.target.value,
+                    turnoverTo: e.target.value.trim() ? e.target.value : "Unassigned",
+                  }))
+                }
+                placeholder="Turnover To (optional)"
+              />
+            </EditField>
+            <EditField label="Department">
+              <select
+                className="input-base"
+                value={form.department}
+                onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
+              >
+                {!selectedDepartmentInOptions && form.department ? (
+                  <option value={form.department}>{form.department}</option>
+                ) : null}
+                <option value="">Select department</option>
+                {departmentOptions.map((department) => (
+                  <option key={department} value={department}>
+                    {department}
+                  </option>
+                ))}
+              </select>
+            </EditField>
+            <EditField label="Status">
               <select
                 className="input-base status-select"
                 style={{
@@ -771,44 +909,55 @@ export default function HardwareInventoryDetailPage() {
                   </option>
                 ))}
               </select>
-            <input
-              className="input-base"
-              value={canEditBorrower ? form.borrower : "none"}
-              onChange={(e) => setForm((prev) => ({ ...prev, borrower: e.target.value }))}
-              placeholder="Borrower"
-              disabled={!canEditBorrower}
-              style={
-                canEditBorrower
-                  ? undefined
-                  : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
-              }
-            />
-            <input
-              className="input-base"
-              type="date"
-              value={form.assignedDate}
-              onChange={(e) => setForm((prev) => ({ ...prev, assignedDate: e.target.value }))}
-              placeholder={isDesktopAsset ? "Turnover Date (optional)" : "Assigned Date (optional)"}
-            />
-            <input
-              className="input-base"
-              type="date"
-              value={form.purchaseDate}
-              onChange={(e) => setForm((prev) => ({ ...prev, purchaseDate: e.target.value }))}
-              placeholder="Purchase Date"
-            />
-            <input
-              className="input-base"
-              value={form.warranty}
-              onChange={(e) => setForm((prev) => ({ ...prev, warranty: e.target.value }))}
-              placeholder="Warranty"
-            />
-            <input
-              className="input-base"
-              value={form.remarks}
-              onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
-              placeholder="Remarks (optional)"
-            />
+            </EditField>
+            <EditField label="Borrower">
+              <input
+                className="input-base"
+                value={canEditBorrower ? form.borrower : "none"}
+                onChange={(e) => setForm((prev) => ({ ...prev, borrower: e.target.value }))}
+                placeholder="Borrower"
+                disabled={!canEditBorrower}
+                style={
+                  canEditBorrower
+                    ? undefined
+                    : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
+                }
+              />
+            </EditField>
+            <EditField label={isDesktopAsset ? "Turnover Date" : "Assigned Date"}>
+              <input
+                className="input-base"
+                type="date"
+                value={form.assignedDate}
+                onChange={(e) => setForm((prev) => ({ ...prev, assignedDate: e.target.value }))}
+                placeholder={isDesktopAsset ? "Turnover Date (optional)" : "Assigned Date (optional)"}
+              />
+            </EditField>
+            <EditField label="Purchase Date">
+              <input
+                className="input-base"
+                type="date"
+                value={form.purchaseDate}
+                onChange={(e) => setForm((prev) => ({ ...prev, purchaseDate: e.target.value }))}
+                placeholder="Purchase Date"
+              />
+            </EditField>
+            <EditField label="Warranty">
+              <input
+                className="input-base"
+                value={form.warranty}
+                onChange={(e) => setForm((prev) => ({ ...prev, warranty: e.target.value }))}
+                placeholder="Warranty"
+              />
+            </EditField>
+            <EditField label="Remarks">
+              <input
+                className="input-base"
+                value={form.remarks}
+                onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
+                placeholder="Remarks (optional)"
+              />
+            </EditField>
             <div style={{ display: "grid", gap: 6 }}>
               <FileUploadCard
                 label="Asset Image"
@@ -940,6 +1089,53 @@ export default function HardwareInventoryDetailPage() {
                 }}
               />
             </div>
+            {isDroneAssetSelected ? (
+              <div style={{ display: "grid", gap: 6 }}>
+                <FileUploadCard
+                  label="Drone Flight Report"
+                  inputRef={droneFlightReportInputRef}
+                  accept=".pdf,image/*"
+                  onFileChange={(file) => {
+                    setSelectedDroneFlightReportFile(file);
+                    if (file) {
+                      setClearDroneFlightReport(false);
+                    }
+                  }}
+                  hasAttachment={Boolean(
+                    selectedDroneFlightReportFile ||
+                      (droneFlightReportStorageId && !clearDroneFlightReport),
+                  )}
+                  displayName={
+                    selectedDroneFlightReportFile
+                      ? selectedDroneFlightReportFile.name
+                      : droneFlightReportStorageId && !clearDroneFlightReport
+                        ? "Current drone flight report"
+                        : "Drone flight report"
+                  }
+                  helperText={
+                    selectedDroneFlightReportFile
+                      ? "New report selected. Save to replace the current report."
+                      : droneFlightReportStorageId && !clearDroneFlightReport
+                        ? "A drone flight report is already attached."
+                        : "Required when returning a borrowed drone."
+                  }
+                  badge="PDF"
+                  ariaLabel="Drone flight report upload"
+                  onRemove={() => {
+                    if (selectedDroneFlightReportFile) {
+                      setSelectedDroneFlightReportFile(null);
+                      if (droneFlightReportInputRef.current) {
+                        droneFlightReportInputRef.current.value = "";
+                      }
+                      return;
+                    }
+                    if (droneFlightReportStorageId) {
+                      setClearDroneFlightReport(true);
+                    }
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
 
           {formError ? <p style={{ color: "#b91c1c", margin: 0 }}>{formError}</p> : null}

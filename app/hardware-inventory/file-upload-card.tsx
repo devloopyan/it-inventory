@@ -43,7 +43,21 @@ export default function FileUploadCard({
       />
       <div className={`file-card ${hasAttachment ? "attached" : ""}`}>
         <div className="file-card-icon" aria-hidden="true">
-          <span>{badge}</span>
+          <span className={`file-card-badge ${hasAttachment ? "is-attached" : ""}`}>
+            {hasAttachment ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M5 12.5L9.5 17L19 7.5"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              badge
+            )}
+          </span>
         </div>
         <div className="file-card-body">
           <div className="file-card-name">{displayName}</div>

@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import FileUploadCard from "./file-upload-card";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
-import { HARDWARE_ASSET_TYPES } from "@/lib/hardwareAssetTypes";
+import { HARDWARE_ASSET_TYPES, buildNextHardwareAssetTag } from "@/lib/hardwareAssetTypes";
 import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
 
 const statuses = HARDWARE_STATUSES;
@@ -16,22 +16,35 @@ const departmentOptions = HARDWARE_DEPARTMENTS;
 const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRID"] as const;
 const workstationTypes = ["Laptop", "Desktop/PC"] as const;
 const specsTierOptions = ["LOW", "MID", "HIGH-END"] as const;
-const monitorSlotOptions = ["Monitor 1", "Monitor 2"] as const;
 const componentTypeOptions = ["Monitor", "Headset", "Keyboard", "Mouse", "Speaker", "Other"] as const;
+const hardwareInventoryPendingToastKey = "hardware-inventory:pending-toast";
 
-type RegisterMode = "general" | "workstation";
+type RegisterMode = "general" | "workstation" | "droneKit";
 type WorkstationType = (typeof workstationTypes)[number];
 type SpecsTier = (typeof specsTierOptions)[number];
-type MonitorSlot = (typeof monitorSlotOptions)[number];
 type ExtraComponent = {
   assetTag: string;
   componentType: string;
   specifications: string;
 };
 
+type DroneKitFormState = {
+  receivedBy: string;
+  receivedDate: string;
+  droneUnitSerialNumber: string;
+  droneUnitSpecs: string;
+  batterySerialNumber: string;
+  batterySpecs: string;
+  propellerSpecs: string;
+  chargerSerialNumber: string;
+  chargerSpecs: string;
+  controllerSerialNumber: string;
+  controllerSpecs: string;
+};
+
 type DesktopFormState = {
   monitorAssetTag: string;
-  monitorSlot: MonitorSlot | "";
+  monitorSerialNumber: string;
   monitorSpecs: string;
   monitorConsumables: string;
   systemUnitAssetTag: string;
@@ -44,10 +57,11 @@ type DesktopFormState = {
   systemUnitGraphicsCard: string;
   systemUnitPsu: string;
   systemUnitCase: string;
-  caseBrand: string;
   mouseAssetTag: string;
+  mouseSerialNumber: string;
   mouseSpecs: string;
   keyboardAssetTag: string;
+  keyboardSerialNumber: string;
   keyboardSpecs: string;
   extraComponents: ExtraComponent[];
 };
@@ -103,7 +117,7 @@ const defaultForm: FormState = {
 
 const defaultDesktopForm: DesktopFormState = {
   monitorAssetTag: "",
-  monitorSlot: "Monitor 1",
+  monitorSerialNumber: "",
   monitorSpecs: "",
   monitorConsumables: "",
   systemUnitAssetTag: "",
@@ -116,12 +130,27 @@ const defaultDesktopForm: DesktopFormState = {
   systemUnitGraphicsCard: "",
   systemUnitPsu: "",
   systemUnitCase: "",
-  caseBrand: "",
   mouseAssetTag: "",
+  mouseSerialNumber: "",
   mouseSpecs: "",
   keyboardAssetTag: "",
+  keyboardSerialNumber: "",
   keyboardSpecs: "",
   extraComponents: [],
+};
+
+const defaultDroneKitForm: DroneKitFormState = {
+  receivedBy: "",
+  receivedDate: "",
+  droneUnitSerialNumber: "",
+  droneUnitSpecs: "",
+  batterySerialNumber: "",
+  batterySpecs: "",
+  propellerSpecs: "",
+  chargerSerialNumber: "",
+  chargerSpecs: "",
+  controllerSerialNumber: "",
+  controllerSpecs: "",
 };
 
 const statusStyles: Record<
@@ -138,6 +167,8 @@ const statusStyles: Record<
   "Pre-owned": { background: "#fef3c7", color: "#b45309", borderColor: "#fcd34d" },
 };
 
+const DRONE_KIT_DEFAULT_DEPARTMENT = "IT OPERATIONS";
+
 function formatValue(value?: string) {
   if (!value) return "-";
   return value;
@@ -146,15 +177,16 @@ function formatValue(value?: string) {
 function buildDesktopSpecificationsSummary(args: {
   specsTier?: string;
   monitorAssetTag?: string;
-  monitorSlot?: string;
+  monitorSerialNumber?: string;
   monitorSpecs?: string;
   monitorConsumables?: string;
   systemUnitAssetTag?: string;
   systemUnitSpecs?: string;
-  caseBrand?: string;
   mouseAssetTag?: string;
+  mouseSerialNumber?: string;
   mouseSpecs?: string;
   keyboardAssetTag?: string;
+  keyboardSerialNumber?: string;
   keyboardSpecs?: string;
   extraComponents: ExtraComponent[];
 }) {
@@ -163,17 +195,19 @@ function buildDesktopSpecificationsSummary(args: {
     args.systemUnitSpecs
       ? `System Unit${args.systemUnitAssetTag ? ` (${args.systemUnitAssetTag})` : ""}: ${args.systemUnitSpecs}`
       : "",
-    args.caseBrand ? `Case Brand: ${args.caseBrand}` : "",
-    args.monitorSlot && args.monitorSpecs
-      ? `${args.monitorSlot}${args.monitorAssetTag ? ` (${args.monitorAssetTag})` : ""}: ${args.monitorSpecs}`
+    args.monitorSpecs
+      ? `Monitor${args.monitorAssetTag ? ` (${args.monitorAssetTag})` : ""}: ${args.monitorSpecs}`
       : "",
+    args.monitorSerialNumber ? `Monitor Serial Number: ${args.monitorSerialNumber}` : "",
     args.monitorConsumables ? `Monitor Consumables: ${args.monitorConsumables}` : "",
     args.mouseSpecs
       ? `Mouse${args.mouseAssetTag ? ` (${args.mouseAssetTag})` : ""}: ${args.mouseSpecs}`
       : "",
+    args.mouseSerialNumber ? `Mouse Serial Number: ${args.mouseSerialNumber}` : "",
     args.keyboardSpecs
       ? `Keyboard${args.keyboardAssetTag ? ` (${args.keyboardAssetTag})` : ""}: ${args.keyboardSpecs}`
       : "",
+    args.keyboardSerialNumber ? `Keyboard Serial Number: ${args.keyboardSerialNumber}` : "",
     args.extraComponents.length
       ? `Extra Components: ${args.extraComponents
           .map((component) => `${component.componentType} (${component.assetTag})`)
@@ -214,12 +248,160 @@ function buildSystemUnitSpecs(args: Pick<
   return specParts.join(" | ");
 }
 
+function resolveExtraComponentAssetType(componentType?: string) {
+  switch (componentType) {
+    case "Monitor":
+      return "Monitor";
+    case "Headset":
+      return "Headset";
+    case "Keyboard":
+      return "Keyboard";
+    case "Mouse":
+      return "Mouse";
+    case "Speaker":
+      return "Speaker";
+    case "Other":
+    default:
+      return "Other IT Asset";
+  }
+}
+
+function collectReservedAssetTags(
+  rows: Array<{
+    assetTag?: string;
+    desktopMonitorAssetTag?: string;
+    desktopSystemUnitAssetTag?: string;
+    desktopMouseAssetTag?: string;
+    desktopKeyboardAssetTag?: string;
+    workstationComponents?: { assetTag?: string }[];
+  }>,
+) {
+  const tags: string[] = [];
+
+  for (const row of rows) {
+    const rowTags = [
+      row.assetTag,
+      row.desktopMonitorAssetTag,
+      row.desktopSystemUnitAssetTag,
+      row.desktopMouseAssetTag,
+      row.desktopKeyboardAssetTag,
+      ...(row.workstationComponents?.map((component) => component.assetTag) ?? []),
+    ];
+
+    for (const tag of rowTags) {
+      const next = tag?.trim();
+      if (next) {
+        tags.push(next);
+      }
+    }
+  }
+
+  return tags;
+}
+
+function buildDesktopGeneratedTags(existingTags: string[], extraComponents: ExtraComponent[]) {
+  const reservedTags = [...existingTags];
+  const nextTag = (assetType: string) => {
+    const tag = buildNextHardwareAssetTag(assetType, reservedTags);
+    if (tag) {
+      reservedTags.push(tag);
+    }
+    return tag;
+  };
+
+  const systemUnitAssetTag = nextTag("Desktop/PC");
+  const monitorAssetTag = nextTag("Monitor");
+  const mouseAssetTag = nextTag("Mouse");
+  const keyboardAssetTag = nextTag("Keyboard");
+  const mainAssetTag = systemUnitAssetTag ? `${systemUnitAssetTag}-SET` : "";
+  const extraComponentsWithTags = extraComponents.map((component) => ({
+    ...component,
+    assetTag: nextTag(resolveExtraComponentAssetType(component.componentType)),
+  }));
+
+  return {
+    mainAssetTag,
+    monitorAssetTag,
+    systemUnitAssetTag,
+    mouseAssetTag,
+    keyboardAssetTag,
+    extraComponents: extraComponentsWithTags,
+  };
+}
+
+function buildDroneKitGeneratedTags(existingTags: string[]) {
+  const reservedTags = [...existingTags];
+  const nextTag = (assetType: string) => {
+    const tag = buildNextHardwareAssetTag(assetType, reservedTags);
+    if (tag) {
+      reservedTags.push(tag);
+    }
+    return tag;
+  };
+
+  const droneUnitAssetTag = nextTag("Drone");
+  const batteryAssetTag = nextTag("Drone Battery");
+  const propellerAssetTag = nextTag("Drone Propeller");
+  const chargerAssetTag = nextTag("Drone Charger");
+  const controllerAssetTag = nextTag("Drone Controller");
+  const kitAssetTag = droneUnitAssetTag ? `${droneUnitAssetTag}-KIT` : "";
+
+  return {
+    kitAssetTag,
+    droneUnitAssetTag,
+    batteryAssetTag,
+    propellerAssetTag,
+    chargerAssetTag,
+    controllerAssetTag,
+  };
+}
+
+function buildDroneKitSpecificationsSummary(args: {
+  droneUnitAssetTag?: string;
+  droneUnitSpecs?: string;
+  batteryAssetTag?: string;
+  batterySpecs?: string;
+  batterySerialNumber?: string;
+  propellerAssetTag?: string;
+  propellerSpecs?: string;
+  chargerAssetTag?: string;
+  chargerSpecs?: string;
+  chargerSerialNumber?: string;
+  controllerAssetTag?: string;
+  controllerSpecs?: string;
+  controllerSerialNumber?: string;
+}) {
+  const summaryParts = [
+    args.droneUnitSpecs
+      ? `Drone Unit${args.droneUnitAssetTag ? ` (${args.droneUnitAssetTag})` : ""}: ${args.droneUnitSpecs}`
+      : "",
+    args.batterySpecs
+      ? `Battery${args.batteryAssetTag ? ` (${args.batteryAssetTag})` : ""}: ${args.batterySpecs}`
+      : "",
+    args.batterySerialNumber ? `Battery Serial Number: ${args.batterySerialNumber}` : "",
+    args.propellerSpecs
+      ? `Propeller${args.propellerAssetTag ? ` (${args.propellerAssetTag})` : ""}: ${args.propellerSpecs}`
+      : "",
+    args.chargerSpecs
+      ? `Charger${args.chargerAssetTag ? ` (${args.chargerAssetTag})` : ""}: ${args.chargerSpecs}`
+      : "",
+    args.chargerSerialNumber ? `Charger Serial Number: ${args.chargerSerialNumber}` : "",
+    args.controllerSpecs
+      ? `Controller${args.controllerAssetTag ? ` (${args.controllerAssetTag})` : ""}: ${args.controllerSpecs}`
+      : "",
+    args.controllerSerialNumber ? `Controller Serial Number: ${args.controllerSerialNumber}` : "",
+  ].filter(Boolean);
+
+  return summaryParts.join(" | ");
+}
+
 export default function HardwareInventoryPage() {
   const router = useRouter();
   const [registerMode, setRegisterMode] = useState<RegisterMode>("general");
   const [workstationType, setWorkstationType] = useState<WorkstationType>("Laptop");
   const [specTier, setSpecTier] = useState<SpecsTier | "">("");
   const [desktopForm, setDesktopForm] = useState(defaultDesktopForm);
+  const [droneKitForm, setDroneKitForm] = useState(defaultDroneKitForm);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
@@ -234,16 +416,9 @@ export default function HardwareInventoryPage() {
   const [sortKey, setSortKey] = useState<SortKey>("assetTag");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [inlineEdits, setInlineEdits] = useState<
-    Record<
-      string,
-      Partial<FormState> & {
-        turnoverTo?: string;
-        borrower?: string;
-        status?: FormState["status"];
-      }
-    >
+    Record<string, { status: HardwareStatus; borrower: string }>
   >({});
-  const [inlineStatus, setInlineStatus] = useState<Record<string, string>>({});
+  const [inlineSavingId, setInlineSavingId] = useState<string>("");
 
   const pageSize = 10;
   const result = useQuery(api.hardwareInventory.list, {
@@ -254,6 +429,12 @@ export default function HardwareInventoryPage() {
     sortDir,
     page,
     pageSize,
+  });
+  const assetTagSeedResult = useQuery(api.hardwareInventory.list, {
+    sortKey: "assetTag",
+    sortDir: "asc",
+    page: 1,
+    pageSize: 5000,
   });
 
   const createAsset = useMutation(api.hardwareInventory.create);
@@ -266,33 +447,37 @@ export default function HardwareInventoryPage() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const receivingFormInputRef = useRef<HTMLInputElement | null>(null);
   const turnoverFormInputRef = useRef<HTMLInputElement | null>(null);
-  const inlineSaveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const isDesktopWorkstation = registerMode === "workstation" && workstationType === "Desktop/PC";
+  const isDroneKitMode = registerMode === "droneKit";
 
   useEffect(() => {
     if (migrationRan.current) return;
     if (!result?.items?.length) return;
     const needsMigration = result.items.some(
-      (row) =>
+      (row) => {
+        const legacyRow = row as Record<string, unknown>;
+        const hasLegacyMonitorSlot =
+          typeof legacyRow.desktopMonitorSlot === "string" && legacyRow.desktopMonitorSlot.trim().length > 0;
+        const hasMonitorSerialNumber =
+          typeof legacyRow.desktopMonitorSerialNumber === "string" &&
+          legacyRow.desktopMonitorSerialNumber.trim().length > 0;
+        return (
         !row.assetType ||
         !row.assetNameDescription ||
         !row.specifications ||
         !row.locationPersonAssigned ||
         !row.department ||
         !row.turnoverTo ||
-        !row.warranty,
+        !row.warranty ||
+        (hasLegacyMonitorSlot && !hasMonitorSerialNumber)
+        );
+      },
     );
     if (!needsMigration) return;
 
     migrationRan.current = true;
     void migrateLegacy();
   }, [result?.items, migrateLegacy]);
-  useEffect(() => {
-    const inlineSaveTimers = inlineSaveTimersRef.current;
-    return () => {
-      Object.values(inlineSaveTimers).forEach((timer) => clearTimeout(timer));
-    };
-  }, []);
   useEffect(() => {
     if (!formSuccess) return;
 
@@ -304,8 +489,33 @@ export default function HardwareInventoryPage() {
       window.clearTimeout(timeout);
     };
   }, [formSuccess]);
+  useEffect(() => {
+    const pendingMessage = window.sessionStorage.getItem(hardwareInventoryPendingToastKey);
+    if (!pendingMessage) return;
+
+    window.sessionStorage.removeItem(hardwareInventoryPendingToastKey);
+    setFormSuccess({ id: Date.now(), message: pendingMessage });
+  }, []);
 
   const tableRows = result?.items ?? [];
+  const knownAssetTags = collectReservedAssetTags(assetTagSeedResult?.items ?? []);
+  const assetTypeForCreate =
+    registerMode === "workstation" ? workstationType : isDroneKitMode ? "Drone" : form.assetType;
+  const desktopGeneratedTags =
+    assetTagSeedResult && isDesktopWorkstation
+      ? buildDesktopGeneratedTags(knownAssetTags, desktopForm.extraComponents)
+      : null;
+  const droneKitGeneratedTags =
+    assetTagSeedResult && isDroneKitMode
+      ? buildDroneKitGeneratedTags(knownAssetTags)
+      : null;
+  const autoAssetTag = assetTagSeedResult
+    ? isDesktopWorkstation
+      ? desktopGeneratedTags?.mainAssetTag ?? ""
+      : isDroneKitMode
+        ? droneKitGeneratedTags?.kitAssetTag ?? ""
+      : buildNextHardwareAssetTag(assetTypeForCreate, knownAssetTags)
+    : "";
 
   const headerConfig: { label: string; key: SortKey | null }[] = [
     { label: "Asset Tag", key: "assetTag" },
@@ -318,6 +528,98 @@ export default function HardwareInventoryPage() {
   ];
 
   const totalPages = result?.totalPages ?? 1;
+
+  function resolveRowStatus(row: (typeof tableRows)[number]) {
+    const current = row.status as HardwareStatus;
+    return statuses.includes(current) ? current : "Available";
+  }
+
+  function resolveRowBorrower(row: (typeof tableRows)[number]) {
+    return ((row as Record<string, unknown>).borrower as string | undefined) ?? "";
+  }
+
+  function getInlineRowState(row: (typeof tableRows)[number]) {
+    const key = String(row._id);
+    const baseStatus = resolveRowStatus(row);
+    const baseBorrower = resolveRowBorrower(row);
+    return inlineEdits[key] ?? { status: baseStatus, borrower: baseBorrower };
+  }
+
+  async function persistInlineUpdate(
+    row: (typeof tableRows)[number],
+    nextStatus: HardwareStatus,
+    nextBorrower: string,
+  ) {
+    const rowId = String(row._id);
+    const locationPersonAssigned = row.locationPersonAssigned ?? row.location ?? "";
+    const turnoverTo = row.assignedTo ?? row.turnoverTo ?? "Unassigned";
+    const assetType = row.assetType ?? "";
+    const assetNameDescription = row.assetNameDescription ?? "";
+    const specifications = row.specifications ?? "";
+    const department = row.department ?? "";
+    const warranty = row.warranty ?? "";
+    const serialNumber = row.serialNumber ?? "";
+
+    if (
+      !row.assetTag ||
+      !assetType ||
+      !assetNameDescription ||
+      !specifications ||
+      !serialNumber ||
+      !locationPersonAssigned ||
+      !department ||
+      !warranty
+    ) {
+      setFormError("This row has incomplete data. Open Asset Details to complete required fields first.");
+      return;
+    }
+
+    try {
+      setInlineSavingId(rowId);
+      setFormError("");
+      await updateAsset({
+        inventoryId: row._id,
+        assetTag: row.assetTag,
+        assetType,
+        assetNameDescription,
+        specifications,
+        serialNumber,
+        locationPersonAssigned,
+        department,
+        status: nextStatus,
+        turnoverTo,
+        borrower: nextStatus === "Borrowed" ? nextBorrower.trim() || undefined : undefined,
+        personAssigned: row.assignedTo || undefined,
+        assignedDate: row.assignedDate || undefined,
+        turnoverDate: row.turnoverDate || undefined,
+        purchaseDate: row.purchaseDate || undefined,
+        warranty,
+        remarks: row.remarks || undefined,
+      });
+      setFormSuccess({ id: Date.now(), message: `${row.assetTag} updated successfully.` });
+    } catch (error) {
+      setInlineEdits((prev) => ({
+        ...prev,
+        [rowId]: {
+          status: resolveRowStatus(row),
+          borrower: resolveRowBorrower(row),
+        },
+      }));
+      setFormError(error instanceof Error ? error.message : "Unable to update asset row.");
+    } finally {
+      setInlineSavingId((current) => (current === rowId ? "" : current));
+    }
+  }
+
+  async function handleInlineBorrowerCommit(row: (typeof tableRows)[number]) {
+    const editState = getInlineRowState(row);
+    const baseStatus = resolveRowStatus(row);
+    const baseBorrower = resolveRowBorrower(row).trim();
+
+    if (editState.status !== "Borrowed") return;
+    if (editState.status === baseStatus && editState.borrower.trim() === baseBorrower) return;
+    await persistInlineUpdate(row, editState.status, editState.borrower);
+  }
 
   const handleSort = (key: SortKey | null) => {
     if (!key) return;
@@ -332,37 +634,73 @@ export default function HardwareInventoryPage() {
   async function handleCreate() {
     setFormError("");
     setFormSuccess(null);
-    const desktopBaseAssetTag = desktopForm.systemUnitAssetTag.trim();
+    if (!assetTagSeedResult) {
+      setFormError("Asset tags are still loading. Please wait a moment and try again.");
+      return;
+    }
+
     const systemUnitSpecsToSave = isDesktopWorkstation ? buildSystemUnitSpecs(desktopForm) : "";
-    const assetTagToSave = isDesktopWorkstation
-      ? `${desktopBaseAssetTag}-SET`
-      : form.assetTag.trim();
-    const assetTypeToSave = registerMode === "workstation" ? workstationType : form.assetType;
+    const assetTagToSave = autoAssetTag;
+    const desktopExtraComponentsToSave = desktopGeneratedTags?.extraComponents ?? [];
+    const assetTypeToSave =
+      registerMode === "workstation" ? workstationType : isDroneKitMode ? "Drone" : form.assetType;
     const assetNameDescriptionToSave = isDesktopWorkstation
       ? "Desktop/PC Workstation"
+      : isDroneKitMode
+        ? "Drone Kit"
       : form.assetNameDescription;
+    const droneKitSpecificationsToSave = isDroneKitMode
+      ? buildDroneKitSpecificationsSummary({
+          droneUnitAssetTag: droneKitGeneratedTags?.droneUnitAssetTag,
+          droneUnitSpecs: droneKitForm.droneUnitSpecs,
+          batteryAssetTag: droneKitGeneratedTags?.batteryAssetTag,
+          batterySpecs: droneKitForm.batterySpecs,
+          batterySerialNumber: droneKitForm.batterySerialNumber,
+          propellerAssetTag: droneKitGeneratedTags?.propellerAssetTag,
+          propellerSpecs: droneKitForm.propellerSpecs,
+          chargerAssetTag: droneKitGeneratedTags?.chargerAssetTag,
+          chargerSpecs: droneKitForm.chargerSpecs,
+          chargerSerialNumber: droneKitForm.chargerSerialNumber,
+          controllerAssetTag: droneKitGeneratedTags?.controllerAssetTag,
+          controllerSpecs: droneKitForm.controllerSpecs,
+          controllerSerialNumber: droneKitForm.controllerSerialNumber,
+        })
+      : "";
     const specificationsToSave = isDesktopWorkstation
       ? buildDesktopSpecificationsSummary({
           specsTier: specTier,
-          monitorAssetTag: desktopForm.monitorAssetTag,
-          monitorSlot: desktopForm.monitorSlot,
+          monitorAssetTag: desktopGeneratedTags?.monitorAssetTag,
+          monitorSerialNumber: desktopForm.monitorSerialNumber,
           monitorSpecs: desktopForm.monitorSpecs,
           monitorConsumables: desktopForm.monitorConsumables,
-          systemUnitAssetTag: desktopForm.systemUnitAssetTag,
+          systemUnitAssetTag: desktopGeneratedTags?.systemUnitAssetTag,
           systemUnitSpecs: systemUnitSpecsToSave,
-          caseBrand: desktopForm.caseBrand,
-          mouseAssetTag: desktopForm.mouseAssetTag,
+          mouseAssetTag: desktopGeneratedTags?.mouseAssetTag,
+          mouseSerialNumber: desktopForm.mouseSerialNumber,
           mouseSpecs: desktopForm.mouseSpecs,
-          keyboardAssetTag: desktopForm.keyboardAssetTag,
+          keyboardAssetTag: desktopGeneratedTags?.keyboardAssetTag,
+          keyboardSerialNumber: desktopForm.keyboardSerialNumber,
           keyboardSpecs: desktopForm.keyboardSpecs,
-          extraComponents: desktopForm.extraComponents,
+          extraComponents: desktopExtraComponentsToSave,
         })
+      : isDroneKitMode
+        ? droneKitSpecificationsToSave
       : registerMode === "workstation" && specTier
         ? `[${specTier}] ${form.specifications}`
         : form.specifications;
     const serialNumberToSave = isDesktopWorkstation
       ? `${assetTagToSave}-SERIAL`
-      : form.serialNumber;
+      : isDroneKitMode
+        ? droneKitForm.droneUnitSerialNumber
+        : form.serialNumber;
+    const departmentToSave = isDroneKitMode ? DRONE_KIT_DEFAULT_DEPARTMENT : form.department;
+    const personAssignedToSave = isDroneKitMode ? droneKitForm.receivedBy : form.personAssigned;
+    const assignedDateToSave = isDroneKitMode
+      ? droneKitForm.receivedDate
+      : isDesktopWorkstation
+        ? ""
+        : form.assignedDate;
+    const turnoverDateToSave = isDesktopWorkstation ? form.assignedDate || undefined : undefined;
     if (
       !assetTagToSave ||
       !assetTypeToSave ||
@@ -370,14 +708,15 @@ export default function HardwareInventoryPage() {
       !specificationsToSave ||
       !serialNumberToSave ||
       !form.locationPersonAssigned ||
-      !form.department ||
+      !departmentToSave ||
       !form.status ||
       !form.warranty
     ) {
+      const optionalHelpText = isDroneKitMode
+        ? "Purchase Date, Remarks, and Received by are optional. Received Date is required."
+        : `${isDesktopWorkstation ? "Turnover Date" : "Assigned Date"}, Purchase Date, and Remarks are optional.`;
       setFormError(
-        `Required fields are missing. ${
-          isDesktopWorkstation ? "Turnover Date" : "Assigned Date"
-        }, Purchase Date, and Remarks are optional.`,
+        `Required fields are missing. ${optionalHelpText}`,
       );
       return;
     }
@@ -385,36 +724,54 @@ export default function HardwareInventoryPage() {
       setFormError("Specs Tier is required for workstation entries.");
       return;
     }
-    if (isDesktopWorkstation) {
+    if (isDroneKitMode) {
       if (
-        !desktopForm.monitorAssetTag ||
-        !desktopForm.monitorSlot ||
-        !desktopForm.monitorSpecs ||
-        !desktopForm.systemUnitAssetTag ||
-        !systemUnitSpecsToSave ||
-        !desktopForm.caseBrand
+        !droneKitGeneratedTags?.droneUnitAssetTag ||
+        !droneKitGeneratedTags?.batteryAssetTag ||
+        !droneKitGeneratedTags?.propellerAssetTag ||
+        !droneKitGeneratedTags?.chargerAssetTag ||
+        !droneKitGeneratedTags?.controllerAssetTag
+      ) {
+        setFormError("Drone kit component asset tags are still generating. Please try again.");
+        return;
+      }
+      if (
+        !droneKitForm.receivedDate.trim() ||
+        !droneKitForm.droneUnitSerialNumber.trim() ||
+        !droneKitForm.droneUnitSpecs.trim() ||
+        !droneKitForm.batterySpecs.trim() ||
+        !droneKitForm.propellerSpecs.trim() ||
+        !droneKitForm.chargerSpecs.trim() ||
+        !droneKitForm.controllerSpecs.trim()
       ) {
         setFormError(
-          "Desktop/PC entries require monitor and system unit asset tags plus complete details.",
+          "Drone kit requires Received Date, Drone Unit Serial Number, and specs for Drone Unit, Battery, Propeller, Charger, and Controller.",
         );
         return;
       }
-      const hasMouseFields = Boolean(desktopForm.mouseAssetTag || desktopForm.mouseSpecs);
-      if (hasMouseFields && (!desktopForm.mouseAssetTag.trim() || !desktopForm.mouseSpecs.trim())) {
-        setFormError("Mouse Asset Tag and Mouse Specs must both be filled in.");
-        return;
-      }
-      const hasKeyboardFields = Boolean(
-        desktopForm.keyboardAssetTag || desktopForm.keyboardSpecs,
-      );
+    }
+    if (isDesktopWorkstation) {
       if (
-        hasKeyboardFields &&
-        (!desktopForm.keyboardAssetTag.trim() || !desktopForm.keyboardSpecs.trim())
+        !desktopGeneratedTags?.monitorAssetTag ||
+        !desktopForm.monitorSerialNumber ||
+        !desktopForm.monitorSpecs ||
+        !desktopGeneratedTags?.systemUnitAssetTag ||
+        !systemUnitSpecsToSave
       ) {
-        setFormError("Keyboard Asset Tag and Keyboard Specs must both be filled in.");
+        setFormError(
+          "Desktop/PC entries require monitor and system unit details.",
+        );
         return;
       }
-      const invalidComponent = desktopForm.extraComponents.some(
+      if (!desktopGeneratedTags?.mouseAssetTag || !desktopGeneratedTags?.keyboardAssetTag) {
+        setFormError("Mouse and Keyboard asset tags are still generating. Please try again.");
+        return;
+      }
+      if (!desktopForm.mouseSpecs.trim() || !desktopForm.keyboardSpecs.trim()) {
+        setFormError("Mouse and Keyboard specs are required for Desktop/PC entries.");
+        return;
+      }
+      const invalidComponent = desktopExtraComponentsToSave.some(
         (component) =>
           !component.assetTag.trim() ||
           !component.componentType.trim() ||
@@ -501,11 +858,11 @@ export default function HardwareInventoryPage() {
         specifications: specificationsToSave,
         serialNumber: serialNumberToSave,
         locationPersonAssigned: form.locationPersonAssigned,
-        personAssigned: form.personAssigned || undefined,
-        department: form.department,
+        personAssigned: personAssignedToSave.trim() ? personAssignedToSave : undefined,
+        department: departmentToSave,
         status: form.status,
-        assignedDate: isDesktopWorkstation ? undefined : form.assignedDate,
-        turnoverDate: isDesktopWorkstation ? form.assignedDate || undefined : undefined,
+        assignedDate: assignedDateToSave || undefined,
+        turnoverDate: turnoverDateToSave,
         purchaseDate: form.purchaseDate,
         warranty: form.warranty,
         remarks: form.remarks || undefined,
@@ -516,9 +873,11 @@ export default function HardwareInventoryPage() {
         workstationType: registerMode === "workstation" ? workstationType : undefined,
         specsTier: registerMode === "workstation" ? specTier || undefined : undefined,
         desktopMonitorAssetTag: isDesktopWorkstation
-          ? desktopForm.monitorAssetTag || undefined
+          ? desktopGeneratedTags?.monitorAssetTag || undefined
           : undefined,
-        desktopMonitorSlot: isDesktopWorkstation ? desktopForm.monitorSlot || undefined : undefined,
+        desktopMonitorSerialNumber: isDesktopWorkstation
+          ? desktopForm.monitorSerialNumber || undefined
+          : undefined,
         desktopMonitorSpecs: isDesktopWorkstation
           ? desktopForm.monitorSpecs || undefined
           : undefined,
@@ -526,30 +885,66 @@ export default function HardwareInventoryPage() {
           ? desktopForm.monitorConsumables || undefined
           : undefined,
         desktopSystemUnitAssetTag: isDesktopWorkstation
-          ? desktopForm.systemUnitAssetTag || undefined
+          ? desktopGeneratedTags?.systemUnitAssetTag || undefined
           : undefined,
         desktopSystemUnitSpecs: isDesktopWorkstation
           ? systemUnitSpecsToSave || undefined
           : undefined,
-        desktopCaseBrand: isDesktopWorkstation ? desktopForm.caseBrand || undefined : undefined,
-        desktopMouseAssetTag: isDesktopWorkstation ? desktopForm.mouseAssetTag || undefined : undefined,
+        desktopMouseAssetTag:
+          isDesktopWorkstation ? desktopGeneratedTags?.mouseAssetTag || undefined : undefined,
+        desktopMouseSerialNumber: isDesktopWorkstation
+          ? desktopForm.mouseSerialNumber || undefined
+          : undefined,
         desktopMouseSpecs: isDesktopWorkstation ? desktopForm.mouseSpecs || undefined : undefined,
         desktopKeyboardAssetTag: isDesktopWorkstation
-          ? desktopForm.keyboardAssetTag || undefined
+          ? desktopGeneratedTags?.keyboardAssetTag || undefined
+          : undefined,
+        desktopKeyboardSerialNumber: isDesktopWorkstation
+          ? desktopForm.keyboardSerialNumber || undefined
           : undefined,
         desktopKeyboardSpecs: isDesktopWorkstation
           ? desktopForm.keyboardSpecs || undefined
           : undefined,
         workstationComponents: isDesktopWorkstation
-          ? desktopForm.extraComponents.map((component) => ({
+          ? desktopExtraComponentsToSave.map((component) => ({
               assetTag: component.assetTag.trim(),
               componentType: component.componentType.trim(),
               specifications: component.specifications.trim(),
             }))
+          : isDroneKitMode
+            ? [
+                {
+                  assetTag: droneKitGeneratedTags?.batteryAssetTag ?? "",
+                  componentType: "Drone Battery",
+                  specifications: droneKitForm.batterySerialNumber.trim()
+                    ? `${droneKitForm.batterySpecs.trim()} | Serial: ${droneKitForm.batterySerialNumber.trim()}`
+                    : droneKitForm.batterySpecs.trim(),
+                },
+                {
+                  assetTag: droneKitGeneratedTags?.propellerAssetTag ?? "",
+                  componentType: "Drone Propeller",
+                  specifications: droneKitForm.propellerSpecs.trim(),
+                },
+                {
+                  assetTag: droneKitGeneratedTags?.chargerAssetTag ?? "",
+                  componentType: "Drone Charger",
+                  specifications: droneKitForm.chargerSerialNumber.trim()
+                    ? `${droneKitForm.chargerSpecs.trim()} | Serial: ${droneKitForm.chargerSerialNumber.trim()}`
+                    : droneKitForm.chargerSpecs.trim(),
+                },
+                {
+                  assetTag: droneKitGeneratedTags?.controllerAssetTag ?? "",
+                  componentType: "Drone Controller",
+                  specifications: droneKitForm.controllerSerialNumber.trim()
+                    ? `${droneKitForm.controllerSpecs.trim()} | Serial: ${droneKitForm.controllerSerialNumber.trim()}`
+                    : droneKitForm.controllerSpecs.trim(),
+                },
+              ]
           : undefined,
       });
       setForm(defaultForm);
       setDesktopForm(defaultDesktopForm);
+      setDroneKitForm(defaultDroneKitForm);
       setSpecTier("");
       setSelectedImageFile(null);
       setSelectedReceivingFormFile(null);
@@ -564,7 +959,16 @@ export default function HardwareInventoryPage() {
         turnoverFormInputRef.current.value = "";
       }
       setPage(1);
-      setFormSuccess({ id: Date.now(), message: "Asset created successfully." });
+      setFormSuccess({
+        id: Date.now(),
+        message: `Asset ${
+          isDesktopWorkstation
+            ? desktopGeneratedTags?.systemUnitAssetTag ?? assetTagToSave
+            : isDroneKitMode
+              ? droneKitGeneratedTags?.droneUnitAssetTag ?? assetTagToSave
+              : assetTagToSave
+        } created successfully.`,
+      });
     } catch (error) {
       setFormSuccess(null);
       setFormError(error instanceof Error ? error.message : "Unable to save asset.");
@@ -572,114 +976,6 @@ export default function HardwareInventoryPage() {
       setIsSaving(false);
     }
   }
-
-  function queueInlineSave(
-    rowId: Id<"hardwareInventory">,
-    value: Partial<FormState> & { turnoverTo?: string; borrower?: string; personAssigned?: string },
-  ) {
-    setInlineEdits((prev) => {
-      const merged = { ...prev[rowId], ...value };
-      if (value.personAssigned !== undefined) {
-        merged.turnoverTo = value.personAssigned.trim() ? value.personAssigned : "Unassigned";
-      }
-      const timerKey = String(rowId);
-      if (inlineSaveTimersRef.current[timerKey]) {
-        clearTimeout(inlineSaveTimersRef.current[timerKey]);
-      }
-      inlineSaveTimersRef.current[timerKey] = setTimeout(() => {
-        void saveInline(rowId, merged);
-      }, 250);
-      return {
-        ...prev,
-        [rowId]: merged,
-      };
-    });
-  }
-
-  async function saveInline(
-    rowId: Id<"hardwareInventory">,
-    editsOverride?: Partial<FormState> & {
-      turnoverTo?: string;
-      borrower?: string;
-      personAssigned?: string;
-      status?: FormState["status"];
-    },
-  ) {
-    const row = tableRows.find((item) => item._id === rowId);
-    if (!row) return;
-
-    const edits = editsOverride ?? inlineEdits[rowId];
-    if (!edits) return;
-
-    const next = {
-      assetTag: row.assetTag,
-      assetType: row.assetType ?? "",
-      assetNameDescription: row.assetNameDescription ?? "",
-      specifications: row.specifications ?? "",
-      serialNumber: row.serialNumber,
-      locationPersonAssigned: row.location ?? row.locationPersonAssigned ?? "",
-      personAssigned: row.assignedTo ?? "",
-      department: row.department ?? "",
-      status: row.status,
-      turnoverTo: row.turnoverTo ?? "Unassigned",
-      borrower: (row as Record<string, unknown>).borrower?.toString() ?? "",
-      assignedDate: row.assignedDate ?? "",
-      purchaseDate: row.purchaseDate ?? "",
-      warranty: row.warranty ?? "",
-      remarks: row.remarks ?? "",
-      ...edits,
-    };
-
-    const hasChanges = Object.keys(edits).some((key) => {
-      const nextValue = (next as Record<string, unknown>)[key] ?? "";
-      const rowValue = (row as Record<string, unknown>)[key] ?? "";
-      return String(nextValue) !== String(rowValue);
-    });
-    if (!hasChanges) return;
-
-    try {
-      await updateAsset({
-        inventoryId: rowId,
-        assetTag: next.assetTag,
-        assetType: next.assetType,
-        assetNameDescription: next.assetNameDescription,
-        specifications: next.specifications,
-        serialNumber: next.serialNumber,
-        locationPersonAssigned: next.locationPersonAssigned,
-        personAssigned: next.personAssigned || undefined,
-        department: next.department,
-        status: next.status,
-        turnoverTo: next.turnoverTo,
-        borrower: next.borrower || undefined,
-        assignedDate: next.assignedDate,
-        purchaseDate: next.purchaseDate,
-        warranty: next.warranty,
-        remarks: next.remarks || undefined,
-      });
-      setInlineEdits((prev) => {
-        const nextState = { ...prev };
-        delete nextState[rowId];
-        return nextState;
-      });
-      const timerKey = String(rowId);
-      if (inlineSaveTimersRef.current[timerKey]) {
-        clearTimeout(inlineSaveTimersRef.current[timerKey]);
-        delete inlineSaveTimersRef.current[timerKey];
-      }
-      setInlineStatus((prev) => ({ ...prev, [rowId]: "" }));
-    } catch (error) {
-      setInlineStatus((prev) => ({
-        ...prev,
-        [rowId]: error instanceof Error ? error.message : "Save failed.",
-      }));
-    }
-  }
-
-  const smallInput = {
-    height: 32,
-    padding: "0 8px",
-    fontSize: 13,
-  } as const;
 
   function handleEdit(inventoryId: Id<"hardwareInventory">) {
     router.push(`/hardware-inventory/${inventoryId}`);
@@ -735,6 +1031,17 @@ export default function HardwareInventoryPage() {
             >
               Add Workstation
             </button>
+            <button
+              type="button"
+              className={`register-pill-tab ${registerMode === "droneKit" ? "active" : ""}`}
+              onClick={() => {
+                setRegisterMode("droneKit");
+                setSpecTier("");
+                setForm((prev) => ({ ...prev, assetType: "Drone" }));
+              }}
+            >
+              Add Drone Kit
+            </button>
           </div>
           {registerMode === "workstation" ? (
             <div className="register-subtabs">
@@ -763,28 +1070,42 @@ export default function HardwareInventoryPage() {
         >
           {!isDesktopWorkstation ? (
             <div style={{ display: "grid", gap: 4 }}>
-              <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-              </label>
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
               <input
-                className="input-base"
-                placeholder="Asset Tag"
-                value={form.assetTag}
-                onChange={(e) => setForm((prev) => ({ ...prev, assetTag: e.target.value }))}
-              />
+              className="input-base input-readonly-tone"
+              placeholder={
+                assetTypeForCreate
+                  ? assetTagSeedResult
+                    ? "Generating asset tag"
+                    : "Loading next asset tag"
+                  : "Select asset type first"
+              }
+              value={autoAssetTag}
+              readOnly
+              aria-label={isDesktopWorkstation ? "Auto-generated main asset tag" : "Auto-generated asset tag"}
+              style={{
+                color: autoAssetTag ? "var(--foreground)" : "var(--muted)",
+                fontWeight: autoAssetTag ? 700 : 500,
+              }}
+            />
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+              Generated automatically as IT-[TYPE]-0000.
+            </div>
             </div>
           ) : null}
           <div style={{ display: "grid", gap: 4 }}>
             <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
               Asset Type <span style={{ color: "#dc2626" }}>*</span>
             </label>
-            {registerMode === "workstation" ? (
+            {registerMode === "workstation" || isDroneKitMode ? (
               <input
-                className="input-base"
-                value={workstationType}
+                className="input-base input-readonly-tone"
+                value={isDroneKitMode ? "Drone" : workstationType}
                 readOnly
-                aria-label="Workstation type"
-                style={{ background: "#f8fafc", color: "var(--foreground)" }}
+                aria-label={isDroneKitMode ? "Drone kit type" : "Workstation type"}
+                style={{ color: "var(--foreground)", fontWeight: 600 }}
               />
             ) : (
               <select
@@ -801,7 +1122,7 @@ export default function HardwareInventoryPage() {
               </select>
             )}
           </div>
-          {!isDesktopWorkstation ? (
+          {!isDesktopWorkstation && !isDroneKitMode ? (
             <div style={{ display: "grid", gap: 4 }}>
               <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
                 Asset Name or Description <span style={{ color: "#dc2626" }}>*</span>
@@ -816,7 +1137,7 @@ export default function HardwareInventoryPage() {
               />
             </div>
           ) : null}
-          {!isDesktopWorkstation ? (
+          {!isDesktopWorkstation && !isDroneKitMode ? (
             <div style={{ display: "grid", gap: 4 }}>
               <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
                 Specifications <span style={{ color: "#dc2626" }}>*</span>
@@ -848,7 +1169,7 @@ export default function HardwareInventoryPage() {
               </select>
             </div>
           ) : null}
-          {!isDesktopWorkstation ? (
+          {!isDesktopWorkstation && !isDroneKitMode ? (
             <div style={{ display: "grid", gap: 4 }}>
               <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
                 Serial Number <span style={{ color: "#dc2626" }}>*</span>
@@ -880,40 +1201,60 @@ export default function HardwareInventoryPage() {
               ))}
             </select>
           </div>
-          <div style={{ display: "grid", gap: 4 }}>
-            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-              Turnover To (optional)
-            </label>
-            <input
-              className="input-base"
-              placeholder="Turnover To"
-              value={form.personAssigned}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  personAssigned: e.target.value,
-                  turnoverTo: e.target.value.trim() ? e.target.value : "Unassigned",
-                }))
-              }
-            />
-          </div>
-          <div style={{ display: "grid", gap: 4 }}>
-            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-              Department <span style={{ color: "#dc2626" }}>*</span>
-            </label>
-            <select
-              className="input-base"
-              value={form.department}
-              onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
-            >
-              <option value="">Select department</option>
-              {departmentOptions.map((department) => (
-                <option key={department} value={department}>
-                  {department}
-                </option>
-              ))}
-            </select>
-          </div>
+          {!isDroneKitMode ? (
+            <div style={{ display: "grid", gap: 4 }}>
+              <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                Turnover To (optional)
+              </label>
+              <input
+                className="input-base"
+                placeholder="Turnover To"
+                value={form.personAssigned}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    personAssigned: e.target.value,
+                  }))
+                }
+              />
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 4 }}>
+              <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                Received by
+              </label>
+              <input
+                className="input-base"
+                placeholder="IT staff name"
+                value={droneKitForm.receivedBy}
+                onChange={(e) =>
+                  setDroneKitForm((prev) => ({
+                    ...prev,
+                    receivedBy: e.target.value,
+                  }))
+                }
+              />
+            </div>
+          )}
+          {!isDroneKitMode ? (
+            <div style={{ display: "grid", gap: 4 }}>
+              <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                Department <span style={{ color: "#dc2626" }}>*</span>
+              </label>
+              <select
+                className="input-base"
+                value={form.department}
+                onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
+              >
+                <option value="">Select department</option>
+                {departmentOptions.map((department) => (
+                  <option key={department} value={department}>
+                    {department}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div style={{ display: "grid", gap: 4 }}>
             <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
               Status <span style={{ color: "#dc2626" }}>*</span>
@@ -945,40 +1286,45 @@ export default function HardwareInventoryPage() {
                 ))}
               </select>
           </div>
-          <div style={{ display: "grid", gap: 4 }}>
-            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-              {isDesktopWorkstation ? "Turnover Date (optional)" : "Assigned Date (optional)"}
-            </label>
-            <input
-              className="input-base"
-              type="text"
-              placeholder={isDesktopWorkstation ? "Turnover Date" : "Assigned Date"}
-              value={form.assignedDate}
-              onChange={(e) => setForm((prev) => ({ ...prev, assignedDate: e.target.value }))}
-              onFocus={(e) => {
-                e.currentTarget.type = "date";
-              }}
-              onBlur={(e) => {
-                if (!e.currentTarget.value) e.currentTarget.type = "text";
-              }}
-            />
-          </div>
+          {isDroneKitMode ? (
+            <div style={{ display: "grid", gap: 4 }}>
+              <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                Received Date <span style={{ color: "#dc2626" }}>*</span>
+              </label>
+              <input
+                className="input-base"
+                type="date"
+                value={droneKitForm.receivedDate}
+                onChange={(e) =>
+                  setDroneKitForm((prev) => ({
+                    ...prev,
+                    receivedDate: e.target.value,
+                  }))
+                }
+              />
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 4 }}>
+              <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                {isDesktopWorkstation ? "Turnover Date (optional)" : "Assigned Date (optional)"}
+              </label>
+              <input
+                className="input-base"
+                type="date"
+                value={form.assignedDate}
+                onChange={(e) => setForm((prev) => ({ ...prev, assignedDate: e.target.value }))}
+              />
+            </div>
+          )}
           <div style={{ display: "grid", gap: 4 }}>
             <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
               Purchase Date (optional)
             </label>
             <input
               className="input-base"
-              type="text"
-              placeholder="Purchase Date"
+              type="date"
               value={form.purchaseDate}
               onChange={(e) => setForm((prev) => ({ ...prev, purchaseDate: e.target.value }))}
-              onFocus={(e) => {
-                e.currentTarget.type = "date";
-              }}
-              onBlur={(e) => {
-                if (!e.currentTarget.value) e.currentTarget.type = "text";
-              }}
             />
           </div>
           <div style={{ display: "grid", gap: 4 }}>
@@ -1029,38 +1375,29 @@ export default function HardwareInventoryPage() {
                     Monitor Asset Tag <span style={{ color: "#dc2626" }}>*</span>
                   </label>
                   <input
-                    className="input-base"
-                    placeholder="Monitor Asset Tag"
-                    value={desktopForm.monitorAssetTag}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({
-                        ...prev,
-                        monitorAssetTag: e.target.value,
-                      }))
-                    }
+                    className="input-base input-readonly-tone"
+                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+                    value={desktopGeneratedTags?.monitorAssetTag ?? ""}
+                    readOnly
+                    aria-label="Auto-generated monitor asset tag"
+                    style={{ color: "var(--foreground)", fontWeight: 700 }}
                   />
                 </div>
                 <div style={{ display: "grid", gap: 4 }}>
                   <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Monitor Slot <span style={{ color: "#dc2626" }}>*</span>
+                    Monitor Serial Number <span style={{ color: "#dc2626" }}>*</span>
                   </label>
-                  <select
+                  <input
                     className="input-base"
-                    value={desktopForm.monitorSlot}
+                    placeholder="Monitor Serial Number"
+                    value={desktopForm.monitorSerialNumber}
                     onChange={(e) =>
                       setDesktopForm((prev) => ({
                         ...prev,
-                        monitorSlot: e.target.value as MonitorSlot | "",
+                        monitorSerialNumber: e.target.value,
                       }))
                     }
-                  >
-                    <option value="">Select monitor slot</option>
-                    {monitorSlotOptions.map((slot) => (
-                      <option key={slot} value={slot}>
-                        {slot}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div style={{ display: "grid", gap: 4 }}>
                   <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
@@ -1114,23 +1451,36 @@ export default function HardwareInventoryPage() {
               >
                 <div style={{ display: "grid", gap: 4 }}>
                   <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Mouse Asset Tag
+                    Mouse Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base input-readonly-tone"
+                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+                    value={desktopGeneratedTags?.mouseAssetTag ?? ""}
+                    readOnly
+                    aria-label="Auto-generated mouse asset tag"
+                    style={{ color: "var(--foreground)", fontWeight: 700 }}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Mouse Serial Number
                   </label>
                   <input
                     className="input-base"
-                    placeholder="Mouse Asset Tag"
-                    value={desktopForm.mouseAssetTag}
+                    placeholder="Mouse Serial Number"
+                    value={desktopForm.mouseSerialNumber ?? ""}
                     onChange={(e) =>
                       setDesktopForm((prev) => ({
                         ...prev,
-                        mouseAssetTag: e.target.value,
+                        mouseSerialNumber: e.target.value,
                       }))
                     }
                   />
                 </div>
                 <div style={{ display: "grid", gap: 4 }}>
                   <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Mouse Specs
+                    Mouse Specs <span style={{ color: "#dc2626" }}>*</span>
                   </label>
                   <input
                     className="input-base"
@@ -1167,23 +1517,36 @@ export default function HardwareInventoryPage() {
               >
                 <div style={{ display: "grid", gap: 4 }}>
                   <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Keyboard Asset Tag
+                    Keyboard Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base input-readonly-tone"
+                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+                    value={desktopGeneratedTags?.keyboardAssetTag ?? ""}
+                    readOnly
+                    aria-label="Auto-generated keyboard asset tag"
+                    style={{ color: "var(--foreground)", fontWeight: 700 }}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Keyboard Serial Number
                   </label>
                   <input
                     className="input-base"
-                    placeholder="Keyboard Asset Tag"
-                    value={desktopForm.keyboardAssetTag}
+                    placeholder="Keyboard Serial Number"
+                    value={desktopForm.keyboardSerialNumber ?? ""}
                     onChange={(e) =>
                       setDesktopForm((prev) => ({
                         ...prev,
-                        keyboardAssetTag: e.target.value,
+                        keyboardSerialNumber: e.target.value,
                       }))
                     }
                   />
                 </div>
                 <div style={{ display: "grid", gap: 4 }}>
                   <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Keyboard Specs
+                    Keyboard Specs <span style={{ color: "#dc2626" }}>*</span>
                   </label>
                   <input
                     className="input-base"
@@ -1223,15 +1586,12 @@ export default function HardwareInventoryPage() {
                     System Unit Asset Tag <span style={{ color: "#dc2626" }}>*</span>
                   </label>
                   <input
-                    className="input-base"
-                    placeholder="System Unit Asset Tag"
-                    value={desktopForm.systemUnitAssetTag}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({
-                        ...prev,
-                        systemUnitAssetTag: e.target.value,
-                      }))
-                    }
+                    className="input-base input-readonly-tone"
+                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+                    value={desktopGeneratedTags?.systemUnitAssetTag ?? ""}
+                    readOnly
+                    aria-label="Auto-generated system unit asset tag"
+                    style={{ color: "var(--foreground)", fontWeight: 700 }}
                   />
                 </div>
                 <div style={{ display: "grid", gap: 4 }}>
@@ -1247,19 +1607,6 @@ export default function HardwareInventoryPage() {
                         ...prev,
                         systemUnitSpecs: e.target.value,
                       }))
-                    }
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Case Brand <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Case Brand"
-                    value={desktopForm.caseBrand}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({ ...prev, caseBrand: e.target.value }))
                     }
                   />
                 </div>
@@ -1327,19 +1674,14 @@ export default function HardwareInventoryPage() {
                           Asset Tag <span style={{ color: "#dc2626" }}>*</span>
                         </label>
                         <input
-                          className="input-base"
-                          placeholder="Component Asset Tag"
-                          value={component.assetTag}
-                          onChange={(e) =>
-                            setDesktopForm((prev) => ({
-                              ...prev,
-                              extraComponents: prev.extraComponents.map((item, itemIndex) =>
-                                itemIndex === index
-                                  ? { ...item, assetTag: e.target.value }
-                                  : item,
-                              ),
-                            }))
+                          className="input-base input-readonly-tone"
+                          placeholder={
+                            assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"
                           }
+                          value={desktopGeneratedTags?.extraComponents[index]?.assetTag ?? ""}
+                          readOnly
+                          aria-label={`Auto-generated asset tag for component ${index + 1}`}
+                          style={{ color: "var(--foreground)", fontWeight: 700 }}
                         />
                       </div>
                       <div style={{ display: "grid", gap: 4 }}>
@@ -1409,6 +1751,323 @@ export default function HardwareInventoryPage() {
                   No extra components added.
                 </div>
               )}
+            </div>
+          </div>
+        ) : null}
+        {isDroneKitMode ? (
+          <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+            <div
+              className="panel"
+              style={{
+                padding: 12,
+                display: "grid",
+                gap: 8,
+                borderRadius: 16,
+                boxShadow: "none",
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Drone Unit</div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Drone Unit Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base input-readonly-tone"
+                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+                    value={droneKitGeneratedTags?.droneUnitAssetTag ?? ""}
+                    readOnly
+                    aria-label="Auto-generated drone unit asset tag"
+                    style={{ color: "var(--foreground)", fontWeight: 700 }}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Drone Unit Serial Number <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base"
+                    placeholder="Drone Unit Serial Number"
+                    value={droneKitForm.droneUnitSerialNumber}
+                    onChange={(e) =>
+                      setDroneKitForm((prev) => ({
+                        ...prev,
+                        droneUnitSerialNumber: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Drone Unit Specs <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base"
+                    placeholder="Drone Unit Specs"
+                    value={droneKitForm.droneUnitSpecs}
+                    onChange={(e) =>
+                      setDroneKitForm((prev) => ({
+                        ...prev,
+                        droneUnitSpecs: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="panel"
+              style={{
+                padding: 12,
+                display: "grid",
+                gap: 8,
+                borderRadius: 16,
+                boxShadow: "none",
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Battery</div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Battery Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base input-readonly-tone"
+                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+                    value={droneKitGeneratedTags?.batteryAssetTag ?? ""}
+                    readOnly
+                    aria-label="Auto-generated drone battery asset tag"
+                    style={{ color: "var(--foreground)", fontWeight: 700 }}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Battery Serial Number
+                  </label>
+                  <input
+                    className="input-base"
+                    placeholder="Battery Serial Number"
+                    value={droneKitForm.batterySerialNumber}
+                    onChange={(e) =>
+                      setDroneKitForm((prev) => ({
+                        ...prev,
+                        batterySerialNumber: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Battery Specs <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base"
+                    placeholder="Battery Specs"
+                    value={droneKitForm.batterySpecs}
+                    onChange={(e) =>
+                      setDroneKitForm((prev) => ({
+                        ...prev,
+                        batterySpecs: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="panel"
+              style={{
+                padding: 12,
+                display: "grid",
+                gap: 8,
+                borderRadius: 16,
+                boxShadow: "none",
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Propeller</div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Propeller Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base input-readonly-tone"
+                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+                    value={droneKitGeneratedTags?.propellerAssetTag ?? ""}
+                    readOnly
+                    aria-label="Auto-generated drone propeller asset tag"
+                    style={{ color: "var(--foreground)", fontWeight: 700 }}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Propeller Specs <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base"
+                    placeholder="Propeller Specs"
+                    value={droneKitForm.propellerSpecs}
+                    onChange={(e) =>
+                      setDroneKitForm((prev) => ({
+                        ...prev,
+                        propellerSpecs: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="panel"
+              style={{
+                padding: 12,
+                display: "grid",
+                gap: 8,
+                borderRadius: 16,
+                boxShadow: "none",
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Charger</div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Charger Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base input-readonly-tone"
+                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+                    value={droneKitGeneratedTags?.chargerAssetTag ?? ""}
+                    readOnly
+                    aria-label="Auto-generated drone charger asset tag"
+                    style={{ color: "var(--foreground)", fontWeight: 700 }}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Charger Serial Number
+                  </label>
+                  <input
+                    className="input-base"
+                    placeholder="Charger Serial Number"
+                    value={droneKitForm.chargerSerialNumber}
+                    onChange={(e) =>
+                      setDroneKitForm((prev) => ({
+                        ...prev,
+                        chargerSerialNumber: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Charger Specs <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base"
+                    placeholder="Charger Specs"
+                    value={droneKitForm.chargerSpecs}
+                    onChange={(e) =>
+                      setDroneKitForm((prev) => ({
+                        ...prev,
+                        chargerSpecs: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="panel"
+              style={{
+                padding: 12,
+                display: "grid",
+                gap: 8,
+                borderRadius: 16,
+                boxShadow: "none",
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Controller</div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Controller Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base input-readonly-tone"
+                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+                    value={droneKitGeneratedTags?.controllerAssetTag ?? ""}
+                    readOnly
+                    aria-label="Auto-generated drone controller asset tag"
+                    style={{ color: "var(--foreground)", fontWeight: 700 }}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Controller Serial Number
+                  </label>
+                  <input
+                    className="input-base"
+                    placeholder="Controller Serial Number"
+                    value={droneKitForm.controllerSerialNumber}
+                    onChange={(e) =>
+                      setDroneKitForm((prev) => ({
+                        ...prev,
+                        controllerSerialNumber: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                    Controller Specs <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    className="input-base"
+                    placeholder="Controller Specs"
+                    value={droneKitForm.controllerSpecs}
+                    onChange={(e) =>
+                      setDroneKitForm((prev) => ({
+                        ...prev,
+                        controllerSpecs: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
             </div>
           </div>
         ) : null}
@@ -1597,7 +2256,16 @@ export default function HardwareInventoryPage() {
         </div>
 
         <div className="saas-table-wrap" style={{ marginTop: 12 }}>
-          <table className="saas-table">
+          <table className="saas-table hardware-master-table" style={{ minWidth: 1300 }}>
+            <colgroup>
+              <col style={{ width: 104 }} />
+              <col style={{ width: 116 }} />
+              <col style={{ width: 420 }} />
+              <col style={{ width: 170 }} />
+              <col style={{ width: 190 }} />
+              <col style={{ width: 130 }} />
+              <col style={{ width: 170 }} />
+            </colgroup>
             <thead>
               <tr>
                 {headerConfig.map((header) => (
@@ -1620,7 +2288,7 @@ export default function HardwareInventoryPage() {
                   style={{ cursor: "pointer" }}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
-                    if (target.closest("button, input, select, a, textarea")) return;
+                    if (target.closest("button, a, input, select, textarea")) return;
                     handleEdit(row._id);
                   }}
                 >
@@ -1635,109 +2303,100 @@ export default function HardwareInventoryPage() {
                     </div>
                   </td>
                   <td>
-                    <select
-                      className="input-base"
-                      style={smallInput}
-                      value={
-                        (inlineEdits[row._id]?.locationPersonAssigned as string | undefined) ??
-                        row.location ??
-                        row.locationPersonAssigned ??
-                        ""
-                      }
-                      onChange={(e) =>
-                        queueInlineSave(row._id, { locationPersonAssigned: e.target.value })
-                      }
-                      onBlur={() => saveInline(row._id)}
-                    >
-                      <option value="">Select location</option>
-                      {locationOptions.map((location) => (
-                        <option key={location} value={location}>
-                          {location}
-                        </option>
-                      ))}
-                    </select>
+                    {formatValue(row.location ?? row.locationPersonAssigned ?? "")}
                   </td>
                   <td>
-                    <input
-                      className="input-base"
-                      style={smallInput}
-                      value={
-                        inlineEdits[row._id]?.personAssigned ??
-                        inlineEdits[row._id]?.turnoverTo ??
-                        row.assignedTo ??
-                        row.turnoverTo ??
-                        ""
-                      }
-                      onChange={(e) => queueInlineSave(row._id, { personAssigned: e.target.value })}
-                      onBlur={() => saveInline(row._id)}
-                      placeholder="Turnover to"
-                    />
-                  </td>
-                  <td>
-                    <select
-                      className="input-base status-select"
+                    <div
                       style={{
-                        ...smallInput,
-                        background:
-                          statusStyles[
-                            (inlineEdits[row._id]?.status ?? row.status) as HardwareStatus
-                          ]?.background ?? "#ffffff",
-                        color:
-                          statusStyles[
-                            (inlineEdits[row._id]?.status ?? row.status) as HardwareStatus
-                          ]?.color ?? "var(--foreground)",
-                        borderColor:
-                          statusStyles[
-                            (inlineEdits[row._id]?.status ?? row.status) as HardwareStatus
-                          ]?.borderColor ?? "#e8eff9",
-                        fontWeight: 600,
+                        fontSize: 13,
+                        lineHeight: 1.4,
+                        color: "var(--foreground)",
                       }}
-                      value={(inlineEdits[row._id]?.status ?? row.status) as FormState["status"]}
-                      onChange={(e) =>
-                        queueInlineSave(row._id, {
-                          status: e.target.value as FormState["status"],
-                        })
-                      }
-                      onBlur={() => saveInline(row._id)}
+                      title="Open asset details to edit Turnover To"
+                      aria-label={`Turnover to ${formatValue(row.assignedTo ?? row.turnoverTo ?? "Unassigned")}`}
                     >
-                      {statuses.map((status) => (
-                        <option
-                          key={status}
-                          value={status}
-                          style={{
-                            backgroundColor: "#ffffff",
-                            color: statusStyles[status]?.color ?? "var(--foreground)",
-                          }}
-                        >
-                          {status}
-                        </option>
-                      ))}
-                    </select>
+                      {formatValue(row.assignedTo ?? row.turnoverTo ?? "Unassigned")}
+                    </div>
                   </td>
                   <td>
                     {(() => {
-                      const currentStatus = (inlineEdits[row._id]?.status ?? row.status) as HardwareStatus;
-                      const isBorrowed = currentStatus === "Borrowed";
+                      const editState = getInlineRowState(row);
+                      const isSaving = inlineSavingId === String(row._id);
+                      return (
+                        <select
+                          className="input-base status-select"
+                          style={{
+                            minHeight: 36,
+                            minWidth: 120,
+                            background: statusStyles[editState.status]?.background ?? "#ffffff",
+                            color: statusStyles[editState.status]?.color ?? "var(--foreground)",
+                            borderColor: statusStyles[editState.status]?.borderColor ?? "#e8eff9",
+                          }}
+                          value={editState.status}
+                          disabled={isSaving}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => {
+                            const nextStatus = event.target.value as HardwareStatus;
+                            const rowId = String(row._id);
+                            const nextBorrower =
+                              nextStatus === "Borrowed" ? editState.borrower : "";
+
+                            setInlineEdits((prev) => ({
+                              ...prev,
+                              [rowId]: { status: nextStatus, borrower: nextBorrower },
+                            }));
+
+                            void persistInlineUpdate(row, nextStatus, nextBorrower);
+                          }}
+                        >
+                          {statuses.map((status) => (
+                            <option
+                              key={status}
+                              value={status}
+                              style={{
+                                background: "#ffffff",
+                                color: statusStyles[status]?.color ?? "var(--foreground)",
+                              }}
+                            >
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                      );
+                    })()}
+                  </td>
+                  <td>
+                    {(() => {
+                      const editState = getInlineRowState(row);
+                      const isBorrowed = editState.status === "Borrowed";
+                      const isSaving = inlineSavingId === String(row._id);
                       return (
                         <input
                           className="input-base"
-                          style={{
-                            ...smallInput,
-                            ...(isBorrowed
-                              ? {}
-                              : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }),
+                          style={{ minHeight: 36 }}
+                          value={isBorrowed ? editState.borrower : "none"}
+                          placeholder={isBorrowed ? "Borrower name" : "none"}
+                          disabled={!isBorrowed || isSaving}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => {
+                            const nextBorrower = event.target.value;
+                            const rowId = String(row._id);
+                            setInlineEdits((prev) => ({
+                              ...prev,
+                              [rowId]: {
+                                status: editState.status,
+                                borrower: nextBorrower,
+                              },
+                            }));
                           }}
-                          value={
-                            isBorrowed
-                              ? (inlineEdits[row._id]?.borrower ??
-                                (row as Record<string, unknown>).borrower?.toString() ??
-                                "")
-                              : "none"
-                          }
-                          placeholder={isBorrowed ? "Enter borrower" : "Set status to Borrowed first"}
-                          disabled={!isBorrowed}
-                          onChange={(e) => queueInlineSave(row._id, { borrower: e.target.value })}
-                          onBlur={() => saveInline(row._id)}
+                          onBlur={() => {
+                            void handleInlineBorrowerCommit(row);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              (event.currentTarget as HTMLInputElement).blur();
+                            }
+                          }}
                         />
                       );
                     })()}
@@ -1780,11 +2439,6 @@ export default function HardwareInventoryPage() {
           </div>
         </div>
 
-        {Object.values(inlineStatus).some(Boolean) ? (
-          <p style={{ color: "#b91c1c", marginTop: 8, fontSize: 13 }}>
-            {Object.values(inlineStatus).find((value) => value) ?? "Inline save failed."}
-          </p>
-        ) : null}
       </section>
     </div>
   );

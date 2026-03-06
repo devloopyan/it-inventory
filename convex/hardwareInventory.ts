@@ -50,6 +50,21 @@ function isActiveReservation(row: { reservationStatus?: string }) {
   return row.reservationStatus === "Reserved";
 }
 
+function isDroneAssetType(assetType?: string) {
+  return (assetType ?? "").trim().toLowerCase() === "drone";
+}
+
+function isDroneRelatedAssetType(assetType?: string) {
+  const normalized = (assetType ?? "").trim().toLowerCase();
+  return (
+    normalized === "drone" ||
+    normalized === "drone battery" ||
+    normalized === "drone propeller" ||
+    normalized === "drone charger" ||
+    normalized === "drone controller"
+  );
+}
+
 function normalizeWorkstationComponents(
   components?: {
     assetTag: string;
@@ -300,6 +315,11 @@ export const migrateLegacy = mutation({
     let updated = 0;
 
     for (const row of rows) {
+      const legacyDesktopMonitorSlot = (row as Record<string, unknown>).desktopMonitorSlot as
+        | string
+        | undefined;
+      const currentDesktopMonitorSerialNumber = (row as Record<string, unknown>)
+        .desktopMonitorSerialNumber as string | undefined;
       const needsMigration =
         !row.assetType ||
         !row.assetNameDescription ||
@@ -307,7 +327,8 @@ export const migrateLegacy = mutation({
         !row.locationPersonAssigned ||
         !row.department ||
         !row.turnoverTo ||
-        !row.warranty;
+        !row.warranty ||
+        (!!legacyDesktopMonitorSlot && !currentDesktopMonitorSerialNumber);
 
       if (!needsMigration) continue;
 
@@ -376,6 +397,7 @@ export const migrateLegacy = mutation({
         department,
         turnoverTo,
         borrower,
+        desktopMonitorSerialNumber: currentDesktopMonitorSerialNumber ?? legacyDesktopMonitorSlot,
         assignedDate: assetType === "Desktop/PC" ? undefined : assignedDate,
         turnoverDate,
         purchaseDate,
@@ -408,21 +430,23 @@ export const create = mutation({
     imageStorageId: v.optional(v.id("_storage")),
     receivingFormStorageId: v.optional(v.id("_storage")),
     turnoverFormStorageId: v.optional(v.id("_storage")),
+    droneFlightReportStorageId: v.optional(v.id("_storage")),
     borrower: v.optional(v.string()),
     personAssigned: v.optional(v.string()),
     registerMode: v.optional(v.string()),
     workstationType: v.optional(v.string()),
     specsTier: v.optional(v.string()),
     desktopMonitorAssetTag: v.optional(v.string()),
-    desktopMonitorSlot: v.optional(v.string()),
+    desktopMonitorSerialNumber: v.optional(v.string()),
     desktopMonitorSpecs: v.optional(v.string()),
     desktopMonitorConsumables: v.optional(v.string()),
     desktopSystemUnitAssetTag: v.optional(v.string()),
     desktopSystemUnitSpecs: v.optional(v.string()),
-    desktopCaseBrand: v.optional(v.string()),
     desktopMouseAssetTag: v.optional(v.string()),
+    desktopMouseSerialNumber: v.optional(v.string()),
     desktopMouseSpecs: v.optional(v.string()),
     desktopKeyboardAssetTag: v.optional(v.string()),
+    desktopKeyboardSerialNumber: v.optional(v.string()),
     desktopKeyboardSpecs: v.optional(v.string()),
     workstationComponents: v.optional(
       v.array(
@@ -457,21 +481,23 @@ export const create = mutation({
     const imageStorageId = args.imageStorageId;
     const receivingFormStorageId = args.receivingFormStorageId;
     const turnoverFormStorageId = args.turnoverFormStorageId;
+    const droneFlightReportStorageId = args.droneFlightReportStorageId;
     const borrower = normalizeOptional(args.borrower);
     const personAssigned = normalizeOptional(args.personAssigned);
     const registerMode = normalizeOptional(args.registerMode);
     const workstationType = normalizeOptional(args.workstationType);
     const specsTier = normalizeOptional(args.specsTier);
     const desktopMonitorAssetTag = normalizeOptional(args.desktopMonitorAssetTag);
-    const desktopMonitorSlot = normalizeOptional(args.desktopMonitorSlot);
+    const desktopMonitorSerialNumber = normalizeOptional(args.desktopMonitorSerialNumber);
     const desktopMonitorSpecs = normalizeOptional(args.desktopMonitorSpecs);
     const desktopMonitorConsumables = normalizeOptional(args.desktopMonitorConsumables);
     const desktopSystemUnitAssetTag = normalizeOptional(args.desktopSystemUnitAssetTag);
     const desktopSystemUnitSpecs = normalizeOptional(args.desktopSystemUnitSpecs);
-    const desktopCaseBrand = normalizeOptional(args.desktopCaseBrand);
     const desktopMouseAssetTag = normalizeOptional(args.desktopMouseAssetTag);
+    const desktopMouseSerialNumber = normalizeOptional(args.desktopMouseSerialNumber);
     const desktopMouseSpecs = normalizeOptional(args.desktopMouseSpecs);
     const desktopKeyboardAssetTag = normalizeOptional(args.desktopKeyboardAssetTag);
+    const desktopKeyboardSerialNumber = normalizeOptional(args.desktopKeyboardSerialNumber);
     const desktopKeyboardSpecs = normalizeOptional(args.desktopKeyboardSpecs);
     const workstationComponents = normalizeWorkstationComponents(args.workstationComponents);
     const turnoverTo = resolveTurnoverTo(personAssigned);
@@ -497,16 +523,17 @@ export const create = mutation({
       if (!desktopMonitorAssetTag) {
         throw new Error("Monitor Asset Tag is required.");
       }
+      if (!desktopMonitorSerialNumber) {
+        throw new Error("Monitor Serial Number is required.");
+      }
       if (!desktopSystemUnitAssetTag) {
         throw new Error("System Unit Asset Tag is required.");
       }
-      const hasMouseFields = Boolean(desktopMouseAssetTag || desktopMouseSpecs);
-      if (hasMouseFields && (!desktopMouseAssetTag || !desktopMouseSpecs)) {
-        throw new Error("Mouse Asset Tag and Mouse Specs must both be filled in.");
+      if (!desktopMouseAssetTag || !desktopMouseSpecs) {
+        throw new Error("Mouse Asset Tag and Mouse Specs are required.");
       }
-      const hasKeyboardFields = Boolean(desktopKeyboardAssetTag || desktopKeyboardSpecs);
-      if (hasKeyboardFields && (!desktopKeyboardAssetTag || !desktopKeyboardSpecs)) {
-        throw new Error("Keyboard Asset Tag and Keyboard Specs must both be filled in.");
+      if (!desktopKeyboardAssetTag || !desktopKeyboardSpecs) {
+        throw new Error("Keyboard Asset Tag and Keyboard Specs are required.");
       }
     }
 
@@ -629,15 +656,16 @@ export const create = mutation({
         workstationType,
         specsTier,
         desktopMonitorAssetTag,
-        desktopMonitorSlot,
+        desktopMonitorSerialNumber,
         desktopMonitorSpecs,
         desktopMonitorConsumables,
         desktopSystemUnitAssetTag,
         desktopSystemUnitSpecs,
-        desktopCaseBrand,
         desktopMouseAssetTag,
+        desktopMouseSerialNumber,
         desktopMouseSpecs,
         desktopKeyboardAssetTag,
+        desktopKeyboardSerialNumber,
         desktopKeyboardSpecs,
         workstationComponents,
         assignedDate: effectiveAssignedDate,
@@ -648,9 +676,10 @@ export const create = mutation({
         imageStorageId,
         receivingFormStorageId,
          turnoverFormStorageId,
+         droneFlightReportStorageId,
          createdAt: now,
          updatedAt: now,
-       } as never);
+        } as never);
 
     await logHardwareActivity(ctx, {
       inventoryId,
@@ -688,6 +717,19 @@ export const create = mutation({
       });
     }
 
+    if (droneFlightReportStorageId) {
+      await logHardwareActivity(ctx, {
+        inventoryId,
+        assetTag,
+        assetNameDescription,
+        eventType: "drone_flight_report_uploaded",
+        message: "Drone flight report attached.",
+        relatedPerson: turnoverTo !== "Unassigned" ? turnoverTo : undefined,
+        location: locationPersonAssigned,
+        status: effectiveStatus,
+      });
+    }
+
     return inventoryId;
   },
 });
@@ -714,9 +756,11 @@ export const update = mutation({
     imageStorageId: v.optional(v.id("_storage")),
     receivingFormStorageId: v.optional(v.id("_storage")),
     turnoverFormStorageId: v.optional(v.id("_storage")),
+    droneFlightReportStorageId: v.optional(v.id("_storage")),
     clearImage: v.optional(v.boolean()),
     clearReceivingForm: v.optional(v.boolean()),
     clearTurnoverForm: v.optional(v.boolean()),
+    clearDroneFlightReport: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db.get(args.inventoryId);
@@ -748,20 +792,31 @@ export const update = mutation({
     const imageStorageId = args.imageStorageId;
     const receivingFormStorageId = args.receivingFormStorageId;
     const turnoverFormStorageId = args.turnoverFormStorageId;
+    const droneFlightReportStorageId = args.droneFlightReportStorageId;
     const clearImage = args.clearImage === true;
     const clearReceivingForm = args.clearReceivingForm === true;
     const clearTurnoverForm = args.clearTurnoverForm === true;
+    const clearDroneFlightReport = args.clearDroneFlightReport === true;
     const effectiveStatus = turnoverFormStorageId !== undefined ? "Assigned" : status;
     const isDesktopAsset = assetType === "Desktop/PC";
+    const isDroneAsset = isDroneAssetType(assetType);
     const effectiveAssignedDate = isDesktopAsset ? undefined : assignedDate;
     const effectiveTurnoverDate = isDesktopAsset ? turnoverDate ?? assignedDate : undefined;
     const previousStatus = existing.status;
     const previousReceivingFormStorageId = (existing as Record<string, unknown>)
       .receivingFormStorageId as typeof args.receivingFormStorageId | undefined;
     const previousTurnoverFormStorageId = existing.turnoverFormStorageId;
+    const previousDroneFlightReportStorageId = (existing as Record<string, unknown>)
+      .droneFlightReportStorageId as typeof args.droneFlightReportStorageId | undefined;
+    const previousDroneMissingPartsNote = (existing as Record<string, unknown>)
+      .droneMissingPartsNote as string | undefined;
 
     ensureStatus(status);
     ensureStatus(effectiveStatus);
+
+    if (assetTag !== existing.assetTag) {
+      throw new Error("Asset Tag cannot be changed.");
+    }
 
     const existingByTag = await ctx.db
       .query("hardwareInventory")
@@ -799,6 +854,8 @@ export const update = mutation({
       imageStorageId?: typeof args.imageStorageId;
       receivingFormStorageId?: typeof args.receivingFormStorageId;
       turnoverFormStorageId?: typeof args.turnoverFormStorageId;
+      droneFlightReportStorageId?: typeof args.droneFlightReportStorageId;
+      droneMissingPartsNote?: string | undefined;
       borrower?: string | undefined;
       assignedTo?: string | undefined;
     } = {
@@ -871,6 +928,39 @@ export const update = mutation({
       }
     }
 
+    let nextDroneFlightReportStorageId = (existing as Record<string, unknown>)
+      .droneFlightReportStorageId as typeof args.droneFlightReportStorageId | undefined;
+    if (clearDroneFlightReport) {
+      nextDroneFlightReportStorageId = undefined;
+    }
+    if (droneFlightReportStorageId !== undefined) {
+      nextDroneFlightReportStorageId = droneFlightReportStorageId;
+    }
+    if (isDroneAsset && previousStatus !== "Borrowed" && effectiveStatus === "Borrowed") {
+      nextDroneFlightReportStorageId = undefined;
+      patchData.droneMissingPartsNote = undefined;
+    }
+    if (nextDroneFlightReportStorageId !== previousDroneFlightReportStorageId) {
+      patchData.droneFlightReportStorageId = nextDroneFlightReportStorageId;
+      if (previousDroneFlightReportStorageId) {
+        await ctx.storage.delete(previousDroneFlightReportStorageId);
+      }
+    }
+    if (isDroneAsset && previousStatus === "Borrowed" && effectiveStatus !== "Borrowed") {
+      if (!nextDroneFlightReportStorageId) {
+        throw new Error("Drone flight report is required when returning a borrowed drone.");
+      }
+      patchData.droneMissingPartsNote = undefined;
+    }
+    if (
+      isDroneAsset &&
+      patchData.droneMissingPartsNote === undefined &&
+      previousDroneMissingPartsNote !== undefined &&
+      effectiveStatus !== "Borrowed"
+    ) {
+      patchData.droneMissingPartsNote = undefined;
+    }
+
     await ctx.db.patch(args.inventoryId, patchData as never);
 
     const statusChanged = previousStatus !== effectiveStatus;
@@ -878,6 +968,9 @@ export const update = mutation({
       nextReceivingFormStorageId !== previousReceivingFormStorageId && Boolean(nextReceivingFormStorageId);
     const turnoverFormAttached =
       nextTurnoverFormStorageId !== previousTurnoverFormStorageId && Boolean(nextTurnoverFormStorageId);
+    const droneFlightReportAttached =
+      nextDroneFlightReportStorageId !== previousDroneFlightReportStorageId &&
+      Boolean(nextDroneFlightReportStorageId);
 
     if (statusChanged) {
       const statusEvent = getStatusEventMeta(effectiveStatus);
@@ -918,7 +1011,20 @@ export const update = mutation({
       });
     }
 
-    if (!statusChanged && !receivingFormAttached && !turnoverFormAttached) {
+    if (droneFlightReportAttached) {
+      await logHardwareActivity(ctx, {
+        inventoryId: args.inventoryId,
+        assetTag,
+        assetNameDescription,
+        eventType: "drone_flight_report_uploaded",
+        message: "Drone flight report attached.",
+        relatedPerson: turnoverTo !== "Unassigned" ? turnoverTo : undefined,
+        location: locationPersonAssigned,
+        status: effectiveStatus,
+      });
+    }
+
+    if (!statusChanged && !receivingFormAttached && !turnoverFormAttached && !droneFlightReportAttached) {
       await logHardwareActivity(ctx, {
         inventoryId: args.inventoryId,
         assetTag,
@@ -1028,6 +1134,7 @@ export const cancelReservation = mutation({
 export const claimReservation = mutation({
   args: {
     inventoryId: v.id("hardwareInventory"),
+    missingPartsNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db.get(args.inventoryId);
@@ -1043,24 +1150,44 @@ export const claimReservation = mutation({
     const reservationDepartment = normalizeOptional(
       (existing as Record<string, unknown>).reservationDepartment as string | undefined,
     );
+    const missingPartsNote = normalizeOptional(args.missingPartsNote);
+    const previousDroneFlightReportStorageId = (existing as Record<string, unknown>)
+      .droneFlightReportStorageId as Id<"_storage"> | undefined;
     const nextTurnoverTo =
       existing.turnoverTo && existing.turnoverTo.trim().toLowerCase() !== "unassigned"
         ? existing.turnoverTo
         : borrowerName;
+    const shouldResetDroneFlightReport = isDroneAssetType(existing.assetType);
 
     ensureReservationStatus("Claimed");
 
-    await ctx.db.patch(
-      args.inventoryId,
-      {
-        status: "Borrowed",
-        borrower: borrowerName,
-        department: reservationDepartment ?? existing.department,
-        turnoverTo: nextTurnoverTo,
-        reservationStatus: "Claimed",
-        updatedAt: Date.now(),
-      } as never,
-    );
+    const patchData: {
+      status: string;
+      borrower: string;
+      department: string | undefined;
+      turnoverTo: string;
+      reservationStatus: "Claimed";
+      updatedAt: number;
+      droneFlightReportStorageId?: undefined;
+      droneMissingPartsNote?: string | undefined;
+    } = {
+      status: "Borrowed",
+      borrower: borrowerName,
+      department: reservationDepartment ?? existing.department,
+      turnoverTo: nextTurnoverTo,
+      reservationStatus: "Claimed",
+      updatedAt: Date.now(),
+    };
+    if (shouldResetDroneFlightReport) {
+      patchData.droneFlightReportStorageId = undefined;
+      patchData.droneMissingPartsNote = missingPartsNote;
+    }
+
+    await ctx.db.patch(args.inventoryId, patchData as never);
+
+    if (shouldResetDroneFlightReport && previousDroneFlightReportStorageId) {
+      await ctx.storage.delete(previousDroneFlightReportStorageId);
+    }
 
     await logHardwareActivity(ctx, {
       inventoryId: args.inventoryId,
@@ -1072,6 +1199,112 @@ export const claimReservation = mutation({
       location: existing.locationPersonAssigned ?? existing.location,
       status: "Borrowed",
     });
+  },
+});
+
+export const returnDronePackage = mutation({
+  args: {
+    inventoryIds: v.array(v.id("hardwareInventory")),
+    reportTargetInventoryId: v.id("hardwareInventory"),
+    droneFlightReportStorageId: v.id("_storage"),
+  },
+  handler: async (ctx, args) => {
+    if (!args.inventoryIds.length) {
+      throw new Error("No drone assets selected for return.");
+    }
+
+    const uniqueInventoryIds = [...new Set(args.inventoryIds)];
+    if (!uniqueInventoryIds.includes(args.reportTargetInventoryId)) {
+      throw new Error("Report target asset must be included in the return package.");
+    }
+
+    const rows = await Promise.all(uniqueInventoryIds.map((inventoryId) => ctx.db.get(inventoryId)));
+    const packageRows = rows.filter(Boolean);
+    if (packageRows.length !== uniqueInventoryIds.length) {
+      throw new Error("One or more drone assets were not found.");
+    }
+
+    const reportTargetRow = packageRows.find((row) => row!._id === args.reportTargetInventoryId);
+    if (!reportTargetRow) {
+      throw new Error("Report target asset was not found.");
+    }
+    if (!isDroneAssetType(reportTargetRow.assetType)) {
+      throw new Error("Flight report must be attached to a Drone unit asset.");
+    }
+
+    for (const row of packageRows) {
+      if (!isDroneRelatedAssetType(row!.assetType)) {
+        throw new Error(`Asset ${row!.assetTag} is not a drone-related asset.`);
+      }
+      if (row!.status !== "Borrowed") {
+        throw new Error(`Asset ${row!.assetTag} is not currently borrowed.`);
+      }
+    }
+
+    const now = Date.now();
+
+    for (const row of packageRows) {
+      const existingDroneFlightReportStorageId = (row as Record<string, unknown>)
+        .droneFlightReportStorageId as Id<"_storage"> | undefined;
+      const isReportTarget = row!._id === args.reportTargetInventoryId;
+      const patchData: {
+        status: string;
+        location: string;
+        locationPersonAssigned: string;
+        borrower: undefined;
+        updatedAt: number;
+        droneFlightReportStorageId?: Id<"_storage"> | undefined;
+        droneMissingPartsNote?: undefined;
+      } = {
+        status: "Available",
+        location: "MAIN STORAGE",
+        locationPersonAssigned: "MAIN STORAGE",
+        borrower: undefined,
+        droneMissingPartsNote: undefined,
+        updatedAt: now,
+      };
+
+      if (isReportTarget) {
+        patchData.droneFlightReportStorageId = args.droneFlightReportStorageId;
+      } else if (isDroneAssetType(row!.assetType)) {
+        patchData.droneFlightReportStorageId = undefined;
+      }
+
+      await ctx.db.patch(row!._id, patchData as never);
+
+      if (
+        existingDroneFlightReportStorageId &&
+        (!isReportTarget || existingDroneFlightReportStorageId !== args.droneFlightReportStorageId)
+      ) {
+        await ctx.storage.delete(existingDroneFlightReportStorageId);
+      }
+
+      await logHardwareActivity(ctx, {
+        inventoryId: row!._id,
+        assetTag: row!.assetTag,
+        assetNameDescription: row!.assetNameDescription,
+        eventType: "asset_returned",
+        message: "Drone asset returned to main storage.",
+        relatedPerson: row!.borrower ?? row!.turnoverTo ?? undefined,
+        location: "MAIN STORAGE",
+        status: "Available",
+      });
+
+      if (isReportTarget) {
+        await logHardwareActivity(ctx, {
+          inventoryId: row!._id,
+          assetTag: row!.assetTag,
+          assetNameDescription: row!.assetNameDescription,
+          eventType: "drone_flight_report_uploaded",
+          message: "Drone flight report attached on return.",
+          relatedPerson: row!.borrower ?? row!.turnoverTo ?? undefined,
+          location: "MAIN STORAGE",
+          status: "Available",
+        });
+      }
+    }
+
+    return { returned: packageRows.length };
   },
 });
 
@@ -1101,6 +1334,11 @@ export const remove = mutation({
     }
     if (existing.turnoverFormStorageId) {
       await ctx.storage.delete(existing.turnoverFormStorageId);
+    }
+    const droneFlightReportStorageId = (existing as Record<string, unknown>)
+      .droneFlightReportStorageId as Id<"_storage"> | undefined;
+    if (droneFlightReportStorageId) {
+      await ctx.storage.delete(droneFlightReportStorageId);
     }
     await ctx.db.delete(args.inventoryId);
   },
