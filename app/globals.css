@@ -13,16 +13,18 @@
   --surface-elevated: #f4f4f5;
   --border: #e4e4e7;
   --border-subtle: #f1f1f2;
+  --ui-border: #ececf1;
   --ring: #93c5fd;
   --sidebar-bg: #fcfcfd;
   --topbar-bg: rgba(250, 250, 250, 0.96);
   --hover-bg: #f4f4f5;
-  --nav-active-bg: #ffffff;
-  --nav-active-border: #e4e4e7;
-  --nav-active-color: #18181b;
+  --nav-hover-bg: rgba(37, 99, 235, 0.05);
+  --nav-active-bg: rgba(37, 99, 235, 0.08);
+  --nav-active-border: rgba(37, 99, 235, 0.12);
+  --nav-active-color: #2563eb;
   --chip-bg: #ffffff;
   --placeholder: #a1a1aa;
-  --table-row-hover: #fafafa;
+  --table-row-hover: #fcfcfd;
   --analytics-bar: #e4e4e7;
   --activity-bg: #fafafa;
   --success-bg: #e4f8e9;
@@ -33,6 +35,7 @@
   --interaction-ease: ease-out;
   --sidebar-width: 236px;
   --topbar-height: 64px;
+  --radius-ui: 14px;
 }
 
 :root[data-theme="dark"] {
@@ -48,16 +51,18 @@
   --surface-elevated: #16161a;
   --border: #232329;
   --border-subtle: #1b1b20;
+  --ui-border: #1f1f25;
   --ring: #60a5fa;
   --sidebar-bg: #0a0a0d;
   --topbar-bg: rgba(10, 10, 13, 0.96);
   --hover-bg: #18181b;
-  --nav-active-bg: #151519;
-  --nav-active-border: #27272a;
-  --nav-active-color: #fafafa;
+  --nav-hover-bg: rgba(96, 165, 250, 0.08);
+  --nav-active-bg: rgba(96, 165, 250, 0.12);
+  --nav-active-border: rgba(96, 165, 250, 0.16);
+  --nav-active-color: #dbeafe;
   --chip-bg: #101014;
   --placeholder: #71717a;
-  --table-row-hover: #151519;
+  --table-row-hover: #121217;
   --analytics-bar: #27272f;
   --activity-bg: #111114;
   --success-bg: #0d2416;
@@ -70,7 +75,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-nunito);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-nunito);
 }
 
 * {
@@ -138,7 +143,7 @@ a {
 .logo-mark {
   width: 32px;
   height: 32px;
-  border-radius: 10px;
+  border-radius: var(--radius-ui);
   border: 1px solid rgba(59, 130, 246, 0.16);
   background: linear-gradient(180deg, var(--brand-700), var(--brand-900));
   color: #fff;
@@ -177,18 +182,19 @@ a {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-ui);
   color: var(--muted-strong);
   font-size: 13px;
   font-weight: 700;
   transition:
     background-color var(--interaction-duration) var(--interaction-ease),
-    color var(--interaction-duration) var(--interaction-ease);
+    color var(--interaction-duration) var(--interaction-ease),
+    box-shadow var(--interaction-duration) var(--interaction-ease);
 }
 
 .side-link:hover {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--nav-hover-bg);
+  color: var(--nav-active-color);
 }
 
 .side-link svg {
@@ -202,10 +208,10 @@ a {
 }
 
 .side-link.active {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--nav-active-bg);
+  color: var(--nav-active-color);
   font-weight: 800;
-  box-shadow: none;
+  box-shadow: inset 0 0 0 1px var(--nav-active-border);
 }
 
 .app-main {
@@ -285,9 +291,34 @@ a {
   color: var(--foreground);
 }
 
+.top-breadcrumb-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: none;
+  padding: 5px 8px;
+  border-radius: var(--radius-ui);
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  flex: 0 0 auto;
+}
+
+.top-breadcrumb-link.top-breadcrumb-home {
+  color: var(--muted-strong);
+}
+
+.top-breadcrumb-link.top-breadcrumb-home:hover {
+  background: var(--surface-elevated);
+  border-color: var(--border);
+}
+
 .top-breadcrumb-current {
   color: var(--foreground);
   font-weight: 800;
+}
+
+.top-breadcrumb-current.top-breadcrumb-home {
+  background: var(--surface-elevated);
 }
 
 .topbar-right {
@@ -359,6 +390,7 @@ a {
   border-radius: 12px;
   background: var(--chip-bg);
   box-shadow: none;
+  flex: 0 0 auto;
 }
 
 .avatar-dot {
@@ -395,8 +427,8 @@ a {
 .top-icon-btn {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
+  border-radius: var(--radius-ui);
+  border: 1px solid var(--ui-border);
   background: var(--surface);
   color: var(--muted-strong);
   display: inline-grid;
@@ -410,7 +442,7 @@ a {
 }
 
 .top-icon-btn:hover {
-  border-color: var(--border);
+  border-color: var(--ui-border);
   background: var(--surface-elevated);
 }
 
@@ -468,7 +500,7 @@ a {
 
 .metric-strip {
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--radius-ui);
   background: var(--surface);
   box-shadow: none;
   display: grid;
@@ -594,6 +626,15 @@ a {
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+}
+
+.dashboard-primary-panel-form-open {
+  height: auto;
+  min-height: 720px;
+}
+
+.dashboard-reservation-stack-form-open {
+  grid-template-rows: none;
 }
 
 .analytics-bars {
@@ -857,8 +898,8 @@ a {
 }
 
 .saas-card {
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-ui);
   background: var(--surface);
   box-shadow: none;
   transition:
@@ -867,13 +908,13 @@ a {
 }
 
 .saas-card-hover:hover {
-  border-color: #d4d4d8;
+  border-color: var(--border);
   box-shadow: none;
 }
 
 .panel {
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-ui);
   background: var(--surface);
   box-shadow: none;
 }
@@ -881,7 +922,7 @@ a {
 .btn-primary,
 .btn-secondary,
 .btn-danger {
-  border-radius: 10px;
+  border-radius: var(--radius-ui);
   padding: 9px 14px;
   font-weight: 700;
   cursor: pointer;
@@ -905,13 +946,13 @@ a {
 }
 
 .btn-secondary {
-  border: 1px solid var(--border);
+  border: 1px solid var(--ui-border);
   background: var(--surface);
   color: var(--foreground);
 }
 
 .btn-secondary:hover {
-  border-color: var(--border);
+  border-color: var(--ui-border);
   background: var(--surface-elevated);
   box-shadow: none;
 }
@@ -938,7 +979,7 @@ a {
   width: 42px;
   height: 42px;
   border-radius: 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ui-border);
   background: var(--surface);
   color: var(--foreground);
   display: inline-grid;
@@ -953,7 +994,7 @@ a {
 }
 
 .asset-action-btn:hover {
-  border-color: var(--border);
+  border-color: var(--ui-border);
   background: var(--surface-elevated);
   box-shadow: none;
 }
@@ -1088,8 +1129,8 @@ a {
 }
 
 .saas-table-wrap {
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-ui);
   overflow: auto;
   background: var(--surface);
 }
@@ -1110,7 +1151,7 @@ a {
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--muted);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--ui-border);
   background: var(--surface-elevated);
   padding: 11px 10px;
 }
@@ -1184,8 +1225,8 @@ a {
 .input-base {
   height: 40px;
   width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-ui);
   background: var(--surface);
   color: var(--foreground);
   padding: 0 12px;
@@ -1441,11 +1482,6 @@ select.status-select optgroup {
 .theme-toggle {
   width: 40px;
   height: 40px;
-}
-
-.theme-toggle-label {
-  font-size: 12px;
-  font-weight: 600;
 }
 
 .theme-icon {
@@ -1877,7 +1913,7 @@ select.status-select optgroup {
 .drone-package-tags {
   font-size: 11px;
   color: var(--muted);
-  font-family: var(--font-geist-mono, "Courier New", monospace);
+  font-family: var(--font-nunito), "Segoe UI", Arial, sans-serif;
   line-height: 1.45;
   word-break: break-word;
   white-space: normal;
@@ -2199,6 +2235,18 @@ select.status-select optgroup {
   max-height: none;
 }
 
+.dashboard-reservation-stack-form-open .reservation-list-scroll {
+  flex: 0 1 auto;
+}
+
+.dashboard-reservation-stack-form-open .reservation-section-reserved .reservation-list-scroll {
+  max-height: 220px;
+}
+
+.dashboard-reservation-stack-form-open .reservation-section-available .reservation-list-scroll {
+  max-height: 160px;
+}
+
 .reservation-section-available .reservation-list-scroll {
   max-height: 260px;
   padding-right: 6px;
@@ -2385,6 +2433,24 @@ select.status-select optgroup {
   border-color: rgba(186, 230, 253, 0.85);
 }
 
+.reservation-card-available .reservation-available-btn {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.reservation-card-available .reservation-available-btn:hover {
+  border-color: rgba(22, 163, 74, 0.55);
+  background: #dcfce7;
+  color: #166534;
+}
+
+.reservation-card-available .reservation-available-btn.is-selected {
+  border-color: #15803d;
+  background: #166534;
+  color: #f0fdf4;
+}
+
 .reservation-card-available .reservation-card-text {
   white-space: nowrap;
   overflow: hidden;
@@ -2503,16 +2569,6 @@ select.status-select optgroup {
   color: #eef2f7;
 }
 
-:root[data-theme="dark"] .side-link:hover {
-  background: rgba(59, 130, 246, 0.14);
-  color: #bfdbfe;
-}
-
-:root[data-theme="dark"] .side-link.active {
-  background: rgba(59, 130, 246, 0.18);
-  color: #dbeafe;
-}
-
 :root[data-theme="dark"] .app-content > div {
   background: transparent;
   border: none;
@@ -2537,9 +2593,9 @@ select.status-select optgroup {
 :root[data-theme="dark"] .top-fact-wrap,
 :root[data-theme="dark"] .input-base,
   :root[data-theme="dark"] .theme-toggle,
-  :root[data-theme="dark"] .top-icon-btn {
+:root[data-theme="dark"] .top-icon-btn {
   background: var(--surface);
-  border-color: var(--border);
+  border-color: var(--ui-border);
 }
 
 :root[data-theme="dark"] .top-fact-icon {
@@ -2569,13 +2625,13 @@ select.status-select optgroup {
 
 :root[data-theme="dark"] .btn-secondary {
   background: var(--surface);
-  border-color: var(--border);
+  border-color: var(--ui-border);
   color: var(--foreground);
 }
 
 :root[data-theme="dark"] .btn-secondary:hover {
   background: var(--surface-elevated);
-  border-color: var(--border);
+  border-color: var(--ui-border);
 }
 
 :root[data-theme="dark"] .btn-primary {
@@ -2590,13 +2646,13 @@ select.status-select optgroup {
 }
 
 :root[data-theme="dark"] .asset-action-btn {
-  border-color: var(--border);
+  border-color: var(--ui-border);
   background: var(--surface);
   color: var(--foreground);
 }
 
 :root[data-theme="dark"] .asset-action-btn:hover {
-  border-color: var(--border);
+  border-color: var(--ui-border);
   background: var(--surface-elevated);
 }
 
@@ -3059,6 +3115,24 @@ select.status-select optgroup {
 :root[data-theme="dark"] .reservation-section-drone .btn-secondary {
   border-color: #1f4f8f;
   color: #dbeafe;
+}
+
+:root[data-theme="dark"] .reservation-card-available .reservation-available-btn {
+  background: rgba(6, 46, 24, 0.82);
+  border-color: rgba(34, 197, 94, 0.5);
+  color: #bbf7d0;
+}
+
+:root[data-theme="dark"] .reservation-card-available .reservation-available-btn:hover {
+  background: rgba(20, 83, 45, 0.82);
+  border-color: rgba(74, 222, 128, 0.65);
+  color: #dcfce7;
+}
+
+:root[data-theme="dark"] .reservation-card-available .reservation-available-btn.is-selected {
+  background: #166534;
+  border-color: #4ade80;
+  color: #f0fdf4;
 }
 
 @media (max-width: 1024px) {

@@ -534,7 +534,6 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-page">
-      <h1 className="dashboard-title">Dashboard</h1>
       <p className="dashboard-subtitle">Hardware performance and operations overview.</p>
 
       <div className="search-field dashboard-search">
@@ -578,8 +577,17 @@ export default function DashboardPage() {
       </div>
 
       <div className="dashboard-row dashboard-row-primary">
-        <div className="panel dashboard-panel dashboard-primary-panel" style={{ padding: 16 }}>
-          <div className="dashboard-reservation-stack">
+        <div
+          className={`panel dashboard-panel dashboard-primary-panel${
+            reservationTargetId ? " dashboard-primary-panel-form-open" : ""
+          }`}
+          style={{ padding: 16 }}
+        >
+          <div
+            className={`dashboard-reservation-stack${
+              reservationTargetId ? " dashboard-reservation-stack-form-open" : ""
+            }`}
+          >
             <div className="reservation-section reservation-section-reserved">
               <div className="reservation-section-head">
                 <div>
@@ -693,7 +701,9 @@ export default function DashboardPage() {
                         </div>
                       </div>
                     <button
-                      className={reservationTargetId === String(row._id) ? "btn-primary" : "btn-secondary"}
+                      className={`btn-secondary reservation-available-btn${
+                        reservationTargetId === String(row._id) ? " is-selected" : ""
+                      }`}
                       type="button"
                       onClick={() => {
                         setReservationTargetId(String(row._id));

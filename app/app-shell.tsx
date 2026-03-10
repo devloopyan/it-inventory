@@ -80,14 +80,14 @@ export default function AppShell({ children }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const themeRef = useRef<ThemeMode>("light");
   const pathnameSegments = pathname.split("/").filter(Boolean);
-  const breadcrumbs =
-    pathnameSegments.length === 0
-      ? [{ href: "/", label: "Home", isCurrent: true }]
-      : pathnameSegments.map((segment, index) => ({
-          href: `/${pathnameSegments.slice(0, index + 1).join("/")}`,
-          label: formatBreadcrumbLabel(segment, index, pathnameSegments),
-          isCurrent: index === pathnameSegments.length - 1,
-        }));
+  const breadcrumbs = [
+    { href: "/", label: "Home", isCurrent: pathnameSegments.length === 0 },
+    ...pathnameSegments.map((segment, index) => ({
+      href: `/${pathnameSegments.slice(0, index + 1).join("/")}`,
+      label: formatBreadcrumbLabel(segment, index, pathnameSegments),
+      isCurrent: index === pathnameSegments.length - 1,
+    })),
+  ];
 
   useEffect(() => {
     const initialTheme = resolveInitialTheme();
@@ -112,7 +112,7 @@ export default function AppShell({ children }: AppShellProps) {
               </svg>
             </div>
             <div className="logo-copy">
-              <span>IT Invo.</span>
+              <span>IT Inventory</span>
               <small>Asset Desk</small>
             </div>
           </div>
@@ -167,10 +167,52 @@ export default function AppShell({ children }: AppShellProps) {
                       </span>
                     ) : null}
                     {crumb.isCurrent ? (
-                      <span className="top-breadcrumb-current">{crumb.label}</span>
+                      <span
+                        className={
+                          index === 0
+                            ? "top-breadcrumb-current top-breadcrumb-home"
+                            : "top-breadcrumb-current"
+                        }
+                        aria-label={index === 0 ? crumb.label : undefined}
+                      >
+                        {index === 0 ? (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                              d="M4 10.5L12 4L20 10.5V20H14.5V14H9.5V20H4V10.5Z"
+                              stroke="currentColor"
+                              strokeWidth="1.9"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        ) : (
+                          crumb.label
+                        )}
+                      </span>
                     ) : (
-                      <Link href={crumb.href} className="top-breadcrumb-link">
-                        {crumb.label}
+                      <Link
+                        href={crumb.href}
+                        className={
+                          index === 0
+                            ? "top-breadcrumb-link top-breadcrumb-home"
+                            : "top-breadcrumb-link"
+                        }
+                        aria-label={index === 0 ? crumb.label : undefined}
+                        title={index === 0 ? crumb.label : undefined}
+                      >
+                        {index === 0 ? (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                              d="M4 10.5L12 4L20 10.5V20H14.5V14H9.5V20H4V10.5Z"
+                              stroke="currentColor"
+                              strokeWidth="1.9"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        ) : (
+                          crumb.label
+                        )}
                       </Link>
                     )}
                   </div>

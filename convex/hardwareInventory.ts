@@ -17,6 +17,7 @@ const RESERVATION_STATUS_OPTIONS = ["Reserved", "Claimed", "Cancelled", "Expired
 
 const DEFAULT_PAGE_SIZE = 10;
 const WORKSTATION_TYPES = ["Laptop", "Desktop/PC"] as const;
+const REGISTER_MODE_OPTIONS = ["general", "workstation", "droneKit"] as const;
 const RESERVABLE_STATUS_OPTIONS = ["Available", "Working"] as const;
 
 function normalizeRequired(value: string, label: string) {
@@ -70,6 +71,7 @@ function normalizeWorkstationComponents(
     assetTag: string;
     componentType: string;
     specifications: string;
+    imageStorageId?: Id<"_storage">;
   }[],
 ) {
   if (!components?.length) return undefined;
@@ -81,6 +83,7 @@ function normalizeWorkstationComponents(
       component.specifications,
       `Component ${index + 1} Specifications`,
     ),
+    imageStorageId: component.imageStorageId,
   }));
 }
 
@@ -454,6 +457,7 @@ export const create = mutation({
           assetTag: v.string(),
           componentType: v.string(),
           specifications: v.string(),
+          imageStorageId: v.optional(v.id("_storage")),
         }),
       ),
     ),
@@ -509,7 +513,7 @@ export const create = mutation({
     ensureStatus(status);
     ensureStatus(effectiveStatus);
 
-    if (registerMode && registerMode !== "general" && registerMode !== "workstation") {
+    if (registerMode && !(REGISTER_MODE_OPTIONS as readonly string[]).includes(registerMode)) {
       throw new Error("Invalid register mode.");
     }
     if (workstationType && !(WORKSTATION_TYPES as readonly string[]).includes(workstationType)) {
@@ -1339,6 +1343,12 @@ export const remove = mutation({
       .droneFlightReportStorageId as Id<"_storage"> | undefined;
     if (droneFlightReportStorageId) {
       await ctx.storage.delete(droneFlightReportStorageId);
+    }
+    const workstationComponentImageStorageIds =
+      existing.workstationComponents
+        ?.flatMap((component) => (component.imageStorageId ? [component.imageStorageId] : [])) ?? [];
+    for (const storageId of workstationComponentImageStorageIds) {
+      await ctx.storage.delete(storageId);
     }
     await ctx.db.delete(args.inventoryId);
   },

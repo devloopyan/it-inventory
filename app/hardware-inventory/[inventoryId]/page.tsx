@@ -35,6 +35,13 @@ type FormState = {
   remarks: string;
 };
 
+type WorkstationComponent = {
+  assetTag?: string;
+  componentType?: string;
+  specifications?: string;
+  imageStorageId?: Id<"_storage">;
+};
+
 const statusColors: Record<HardwareStatus, { bg: string; text: string; border: string }> = {
   Available: { bg: "#dcfce7", text: "#166534", border: "#86efac" },
   Working: { bg: "#dbeafe", text: "#1d4ed8", border: "#93c5fd" },
@@ -97,6 +104,46 @@ function DetailItem({
       <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.4, whiteSpace: "pre-wrap" }}>
         {formatText(value)}
       </div>
+    </div>
+  );
+}
+
+function WorkstationComponentCard({ component }: { component: WorkstationComponent }) {
+  const componentImageUrl = useQuery(
+    api.hardwareInventory.getImageUrl,
+    component.imageStorageId ? { storageId: component.imageStorageId } : "skip",
+  );
+
+  return (
+    <div className="saas-card" style={{ padding: 12, display: "grid", gap: 10 }}>
+      <div style={{ display: "grid", gap: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+          {formatText(component.componentType)}
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700 }}>{formatText(component.assetTag)}</div>
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--muted-strong)", whiteSpace: "pre-wrap" }}>
+        {formatText(component.specifications)}
+      </div>
+      {component.imageStorageId ? (
+        componentImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={componentImageUrl}
+            alt={`${component.assetTag ?? component.componentType ?? "Component"} asset image`}
+            style={{
+              width: "100%",
+              borderRadius: 12,
+              border: "1px solid var(--border)",
+              objectFit: "cover",
+            }}
+          />
+        ) : (
+          <div style={{ color: "var(--muted)" }}>Loading image...</div>
+        )
+      ) : (
+        <div style={{ color: "var(--muted)" }}>No image uploaded.</div>
+      )}
     </div>
   );
 }
@@ -207,6 +254,10 @@ export default function HardwareInventoryDetailPage() {
   const assetStatus = (asset.status as HardwareStatus) ?? "Available";
   const isDesktopAsset = asset.assetType === "Desktop/PC";
   const isDroneAsset = asset.assetType === "Drone";
+  const workstationComponents =
+    (((asset as Record<string, unknown>).workstationComponents as WorkstationComponent[] | undefined) ?? []).filter(
+      (component) => component.assetTag || component.componentType || component.specifications,
+    );
 
   function openEditor() {
     setForm({
@@ -647,6 +698,25 @@ export default function HardwareInventoryDetailPage() {
               <div style={{ color: "var(--muted)" }}>No image uploaded.</div>
             )}
           </section>
+          {isDroneAsset && workstationComponents.length ? (
+            <section className="panel" style={{ padding: 14 }}>
+              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>Drone Kit Components</div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 10,
+                }}
+              >
+                {workstationComponents.map((component, index) => (
+                  <WorkstationComponentCard
+                    key={`${component.assetTag ?? component.componentType ?? "component"}-${index}`}
+                    component={component}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
           <section className="panel" style={{ padding: 14 }}>
             <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>
               Receiving Form (Admin)

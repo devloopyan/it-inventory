@@ -63,6 +63,7 @@ export default defineSchema({
           assetTag: v.string(),
           componentType: v.string(),
           specifications: v.string(),
+          imageStorageId: v.optional(v.id("_storage")),
         }),
       ),
     ),

@@ -16,7 +16,7 @@ const departmentOptions = HARDWARE_DEPARTMENTS;
 const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRID"] as const;
 const workstationTypes = ["Laptop", "Desktop/PC"] as const;
 const specsTierOptions = ["LOW", "MID", "HIGH-END"] as const;
-const componentTypeOptions = ["Monitor", "Headset", "Keyboard", "Mouse", "Speaker", "Other"] as const;
+const componentTypeOptions = ["Monitor", "Headset", "Keyboard", "Mouse", "Speaker", "AVR", "Other"] as const;
 const hardwareInventoryPendingToastKey = "hardware-inventory:pending-toast";
 
 type RegisterMode = "general" | "workstation" | "droneKit";
@@ -40,6 +40,13 @@ type DroneKitFormState = {
   chargerSpecs: string;
   controllerSerialNumber: string;
   controllerSpecs: string;
+};
+
+type DroneKitComponentImageFiles = {
+  battery: File | null;
+  propeller: File | null;
+  charger: File | null;
+  controller: File | null;
 };
 
 type DesktopFormState = {
@@ -153,6 +160,13 @@ const defaultDroneKitForm: DroneKitFormState = {
   controllerSpecs: "",
 };
 
+const defaultDroneKitComponentImageFiles: DroneKitComponentImageFiles = {
+  battery: null,
+  propeller: null,
+  charger: null,
+  controller: null,
+};
+
 const statusStyles: Record<
   HardwareStatus,
   { background: string; color: string; borderColor: string }
@@ -260,6 +274,8 @@ function resolveExtraComponentAssetType(componentType?: string) {
       return "Mouse";
     case "Speaker":
       return "Speaker";
+    case "AVR":
+      return "Audio Visual Equipment";
     case "Other":
     default:
       return "Other IT Asset";
@@ -411,6 +427,9 @@ export default function HardwareInventoryPage() {
   const [formSuccess, setFormSuccess] = useState<{ id: number; message: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [droneKitComponentImageFiles, setDroneKitComponentImageFiles] = useState(
+    defaultDroneKitComponentImageFiles,
+  );
   const [selectedReceivingFormFile, setSelectedReceivingFormFile] = useState<File | null>(null);
   const [selectedTurnoverFormFile, setSelectedTurnoverFormFile] = useState<File | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("assetTag");
@@ -445,6 +464,10 @@ export default function HardwareInventoryPage() {
   const migrationRan = useRef(false);
   const formSectionRef = useRef<HTMLElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const batteryImageInputRef = useRef<HTMLInputElement | null>(null);
+  const propellerImageInputRef = useRef<HTMLInputElement | null>(null);
+  const chargerImageInputRef = useRef<HTMLInputElement | null>(null);
+  const controllerImageInputRef = useRef<HTMLInputElement | null>(null);
   const receivingFormInputRef = useRef<HTMLInputElement | null>(null);
   const turnoverFormInputRef = useRef<HTMLInputElement | null>(null);
   const isDesktopWorkstation = registerMode === "workstation" && workstationType === "Desktop/PC";
@@ -631,6 +654,31 @@ export default function HardwareInventoryPage() {
     }
   };
 
+  async function uploadFileToStorage(file: File | null, failureMessage: string) {
+    if (!file) {
+      return undefined;
+    }
+
+    const uploadUrl = await generateUploadUrl();
+    const uploadResult = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+      },
+      body: file,
+    });
+    if (!uploadResult.ok) {
+      throw new Error(failureMessage);
+    }
+
+    const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
+    if (!uploadData.storageId) {
+      throw new Error(failureMessage);
+    }
+
+    return uploadData.storageId;
+  }
+
   async function handleCreate() {
     setFormError("");
     setFormSuccess(null);
@@ -749,6 +797,19 @@ export default function HardwareInventoryPage() {
         );
         return;
       }
+      const missingDroneImageSections = [
+        !selectedImageFile ? "Drone Unit" : "",
+        !droneKitComponentImageFiles.battery ? "Battery" : "",
+        !droneKitComponentImageFiles.propeller ? "Propeller" : "",
+        !droneKitComponentImageFiles.charger ? "Charger" : "",
+        !droneKitComponentImageFiles.controller ? "Controller" : "",
+      ].filter(Boolean);
+      if (missingDroneImageSections.length) {
+        setFormError(
+          `Drone kit requires asset images for ${missingDroneImageSections.join(", ")}.`,
+        );
+        return;
+      }
     }
     if (isDesktopWorkstation) {
       if (
@@ -789,67 +850,39 @@ export default function HardwareInventoryPage() {
 
     try {
       setIsSaving(true);
-      let imageStorageId: Id<"_storage"> | undefined;
-      let receivingFormStorageId: Id<"_storage"> | undefined;
-      let turnoverFormStorageId: Id<"_storage"> | undefined;
-
-      if (selectedImageFile) {
-        const uploadUrl = await generateUploadUrl();
-        const uploadResult = await fetch(uploadUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": selectedImageFile.type || "application/octet-stream",
-          },
-          body: selectedImageFile,
-        });
-        if (!uploadResult.ok) {
-          throw new Error("Image upload failed.");
-        }
-
-        const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
-        if (!uploadData.storageId) {
-          throw new Error("Image upload failed.");
-        }
-        imageStorageId = uploadData.storageId;
-      }
-      if (selectedReceivingFormFile) {
-        const uploadUrl = await generateUploadUrl();
-        const uploadResult = await fetch(uploadUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": selectedReceivingFormFile.type || "application/octet-stream",
-          },
-          body: selectedReceivingFormFile,
-        });
-        if (!uploadResult.ok) {
-          throw new Error("Receiving form upload failed.");
-        }
-
-        const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
-        if (!uploadData.storageId) {
-          throw new Error("Receiving form upload failed.");
-        }
-        receivingFormStorageId = uploadData.storageId;
-      }
-      if (selectedTurnoverFormFile) {
-        const uploadUrl = await generateUploadUrl();
-        const uploadResult = await fetch(uploadUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": selectedTurnoverFormFile.type || "application/octet-stream",
-          },
-          body: selectedTurnoverFormFile,
-        });
-        if (!uploadResult.ok) {
-          throw new Error("Signed turnover form upload failed.");
-        }
-
-        const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
-        if (!uploadData.storageId) {
-          throw new Error("Signed turnover form upload failed.");
-        }
-        turnoverFormStorageId = uploadData.storageId;
-      }
+      const imageStorageId = await uploadFileToStorage(selectedImageFile, "Image upload failed.");
+      const batteryImageStorageId = isDroneKitMode
+        ? await uploadFileToStorage(
+            droneKitComponentImageFiles.battery,
+            "Battery image upload failed.",
+          )
+        : undefined;
+      const propellerImageStorageId = isDroneKitMode
+        ? await uploadFileToStorage(
+            droneKitComponentImageFiles.propeller,
+            "Propeller image upload failed.",
+          )
+        : undefined;
+      const chargerImageStorageId = isDroneKitMode
+        ? await uploadFileToStorage(
+            droneKitComponentImageFiles.charger,
+            "Charger image upload failed.",
+          )
+        : undefined;
+      const controllerImageStorageId = isDroneKitMode
+        ? await uploadFileToStorage(
+            droneKitComponentImageFiles.controller,
+            "Controller image upload failed.",
+          )
+        : undefined;
+      const receivingFormStorageId = await uploadFileToStorage(
+        selectedReceivingFormFile,
+        "Receiving form upload failed.",
+      );
+      const turnoverFormStorageId = await uploadFileToStorage(
+        selectedTurnoverFormFile,
+        "Signed turnover form upload failed.",
+      );
 
       await createAsset({
         assetTag: assetTagToSave,
@@ -919,11 +952,13 @@ export default function HardwareInventoryPage() {
                   specifications: droneKitForm.batterySerialNumber.trim()
                     ? `${droneKitForm.batterySpecs.trim()} | Serial: ${droneKitForm.batterySerialNumber.trim()}`
                     : droneKitForm.batterySpecs.trim(),
+                  imageStorageId: batteryImageStorageId,
                 },
                 {
                   assetTag: droneKitGeneratedTags?.propellerAssetTag ?? "",
                   componentType: "Drone Propeller",
                   specifications: droneKitForm.propellerSpecs.trim(),
+                  imageStorageId: propellerImageStorageId,
                 },
                 {
                   assetTag: droneKitGeneratedTags?.chargerAssetTag ?? "",
@@ -931,6 +966,7 @@ export default function HardwareInventoryPage() {
                   specifications: droneKitForm.chargerSerialNumber.trim()
                     ? `${droneKitForm.chargerSpecs.trim()} | Serial: ${droneKitForm.chargerSerialNumber.trim()}`
                     : droneKitForm.chargerSpecs.trim(),
+                  imageStorageId: chargerImageStorageId,
                 },
                 {
                   assetTag: droneKitGeneratedTags?.controllerAssetTag ?? "",
@@ -938,6 +974,7 @@ export default function HardwareInventoryPage() {
                   specifications: droneKitForm.controllerSerialNumber.trim()
                     ? `${droneKitForm.controllerSpecs.trim()} | Serial: ${droneKitForm.controllerSerialNumber.trim()}`
                     : droneKitForm.controllerSpecs.trim(),
+                  imageStorageId: controllerImageStorageId,
                 },
               ]
           : undefined,
@@ -947,10 +984,23 @@ export default function HardwareInventoryPage() {
       setDroneKitForm(defaultDroneKitForm);
       setSpecTier("");
       setSelectedImageFile(null);
+      setDroneKitComponentImageFiles(defaultDroneKitComponentImageFiles);
       setSelectedReceivingFormFile(null);
       setSelectedTurnoverFormFile(null);
       if (imageInputRef.current) {
         imageInputRef.current.value = "";
+      }
+      if (batteryImageInputRef.current) {
+        batteryImageInputRef.current.value = "";
+      }
+      if (propellerImageInputRef.current) {
+        propellerImageInputRef.current.value = "";
+      }
+      if (chargerImageInputRef.current) {
+        chargerImageInputRef.current.value = "";
+      }
+      if (controllerImageInputRef.current) {
+        controllerImageInputRef.current.value = "";
       }
       if (receivingFormInputRef.current) {
         receivingFormInputRef.current.value = "";
@@ -988,11 +1038,6 @@ export default function HardwareInventoryPage() {
           {formSuccess.message}
         </div>
       ) : null}
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>Hardware Inventory</h1>
-      <p style={{ color: "var(--muted)", marginBottom: 16 }}>
-        Track lifecycle, ownership, and location for all hardware assets.
-      </p>
-
       <section className="panel" style={{ padding: 18 }} ref={formSectionRef}>
         <div
           style={{
@@ -1820,6 +1865,38 @@ export default function HardwareInventoryPage() {
                   />
                 </div>
               </div>
+              <div style={{ maxWidth: 420 }}>
+                <FileUploadCard
+                  label={
+                    <>
+                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
+                    </>
+                  }
+                  inputRef={imageInputRef}
+                  accept="image/*"
+                  onFileChange={(file) => setSelectedImageFile(file)}
+                  hasAttachment={Boolean(selectedImageFile)}
+                  displayName={selectedImageFile ? selectedImageFile.name : "Drone unit asset image"}
+                  helperText={
+                    selectedImageFile
+                      ? "Ready to save with this drone unit image attached."
+                      : "Attach the drone unit asset image."
+                  }
+                  badge="IMG"
+                  ariaLabel="Drone unit asset image upload"
+                  title="Upload drone unit asset image"
+                  onRemove={
+                    selectedImageFile
+                      ? () => {
+                          setSelectedImageFile(null);
+                          if (imageInputRef.current) {
+                            imageInputRef.current.value = "";
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             </div>
 
             <div
@@ -1886,6 +1963,44 @@ export default function HardwareInventoryPage() {
                   />
                 </div>
               </div>
+              <div style={{ maxWidth: 420 }}>
+                <FileUploadCard
+                  label={
+                    <>
+                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
+                    </>
+                  }
+                  inputRef={batteryImageInputRef}
+                  accept="image/*"
+                  onFileChange={(file) =>
+                    setDroneKitComponentImageFiles((prev) => ({ ...prev, battery: file }))
+                  }
+                  hasAttachment={Boolean(droneKitComponentImageFiles.battery)}
+                  displayName={
+                    droneKitComponentImageFiles.battery
+                      ? droneKitComponentImageFiles.battery.name
+                      : "Battery asset image"
+                  }
+                  helperText={
+                    droneKitComponentImageFiles.battery
+                      ? "Ready to save with this battery image attached."
+                      : "Attach the battery asset image."
+                  }
+                  badge="IMG"
+                  ariaLabel="Battery asset image upload"
+                  title="Upload battery asset image"
+                  onRemove={
+                    droneKitComponentImageFiles.battery
+                      ? () => {
+                          setDroneKitComponentImageFiles((prev) => ({ ...prev, battery: null }));
+                          if (batteryImageInputRef.current) {
+                            batteryImageInputRef.current.value = "";
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             </div>
 
             <div
@@ -1935,6 +2050,44 @@ export default function HardwareInventoryPage() {
                     }
                   />
                 </div>
+              </div>
+              <div style={{ maxWidth: 420 }}>
+                <FileUploadCard
+                  label={
+                    <>
+                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
+                    </>
+                  }
+                  inputRef={propellerImageInputRef}
+                  accept="image/*"
+                  onFileChange={(file) =>
+                    setDroneKitComponentImageFiles((prev) => ({ ...prev, propeller: file }))
+                  }
+                  hasAttachment={Boolean(droneKitComponentImageFiles.propeller)}
+                  displayName={
+                    droneKitComponentImageFiles.propeller
+                      ? droneKitComponentImageFiles.propeller.name
+                      : "Propeller asset image"
+                  }
+                  helperText={
+                    droneKitComponentImageFiles.propeller
+                      ? "Ready to save with this propeller image attached."
+                      : "Attach the propeller asset image."
+                  }
+                  badge="IMG"
+                  ariaLabel="Propeller asset image upload"
+                  title="Upload propeller asset image"
+                  onRemove={
+                    droneKitComponentImageFiles.propeller
+                      ? () => {
+                          setDroneKitComponentImageFiles((prev) => ({ ...prev, propeller: null }));
+                          if (propellerImageInputRef.current) {
+                            propellerImageInputRef.current.value = "";
+                          }
+                        }
+                      : undefined
+                  }
+                />
               </div>
             </div>
 
@@ -2002,6 +2155,44 @@ export default function HardwareInventoryPage() {
                   />
                 </div>
               </div>
+              <div style={{ maxWidth: 420 }}>
+                <FileUploadCard
+                  label={
+                    <>
+                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
+                    </>
+                  }
+                  inputRef={chargerImageInputRef}
+                  accept="image/*"
+                  onFileChange={(file) =>
+                    setDroneKitComponentImageFiles((prev) => ({ ...prev, charger: file }))
+                  }
+                  hasAttachment={Boolean(droneKitComponentImageFiles.charger)}
+                  displayName={
+                    droneKitComponentImageFiles.charger
+                      ? droneKitComponentImageFiles.charger.name
+                      : "Charger asset image"
+                  }
+                  helperText={
+                    droneKitComponentImageFiles.charger
+                      ? "Ready to save with this charger image attached."
+                      : "Attach the charger asset image."
+                  }
+                  badge="IMG"
+                  ariaLabel="Charger asset image upload"
+                  title="Upload charger asset image"
+                  onRemove={
+                    droneKitComponentImageFiles.charger
+                      ? () => {
+                          setDroneKitComponentImageFiles((prev) => ({ ...prev, charger: null }));
+                          if (chargerImageInputRef.current) {
+                            chargerImageInputRef.current.value = "";
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             </div>
 
             <div
@@ -2068,40 +2259,80 @@ export default function HardwareInventoryPage() {
                   />
                 </div>
               </div>
+              <div style={{ maxWidth: 420 }}>
+                <FileUploadCard
+                  label={
+                    <>
+                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
+                    </>
+                  }
+                  inputRef={controllerImageInputRef}
+                  accept="image/*"
+                  onFileChange={(file) =>
+                    setDroneKitComponentImageFiles((prev) => ({ ...prev, controller: file }))
+                  }
+                  hasAttachment={Boolean(droneKitComponentImageFiles.controller)}
+                  displayName={
+                    droneKitComponentImageFiles.controller
+                      ? droneKitComponentImageFiles.controller.name
+                      : "Controller asset image"
+                  }
+                  helperText={
+                    droneKitComponentImageFiles.controller
+                      ? "Ready to save with this controller image attached."
+                      : "Attach the controller asset image."
+                  }
+                  badge="IMG"
+                  ariaLabel="Controller asset image upload"
+                  title="Upload controller asset image"
+                  onRemove={
+                    droneKitComponentImageFiles.controller
+                      ? () => {
+                          setDroneKitComponentImageFiles((prev) => ({ ...prev, controller: null }));
+                          if (controllerImageInputRef.current) {
+                            controllerImageInputRef.current.value = "";
+                          }
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             </div>
           </div>
         ) : null}
         <div className="upload-action-grid" style={{ marginTop: 12 }}>
-          <FileUploadCard
-            label={
-              <>
-                Asset Image <span style={{ color: "#dc2626" }}>*</span>
-              </>
-            }
-            inputRef={imageInputRef}
-            accept="image/*"
-            onFileChange={(file) => setSelectedImageFile(file)}
-            hasAttachment={Boolean(selectedImageFile)}
-            displayName={selectedImageFile ? selectedImageFile.name : "Asset image"}
-            helperText={
-              selectedImageFile
-                ? "Ready to save with this image attached."
-                : "Attach an image before creating the asset."
-            }
-            badge="IMG"
-            ariaLabel="Asset image upload"
-            title="Upload asset image"
-            onRemove={
-              selectedImageFile
-                ? () => {
-                    setSelectedImageFile(null);
-                    if (imageInputRef.current) {
-                      imageInputRef.current.value = "";
+          {!isDroneKitMode ? (
+            <FileUploadCard
+              label={
+                <>
+                  Asset Image <span style={{ color: "#dc2626" }}>*</span>
+                </>
+              }
+              inputRef={imageInputRef}
+              accept="image/*"
+              onFileChange={(file) => setSelectedImageFile(file)}
+              hasAttachment={Boolean(selectedImageFile)}
+              displayName={selectedImageFile ? selectedImageFile.name : "Asset image"}
+              helperText={
+                selectedImageFile
+                  ? "Ready to save with this image attached."
+                  : "Attach an image before creating the asset."
+              }
+              badge="IMG"
+              ariaLabel="Asset image upload"
+              title="Upload asset image"
+              onRemove={
+                selectedImageFile
+                  ? () => {
+                      setSelectedImageFile(null);
+                      if (imageInputRef.current) {
+                        imageInputRef.current.value = "";
+                      }
                     }
-                  }
-                : undefined
-            }
-          />
+                  : undefined
+              }
+            />
+          ) : null}
           <FileUploadCard
             label="Receiving Form (optional)"
             inputRef={receivingFormInputRef}
