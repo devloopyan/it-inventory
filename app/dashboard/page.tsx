@@ -87,12 +87,27 @@ function isOfficialTurnover(row: {
 }
 
 function isWorkstationRecord(row: {
+  assetType?: string;
   registerMode?: string;
   workstationType?: string;
 }) {
   if (row.registerMode === "workstation") return true;
   if (row.workstationType === "Laptop" || row.workstationType === "Desktop/PC") return true;
+  if (row.assetType === "Laptop" || row.assetType === "Desktop/PC") return true;
   return false;
+}
+
+function getWorkstationAssetType(row: {
+  assetType?: string;
+  workstationType?: string;
+}) {
+  if (row.workstationType === "Desktop/PC" || row.workstationType === "Laptop") {
+    return row.workstationType;
+  }
+  if (row.assetType === "Desktop/PC" || row.assetType === "Laptop") {
+    return row.assetType;
+  }
+  return "";
 }
 
 function getReservationStatus(row: Record<string, unknown>) {
@@ -117,6 +132,17 @@ function getReservationRequestedDate(row: Record<string, unknown>) {
 
 function getReservationPickupDate(row: Record<string, unknown>) {
   return (row.reservationPickupDate as string | undefined) ?? "";
+}
+
+function getReservationReturnDueDate(row: Record<string, unknown>) {
+  return (row.reservationReturnDueDate as string | undefined) ?? "";
+}
+
+function isDroneKitRecord(row: {
+  assetType?: string;
+  registerMode?: string;
+}) {
+  return row.assetType === "Drone" || row.registerMode === "droneKit";
 }
 
 function getActivityMeta(eventType: string): {
@@ -145,6 +171,12 @@ function getActivityMeta(eventType: string): {
       return { label: "Claimed", tone: "green" };
     case "reservation_cancelled":
       return { label: "Reservation Cancelled", tone: "amber" };
+    case "asset_returned":
+      return { label: "Returned", tone: "green" };
+    case "drone_flight_report_uploaded":
+      return { label: "Flight Report", tone: "blue" };
+    case "return_reminder_sent":
+      return { label: "Reminder Sent", tone: "amber" };
     case "receiving_form_uploaded":
       return { label: "Receiving Form", tone: "green" };
     case "turnover_form_uploaded":
@@ -198,10 +230,19 @@ function renderActivityIcon(eventType: string) {
       );
     case "receiving_form_uploaded":
     case "turnover_form_uploaded":
+    case "drone_flight_report_uploaded":
+    case "return_reminder_sent":
       return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M8 3H16L20 7V21H4V3H8Z" stroke="currentColor" strokeWidth="2" />
           <path d="M16 3V7H20" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      );
+    case "asset_returned":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M19 12H5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M12 19L5 12L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       );
     default:
@@ -225,9 +266,11 @@ export default function DashboardPage() {
   ) as unknown as (args: {
     inventoryId: never;
     borrowerName: string;
+    borrowerEmail: string;
     department: string;
     requestedDate: string;
     expectedPickupDate?: string;
+    returnDueDate: string;
     slipNote?: string;
   }) => Promise<unknown>;
   const claimReservation = useMutation(
@@ -242,12 +285,18 @@ export default function DashboardPage() {
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [reservationTargetId, setReservationTargetId] = useState<string>("");
   const [reservationBorrower, setReservationBorrower] = useState("");
+  const [reservationBorrowerEmail, setReservationBorrowerEmail] = useState("");
   const [reservationDepartment, setReservationDepartment] = useState("");
   const [reservationRequestedDate, setReservationRequestedDate] = useState("");
   const [reservationPickupDate, setReservationPickupDate] = useState("");
+  const [reservationReturnDueDate, setReservationReturnDueDate] = useState("");
   const [reservationSlipNote, setReservationSlipNote] = useState("");
   const [reservationError, setReservationError] = useState("");
   const [reservationBusyId, setReservationBusyId] = useState("");
+  const [teamsTestEmail, setTeamsTestEmail] = useState("");
+  const [teamsTestBusy, setTeamsTestBusy] = useState(false);
+  const [teamsTestError, setTeamsTestError] = useState("");
+  const [teamsTestMessage, setTeamsTestMessage] = useState("");
   const migrationRan = useRef(false);
 
   useEffect(() => {
@@ -271,9 +320,11 @@ export default function DashboardPage() {
   function resetReservationForm() {
     setReservationTargetId("");
     setReservationBorrower("");
+    setReservationBorrowerEmail("");
     setReservationDepartment("");
     setReservationRequestedDate("");
     setReservationPickupDate("");
+    setReservationReturnDueDate("");
     setReservationSlipNote("");
     setReservationError("");
     setReservationBusyId("");
@@ -292,8 +343,16 @@ export default function DashboardPage() {
       setReservationError("Department is required.");
       return;
     }
+    if (!reservationBorrowerEmail.trim()) {
+      setReservationError("Borrower Microsoft email is required.");
+      return;
+    }
     if (!reservationRequestedDate) {
       setReservationError("Requested date is required.");
+      return;
+    }
+    if (!reservationReturnDueDate) {
+      setReservationError("Return due date is required.");
       return;
     }
 
@@ -303,9 +362,11 @@ export default function DashboardPage() {
       await reserveAsset({
         inventoryId: reservationTargetId as never,
         borrowerName: reservationBorrower,
+        borrowerEmail: reservationBorrowerEmail,
         department: reservationDepartment,
         requestedDate: reservationRequestedDate,
         expectedPickupDate: reservationPickupDate || undefined,
+        returnDueDate: reservationReturnDueDate,
         slipNote: reservationSlipNote || undefined,
       });
       setActiveTab("reserved");
@@ -340,6 +401,44 @@ export default function DashboardPage() {
       setReservationError(error instanceof Error ? error.message : "Cancel failed.");
     } finally {
       setReservationBusyId("");
+    }
+  }
+
+  async function handleSendTeamsTest() {
+    if (!teamsTestEmail.trim()) {
+      setTeamsTestError("Enter a Microsoft email first.");
+      setTeamsTestMessage("");
+      return;
+    }
+
+    try {
+      setTeamsTestBusy(true);
+      setTeamsTestError("");
+      setTeamsTestMessage("");
+      const response = await fetch("/api/internal/teams-test-reminder", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          recipientEmail: teamsTestEmail,
+        }),
+      });
+      const result = (await response.json()) as {
+        recipientEmail?: string;
+        dueDate?: string;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(result.error || "Teams test reminder failed.");
+      }
+      setTeamsTestMessage(
+        `Test reminder sent to ${result.recipientEmail}. Due date used: ${result.dueDate}.`,
+      );
+    } catch (error) {
+      setTeamsTestError(error instanceof Error ? error.message : "Teams test reminder failed.");
+    } finally {
+      setTeamsTestBusy(false);
     }
   }
 
@@ -418,6 +517,21 @@ export default function DashboardPage() {
     }
     return new Map<string, typeof tabRows>();
   }, [tabRows, activeTab]);
+  const workstationSections = useMemo(
+    () =>
+      [
+        { key: "Desktop/PC", label: "PC Desktop" },
+        { key: "Laptop", label: "Laptop" },
+      ].map((section) => {
+        const rows = tabRows.filter((row) => getWorkstationAssetType(row) === section.key);
+        return {
+          ...section,
+          rows,
+          groupedRows: groupBy(rows, (row) => row.turnoverTo ?? ""),
+        };
+      }),
+    [tabRows],
+  );
 
   const recentRows = useMemo(() => (allRows ?? []).slice(0, 5), [allRows]);
   const reservedMainStorageRows = useMemo(
@@ -449,6 +563,23 @@ export default function DashboardPage() {
       ),
     [allRows, availableStatuses],
   );
+  const reservableMainStorageGeneralRows = useMemo(
+    () => reservableMainStorageRows.filter((row) => !isDroneKitRecord(row)),
+    [reservableMainStorageRows],
+  );
+  const reservableMainStorageDroneRows = useMemo(
+    () => reservableMainStorageRows.filter((row) => isDroneKitRecord(row)),
+    [reservableMainStorageRows],
+  );
+  const selectedReservationRow = useMemo(
+    () =>
+      (
+        reservableMainStorageRows.find((row) => String(row._id) === reservationTargetId) ??
+        allRows?.find((row) => String(row._id) === reservationTargetId)
+      ),
+    [allRows, reservationTargetId, reservableMainStorageRows],
+  );
+  const selectedReservationIsDrone = isDroneKitRecord(selectedReservationRow ?? {});
   const adjustedAvailableCount = useMemo(
     () =>
       (allRows ?? []).filter(
@@ -458,7 +589,8 @@ export default function DashboardPage() {
     [allRows],
   );
   const reservedCount = reservedMainStorageRows.length;
-  const trulyAvailableStorageCount = reservableMainStorageRows.length;
+  const generalReservableCount = reservableMainStorageGeneralRows.length;
+  const droneReservableCount = reservableMainStorageDroneRows.length;
   const visibleActivityFeed = useMemo(
     () => (activityExpanded ? activityFeed ?? [] : (activityFeed ?? []).slice(0, 3)),
     [activityFeed, activityExpanded],
@@ -532,23 +664,186 @@ export default function DashboardPage() {
     </div>
   );
 
+  const renderGroupedTables = (
+    groups: Map<string, typeof tabRows>,
+    emptyState: React.ReactNode = renderTable([]),
+  ) => (
+    <div className="dashboard-group-list" style={{ display: "grid", gap: 16 }}>
+      {[...groups.entries()].map(([group, rows]) => (
+        <div key={group} className="saas-card dashboard-group-card" style={{ padding: 12 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>{group}</div>
+          {renderTable(rows)}
+        </div>
+      ))}
+      {!groups.size ? emptyState : null}
+    </div>
+  );
+
+  const renderReservationForm = () => {
+    if (!reservationTargetId || !selectedReservationRow) return null;
+
+    return (
+      <div
+        className="reservation-form-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Reservation form"
+        onClick={resetReservationForm}
+      >
+        <div className="reservation-form-backdrop" />
+        <div className="reservation-form-shell" onClick={(e) => e.stopPropagation()}>
+          <div className="reservation-form-wrap">
+            <div className="reservation-form-head">
+              <div style={{ minWidth: 0 }}>
+                <div className="reservation-form-title">
+                  Reserve {selectedReservationRow.assetTag}
+                </div>
+                <div className="reservation-form-note">
+                  When claimed, the asset status will change to Borrowed.
+                  A return due date is required.
+                  {selectedReservationIsDrone ? " A flight report is required upon return." : ""}
+                </div>
+              </div>
+            </div>
+            <div className="reservation-form-grid">
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                  Borrower Name
+                </div>
+                <input
+                  className="input-base reservation-input"
+                  value={reservationBorrower}
+                  onChange={(e) => setReservationBorrower(e.target.value)}
+                  placeholder="Enter borrower name"
+                  aria-label="Borrower name"
+                />
+              </div>
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                  Microsoft Email
+                </div>
+                <input
+                  className="input-base reservation-input"
+                  type="email"
+                  value={reservationBorrowerEmail}
+                  onChange={(e) => setReservationBorrowerEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  aria-label="Borrower Microsoft email"
+                />
+              </div>
+            </div>
+            <div className="reservation-form-grid">
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                  Department
+                </div>
+                <select
+                  className="input-base reservation-input"
+                  value={reservationDepartment}
+                  onChange={(e) => setReservationDepartment(e.target.value)}
+                  aria-label="Reservation department"
+                >
+                  <option value="">Select department</option>
+                  {HARDWARE_DEPARTMENTS.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="reservation-form-grid">
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                  Requested Date
+                </div>
+                <input
+                  className="input-base reservation-input"
+                  type="date"
+                  value={reservationRequestedDate}
+                  onChange={(e) => setReservationRequestedDate(e.target.value)}
+                  aria-label="Requested date"
+                />
+              </div>
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                  Expected Pickup Date
+                </div>
+                <input
+                  className="input-base reservation-input"
+                  type="date"
+                  value={reservationPickupDate}
+                  onChange={(e) => setReservationPickupDate(e.target.value)}
+                  aria-label="Expected pickup date"
+                />
+              </div>
+            </div>
+            <div className="reservation-form-grid">
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                  Return Due Date
+                </div>
+                <input
+                  className="input-base reservation-input"
+                  type="date"
+                  value={reservationReturnDueDate}
+                  onChange={(e) => setReservationReturnDueDate(e.target.value)}
+                  aria-label="Return due date"
+                />
+              </div>
+            </div>
+            <div className="reservation-form-field">
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                Borrower Slip Note
+              </div>
+              <textarea
+                className="input-base reservation-input reservation-textarea"
+                value={reservationSlipNote}
+                onChange={(e) => setReservationSlipNote(e.target.value)}
+                placeholder="Enter borrower slip reference or note"
+              />
+            </div>
+            {reservationError ? <div className="reservation-error">{reservationError}</div> : null}
+            <div className="reservation-form-actions">
+              <button className="btn-secondary" type="button" onClick={resetReservationForm}>
+                Cancel
+              </button>
+              <button
+                className="btn-primary"
+                type="button"
+                onClick={() => void handleReserveSubmit()}
+                disabled={reservationBusyId === reservationTargetId}
+              >
+                {reservationBusyId === reservationTargetId ? "Saving..." : "Save Reservation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="dashboard-page">
-      <p className="dashboard-subtitle">Hardware performance and operations overview.</p>
-
-      <div className="search-field dashboard-search">
-        <span className="search-icon">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-            <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" />
-          </svg>
-        </span>
-        <input
-          className="input-base"
-          placeholder="Tap to search assets"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="dashboard-header">
+        <div className="dashboard-heading">
+          <h1 className="dashboard-title">Asset Operations</h1>
+          <p className="dashboard-subtitle">Hardware performance and operations overview.</p>
+        </div>
+        <div className="search-field dashboard-search">
+          <span className="search-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+              <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          </span>
+          <input
+            className="input-base"
+            placeholder="Search assets..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
       </div>
 
       <div className="metric-strip dashboard-metric-strip">
@@ -577,17 +872,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="dashboard-row dashboard-row-primary">
-        <div
-          className={`panel dashboard-panel dashboard-primary-panel${
-            reservationTargetId ? " dashboard-primary-panel-form-open" : ""
-          }`}
-          style={{ padding: 16 }}
-        >
-          <div
-            className={`dashboard-reservation-stack${
-              reservationTargetId ? " dashboard-reservation-stack-form-open" : ""
-            }`}
-          >
+        <div className="panel dashboard-panel dashboard-primary-panel" style={{ padding: 16 }}>
+          <div className="dashboard-reservation-stack">
             <div className="reservation-section reservation-section-reserved">
               <div className="reservation-section-head">
                 <div>
@@ -616,13 +902,19 @@ export default function DashboardPage() {
                   const reservationRow = row as Record<string, unknown>;
                   const pickupDate = getReservationPickupDate(reservationRow);
                   const requestDate = getReservationRequestedDate(reservationRow);
+                  const returnDueDate = getReservationReturnDueDate(reservationRow);
                   const reservationAssignee = [
                     getReservationBorrower(reservationRow),
                     getReservationDepartment(reservationRow),
                   ]
                     .filter(Boolean)
                     .join(" | ");
-                  const reserveLabel = pickupDate ? `Pickup ${pickupDate}` : `Requested ${requestDate}`;
+                  const reserveLabel = [
+                    pickupDate ? `Pickup ${pickupDate}` : `Requested ${requestDate}`,
+                    returnDueDate ? `Due ${returnDueDate}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" | ");
                   return (
                     <div key={row._id} className="reservation-card reservation-card-reserved">
                       <div className="reservation-card-row">
@@ -680,15 +972,15 @@ export default function DashboardPage() {
                 <div className="reservation-section-titlebar">
                   <div className="reservation-section-title">Reserve from Main Storage</div>
                   <span className="reservation-count-badge reservation-count-badge-available">
-                    {trulyAvailableStorageCount}
+                    {generalReservableCount}
                   </span>
                 </div>
                 <div className="reservation-section-subtitle">
-                  Ready to reserve now: {trulyAvailableStorageCount}
+                  Ready to reserve now: {generalReservableCount}
                 </div>
               </div>
               <div className="reservation-list reservation-list-scroll">
-                {reservableMainStorageRows.map((row) => (
+                {reservableMainStorageGeneralRows.map((row) => (
                   <div key={row._id} className="reservation-card reservation-card-available">
                     <div className="reservation-card-row">
                       <div style={{ minWidth: 0 }}>
@@ -711,112 +1003,70 @@ export default function DashboardPage() {
                       }}
                     >
                       Reserve
-                    </button>
+                     </button>
                     </div>
                   </div>
                 ))}
-                {!reservableMainStorageRows.length ? (
+                {!reservableMainStorageGeneralRows.length ? (
                   <div className="reservation-empty">No main-storage assets are currently free to reserve.</div>
                 ) : null}
               </div>
-              {reservationTargetId ? (
-                <div className="reservation-form-wrap">
-                  <div className="reservation-form-title">
-                    Reserving{" "}
-                    {(
-                      reservableMainStorageRows.find((row) => String(row._id) === reservationTargetId) ??
-                      allRows?.find((row) => String(row._id) === reservationTargetId)
-                    )?.assetTag ?? "selected asset"}
-                  </div>
-                  <div className="reservation-form-grid">
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                        Borrower Name
-                      </div>
-                      <input
-                        className="input-base reservation-input"
-                        value={reservationBorrower}
-                        onChange={(e) => setReservationBorrower(e.target.value)}
-                        placeholder="Enter borrower name"
-                        aria-label="Borrower name"
-                      />
-                    </div>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                        Department
-                      </div>
-                      <select
-                        className="input-base reservation-input"
-                        value={reservationDepartment}
-                        onChange={(e) => setReservationDepartment(e.target.value)}
-                        aria-label="Reservation department"
-                      >
-                        <option value="">Select department</option>
-                        {HARDWARE_DEPARTMENTS.map((department) => (
-                          <option key={department} value={department}>
-                            {department}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="reservation-form-grid">
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                        Requested Date
-                      </div>
-                      <input
-                        className="input-base reservation-input"
-                        type="date"
-                        value={reservationRequestedDate}
-                        onChange={(e) => setReservationRequestedDate(e.target.value)}
-                        aria-label="Requested date"
-                      />
-                    </div>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                        Expected Pickup Date
-                      </div>
-                      <input
-                        className="input-base reservation-input"
-                        type="date"
-                        value={reservationPickupDate}
-                        onChange={(e) => setReservationPickupDate(e.target.value)}
-                        aria-label="Expected pickup date"
-                      />
-                    </div>
-                  </div>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                      Borrower Slip Note
-                    </div>
-                    <textarea
-                      className="input-base reservation-input reservation-textarea"
-                      value={reservationSlipNote}
-                      onChange={(e) => setReservationSlipNote(e.target.value)}
-                      placeholder="Enter borrower slip reference or note"
-                    />
-                  </div>
-                  {reservationError ? (
-                    <div className="reservation-error">{reservationError}</div>
-                  ) : null}
-                  <div className="reservation-form-actions">
-                    <button className="btn-secondary" type="button" onClick={resetReservationForm}>
-                      Cancel
-                    </button>
-                    <button
-                      className="btn-primary"
-                      type="button"
-                      onClick={() => void handleReserveSubmit()}
-                      disabled={reservationBusyId === reservationTargetId}
-                    >
-                      {reservationBusyId === reservationTargetId ? "Saving..." : "Save Reservation"}
-                    </button>
-                  </div>
+            </div>
+
+            <div className="reservation-section reservation-section-drone">
+              <div>
+                <div className="reservation-section-titlebar">
+                  <div className="reservation-section-title">Drone Kit Borrowing</div>
+                  <span className="reservation-count-badge reservation-count-badge-drone">
+                    {droneReservableCount}
+                  </span>
                 </div>
-              ) : null}
+                <div className="reservation-section-subtitle">
+                  Reserve a drone kit from main storage. A flight report must be uploaded upon return.
+                </div>
+              </div>
+              <div className="reservation-list reservation-list-scroll">
+                {reservableMainStorageDroneRows.map((row) => {
+                  const droneComponents =
+                    ((row as Record<string, unknown>).workstationComponents as unknown[] | undefined)?.length ?? 0;
+                  return (
+                    <div key={row._id} className="reservation-card reservation-card-drone">
+                      <div className="reservation-card-row">
+                        <div style={{ minWidth: 0 }}>
+                          <div className="reservation-card-topline">
+                            <span className="reservation-tag">{row.assetTag}</span>
+                            <span className="reservation-chip reservation-chip-drone">Drone Kit</span>
+                          </div>
+                          <div className="reservation-card-text">
+                            {row.assetNameDescription ?? "Drone kit"} | {droneComponents} tracked kit parts
+                          </div>
+                          <div className="reservation-card-meta">
+                            Flight report required upon return.
+                          </div>
+                        </div>
+                        <button
+                          className={`btn-secondary${
+                            reservationTargetId === String(row._id) ? " reservation-available-btn is-selected" : ""
+                          }`}
+                          type="button"
+                          onClick={() => {
+                            setReservationTargetId(String(row._id));
+                            setReservationError("");
+                          }}
+                        >
+                          Reserve
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {!reservableMainStorageDroneRows.length ? (
+                  <div className="reservation-empty">No drone kits are currently ready for borrowing.</div>
+                ) : null}
+              </div>
             </div>
           </div>
+          {reservationTargetId ? renderReservationForm() : null}
           {reservationError && !reservationTargetId ? (
             <div className="reservation-error reservation-error-inline">{reservationError}</div>
           ) : null}
@@ -840,6 +1090,47 @@ export default function DashboardPage() {
             >
               Review Now
             </button>
+            <div
+              style={{
+                marginTop: 14,
+                paddingTop: 14,
+                borderTop: "1px solid var(--border)",
+                display: "grid",
+                gap: 8,
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 700 }}>Send Teams Test</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                Sends a direct Teams reminder to the Microsoft account below.
+              </div>
+              <input
+                className="input-base"
+                type="email"
+                value={teamsTestEmail}
+                onChange={(event) => {
+                  setTeamsTestEmail(event.target.value);
+                  setTeamsTestError("");
+                  setTeamsTestMessage("");
+                }}
+                placeholder="name@company.com"
+                aria-label="Test Teams recipient email"
+                disabled={teamsTestBusy}
+              />
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={() => void handleSendTeamsTest()}
+                disabled={teamsTestBusy}
+              >
+                {teamsTestBusy ? "Sending..." : "Send Test"}
+              </button>
+              {teamsTestError ? (
+                <div style={{ fontSize: 12, color: "#b91c1c" }}>{teamsTestError}</div>
+              ) : null}
+              {teamsTestMessage ? (
+                <div style={{ fontSize: 12, color: "var(--foreground)" }}>{teamsTestMessage}</div>
+              ) : null}
+            </div>
           </div>
           <div className="panel dashboard-panel dashboard-department-panel" style={{ padding: 16 }}>
             <h3 style={{ marginTop: 0, marginBottom: 6 }}>Assets per Department</h3>
@@ -1005,7 +1296,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="panel dashboard-panel" style={{ padding: 12 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <div className="dashboard-tab-strip">
           {tabs.map((tab) => {
             const active = tab.key === activeTab;
             return (
@@ -1016,7 +1307,7 @@ export default function DashboardPage() {
                   setActiveTab(tab.key);
                   setDepartmentDrilldown("");
                 }}
-                className={active ? "btn-primary" : "btn-secondary"}
+                className={`dashboard-tab-btn${active ? " active" : ""}`}
               >
                 {tab.label}
               </button>
@@ -1031,16 +1322,38 @@ export default function DashboardPage() {
 
         {activeTab === "master" ? (
           renderTable(masterRowsWithDepartmentDrilldown)
-        ) : (
-          <div className="dashboard-group-list" style={{ display: "grid", gap: 16 }}>
-            {[...groupedRows.entries()].map(([group, rows]) => (
-              <div key={group} className="saas-card dashboard-group-card" style={{ padding: 12 }}>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>{group}</div>
-                {renderTable(rows)}
-              </div>
+        ) : activeTab === "workstation" ? (
+          <div style={{ display: "grid", gap: 24 }}>
+            {workstationSections.map((section) => (
+              <section key={section.key} style={{ display: "grid", gap: 12 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <h3 style={{ margin: 0 }}>{section.label}</h3>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                    {section.rows.length} asset{section.rows.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {renderGroupedTables(
+                  section.groupedRows,
+                  <div
+                    className="saas-card dashboard-group-card"
+                    style={{ padding: 12, fontSize: 13, color: "var(--muted)" }}
+                  >
+                    No {section.label.toLowerCase()} workstation assets match this search.
+                  </div>,
+                )}
+              </section>
             ))}
-            {!groupedRows.size ? renderTable([]) : null}
           </div>
+        ) : (
+          renderGroupedTables(groupedRows)
         )}
       </div>
     </div>

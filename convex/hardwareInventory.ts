@@ -1,6 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { action, internalAction, internalMutation, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { api, internal } from "./_generated/api";
 
 const STATUS_OPTIONS = [
   "Borrowed",
@@ -31,6 +32,71 @@ function normalizeRequired(value: string, label: string) {
 function normalizeOptional(value?: string) {
   const next = value?.trim();
   return next ? next : undefined;
+}
+
+function normalizeOptionalEmail(value?: string) {
+  const next = normalizeOptional(value)?.toLowerCase();
+  if (!next) return undefined;
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailPattern.test(next)) {
+    throw new Error("Borrower Microsoft email is invalid.");
+  }
+  return next;
+}
+
+function normalizeOptionalDate(value?: string, label = "Date") {
+  const next = normalizeOptional(value);
+  if (!next) return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) {
+    throw new Error(`${label} must use YYYY-MM-DD format.`);
+  }
+  return next;
+}
+
+function getCurrentDateInTimeZone(timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date());
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type === "year" || part.type === "month" || part.type === "day")
+      .map((part) => [part.type, part.value]),
+  ) as Record<"year" | "month" | "day", string>;
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+async function sendTeamsReturnReminderRequest(args: {
+  endpointUrl: string;
+  sharedSecret: string;
+  recipientEmail: string;
+  borrowerName?: string;
+  assetTag: string;
+  assetNameDescription?: string;
+  returnDueDate: string;
+}) {
+  const response = await fetch(args.endpointUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-reminder-secret": args.sharedSecret,
+    },
+    body: JSON.stringify({
+      recipientEmail: args.recipientEmail,
+      borrowerName: args.borrowerName,
+      assetTag: args.assetTag,
+      assetNameDescription: args.assetNameDescription,
+      returnDueDate: args.returnDueDate,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Teams reminder failed for ${args.recipientEmail}.`);
+  }
 }
 
 function resolveTurnoverTo(personAssigned?: string, fallbackTurnoverTo?: string) {
@@ -167,6 +233,8 @@ function matchesSearch(row: { [key: string]: string | undefined }, search: strin
     row.assignedTo,
     row.turnoverTo,
     row.borrower,
+    row.borrowerEmail,
+    row.returnDueDate,
   ].some((value) => String(value ?? "").toLowerCase().includes(term));
 }
 
@@ -227,6 +295,10 @@ export const list = query({
             return row.turnoverTo ?? "";
           case "borrower":
             return row.borrower ?? "";
+          case "borrowerEmail":
+            return (row as Record<string, unknown>).borrowerEmail as string | undefined;
+          case "returnDueDate":
+            return (row as Record<string, unknown>).returnDueDate as string | undefined;
           case "assignedDate":
             return (
               ((row as Record<string, unknown>).turnoverDate as string | undefined) ??
@@ -303,11 +375,15 @@ export const getById = query({
 export const listRecentActivity = query({
   args: {
     limit: v.optional(v.number()),
+    inventoryId: v.optional(v.id("hardwareInventory")),
   },
   handler: async (ctx, args) => {
     const limit = args.limit && args.limit > 0 ? args.limit : 8;
     const rows = await ctx.db.query("hardwareActivityEvents").collect();
-    return rows.sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
+    const filtered = args.inventoryId
+      ? rows.filter((row) => row.inventoryId === args.inventoryId)
+      : rows;
+    return filtered.sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
   },
 });
 
@@ -435,6 +511,8 @@ export const create = mutation({
     turnoverFormStorageId: v.optional(v.id("_storage")),
     droneFlightReportStorageId: v.optional(v.id("_storage")),
     borrower: v.optional(v.string()),
+    borrowerEmail: v.optional(v.string()),
+    returnDueDate: v.optional(v.string()),
     personAssigned: v.optional(v.string()),
     registerMode: v.optional(v.string()),
     workstationType: v.optional(v.string()),
@@ -487,6 +565,8 @@ export const create = mutation({
     const turnoverFormStorageId = args.turnoverFormStorageId;
     const droneFlightReportStorageId = args.droneFlightReportStorageId;
     const borrower = normalizeOptional(args.borrower);
+    const borrowerEmail = normalizeOptionalEmail(args.borrowerEmail);
+    const returnDueDate = normalizeOptionalDate(args.returnDueDate, "Return Due Date");
     const personAssigned = normalizeOptional(args.personAssigned);
     const registerMode = normalizeOptional(args.registerMode);
     const workstationType = normalizeOptional(args.workstationType);
@@ -512,6 +592,18 @@ export const create = mutation({
 
     ensureStatus(status);
     ensureStatus(effectiveStatus);
+
+    if (effectiveStatus === "Borrowed") {
+      if (!borrower) {
+        throw new Error("Borrower Name is required when status is Borrowed.");
+      }
+      if (!borrowerEmail) {
+        throw new Error("Borrower Microsoft email is required when status is Borrowed.");
+      }
+      if (!returnDueDate) {
+        throw new Error("Return Due Date is required when status is Borrowed.");
+      }
+    }
 
     if (registerMode && !(REGISTER_MODE_OPTIONS as readonly string[]).includes(registerMode)) {
       throw new Error("Invalid register mode.");
@@ -655,7 +747,10 @@ export const create = mutation({
       department,
         status: effectiveStatus,
         turnoverTo,
-        borrower,
+        borrower: effectiveStatus === "Borrowed" ? borrower : undefined,
+        borrowerEmail: effectiveStatus === "Borrowed" ? borrowerEmail : undefined,
+        returnDueDate: effectiveStatus === "Borrowed" ? returnDueDate : undefined,
+        returnReminderLastSentDate: undefined,
         registerMode,
         workstationType,
         specsTier,
@@ -751,6 +846,8 @@ export const update = mutation({
     status: v.string(),
     turnoverTo: v.string(),
     borrower: v.optional(v.string()),
+    borrowerEmail: v.optional(v.string()),
+    returnDueDate: v.optional(v.string()),
     personAssigned: v.optional(v.string()),
     assignedDate: v.optional(v.string()),
     turnoverDate: v.optional(v.string()),
@@ -786,6 +883,8 @@ export const update = mutation({
     const status = normalizeRequired(args.status, "Status");
     const fallbackTurnoverTo = normalizeOptional(args.turnoverTo);
     const borrower = normalizeOptional(args.borrower);
+    const borrowerEmail = normalizeOptionalEmail(args.borrowerEmail);
+    const returnDueDate = normalizeOptionalDate(args.returnDueDate, "Return Due Date");
     const personAssigned = normalizeOptional(args.personAssigned);
     const turnoverTo = resolveTurnoverTo(personAssigned, fallbackTurnoverTo);
     const assignedDate = normalizeOptional(args.assignedDate);
@@ -814,9 +913,23 @@ export const update = mutation({
       .droneFlightReportStorageId as typeof args.droneFlightReportStorageId | undefined;
     const previousDroneMissingPartsNote = (existing as Record<string, unknown>)
       .droneMissingPartsNote as string | undefined;
+    const previousBorrowerEmail = (existing as Record<string, unknown>).borrowerEmail as string | undefined;
+    const previousReturnDueDate = (existing as Record<string, unknown>).returnDueDate as string | undefined;
 
     ensureStatus(status);
     ensureStatus(effectiveStatus);
+
+    if (effectiveStatus === "Borrowed") {
+      if (!borrower) {
+        throw new Error("Borrower Name is required when status is Borrowed.");
+      }
+      if (!borrowerEmail) {
+        throw new Error("Borrower Microsoft email is required when status is Borrowed.");
+      }
+      if (!returnDueDate) {
+        throw new Error("Return Due Date is required when status is Borrowed.");
+      }
+    }
 
     if (assetTag !== existing.assetTag) {
       throw new Error("Asset Tag cannot be changed.");
@@ -861,6 +974,9 @@ export const update = mutation({
       droneFlightReportStorageId?: typeof args.droneFlightReportStorageId;
       droneMissingPartsNote?: string | undefined;
       borrower?: string | undefined;
+      borrowerEmail?: string | undefined;
+      returnDueDate?: string | undefined;
+      returnReminderLastSentDate?: string | undefined;
       assignedTo?: string | undefined;
     } = {
       assetTag,
@@ -883,6 +999,12 @@ export const update = mutation({
 
     if (args.borrower !== undefined) {
       patchData.borrower = borrower;
+    }
+    if (args.borrowerEmail !== undefined) {
+      patchData.borrowerEmail = borrowerEmail;
+    }
+    if (args.returnDueDate !== undefined) {
+      patchData.returnDueDate = returnDueDate;
     }
     if (args.personAssigned !== undefined) {
       patchData.assignedTo = personAssigned;
@@ -963,6 +1085,22 @@ export const update = mutation({
       effectiveStatus !== "Borrowed"
     ) {
       patchData.droneMissingPartsNote = undefined;
+    }
+
+    if (effectiveStatus === "Borrowed") {
+      patchData.borrower = borrower;
+      patchData.borrowerEmail = borrowerEmail;
+      patchData.returnDueDate = returnDueDate;
+      if (previousReturnDueDate !== returnDueDate) {
+        patchData.returnReminderLastSentDate = undefined;
+      }
+    } else {
+      patchData.borrower = undefined;
+      patchData.borrowerEmail = undefined;
+      patchData.returnDueDate = undefined;
+      if (previousBorrowerEmail || previousReturnDueDate) {
+        patchData.returnReminderLastSentDate = undefined;
+      }
     }
 
     await ctx.db.patch(args.inventoryId, patchData as never);
@@ -1047,9 +1185,11 @@ export const reserveAsset = mutation({
   args: {
     inventoryId: v.id("hardwareInventory"),
     borrowerName: v.string(),
+    borrowerEmail: v.string(),
     department: v.string(),
     requestedDate: v.string(),
     expectedPickupDate: v.optional(v.string()),
+    returnDueDate: v.string(),
     slipNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -1057,10 +1197,19 @@ export const reserveAsset = mutation({
     if (!existing) throw new Error("Hardware asset not found.");
 
     const borrowerName = normalizeRequired(args.borrowerName, "Borrower Name");
+    const borrowerEmail = normalizeOptionalEmail(args.borrowerEmail);
     const department = normalizeRequired(args.department, "Department");
     const requestedDate = normalizeRequired(args.requestedDate, "Requested Date");
     const expectedPickupDate = normalizeOptional(args.expectedPickupDate);
+    const returnDueDate = normalizeOptionalDate(args.returnDueDate, "Return Due Date");
     const slipNote = normalizeOptional(args.slipNote);
+
+    if (!borrowerEmail) {
+      throw new Error("Borrower Microsoft email is required.");
+    }
+    if (!returnDueDate) {
+      throw new Error("Return Due Date is required.");
+    }
 
     if ((existing.locationPersonAssigned ?? existing.location ?? "") !== "MAIN STORAGE") {
       throw new Error("Only MAIN STORAGE assets can be reserved.");
@@ -1078,9 +1227,11 @@ export const reserveAsset = mutation({
       args.inventoryId,
       {
         reservationBorrower: borrowerName,
+        reservationBorrowerEmail: borrowerEmail,
         reservationDepartment: department,
         reservationRequestedDate: requestedDate,
         reservationPickupDate: expectedPickupDate,
+        reservationReturnDueDate: returnDueDate,
         reservationSlipNote: slipNote,
         reservationStatus: "Reserved",
         updatedAt: Date.now(),
@@ -1151,8 +1302,15 @@ export const claimReservation = mutation({
       ((existing as Record<string, unknown>).reservationBorrower as string | undefined) ?? "",
       "Reserved Borrower",
     );
+    const borrowerEmail = normalizeOptionalEmail(
+      (existing as Record<string, unknown>).reservationBorrowerEmail as string | undefined,
+    );
     const reservationDepartment = normalizeOptional(
       (existing as Record<string, unknown>).reservationDepartment as string | undefined,
+    );
+    const reservationReturnDueDate = normalizeOptionalDate(
+      (existing as Record<string, unknown>).reservationReturnDueDate as string | undefined,
+      "Return Due Date",
     );
     const missingPartsNote = normalizeOptional(args.missingPartsNote);
     const previousDroneFlightReportStorageId = (existing as Record<string, unknown>)
@@ -1168,19 +1326,25 @@ export const claimReservation = mutation({
     const patchData: {
       status: string;
       borrower: string;
+      borrowerEmail: string;
       department: string | undefined;
       turnoverTo: string;
+      returnDueDate: string;
       reservationStatus: "Claimed";
       updatedAt: number;
       droneFlightReportStorageId?: undefined;
       droneMissingPartsNote?: string | undefined;
+      returnReminderLastSentDate?: undefined;
     } = {
       status: "Borrowed",
       borrower: borrowerName,
+      borrowerEmail: normalizeRequired(borrowerEmail ?? "", "Borrower Microsoft email"),
       department: reservationDepartment ?? existing.department,
       turnoverTo: nextTurnoverTo,
+      returnDueDate: normalizeRequired(reservationReturnDueDate ?? "", "Return Due Date"),
       reservationStatus: "Claimed",
       updatedAt: Date.now(),
+      returnReminderLastSentDate: undefined,
     };
     if (shouldResetDroneFlightReport) {
       patchData.droneFlightReportStorageId = undefined;
@@ -1256,6 +1420,9 @@ export const returnDronePackage = mutation({
         location: string;
         locationPersonAssigned: string;
         borrower: undefined;
+        borrowerEmail: undefined;
+        returnDueDate: undefined;
+        returnReminderLastSentDate: undefined;
         updatedAt: number;
         droneFlightReportStorageId?: Id<"_storage"> | undefined;
         droneMissingPartsNote?: undefined;
@@ -1264,6 +1431,9 @@ export const returnDronePackage = mutation({
         location: "MAIN STORAGE",
         locationPersonAssigned: "MAIN STORAGE",
         borrower: undefined,
+        borrowerEmail: undefined,
+        returnDueDate: undefined,
+        returnReminderLastSentDate: undefined,
         droneMissingPartsNote: undefined,
         updatedAt: now,
       };
@@ -1309,6 +1479,157 @@ export const returnDronePackage = mutation({
     }
 
     return { returned: packageRows.length };
+  },
+});
+
+export const markReturnReminderSent = internalMutation({
+  args: {
+    inventoryId: v.id("hardwareInventory"),
+    sentDate: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.inventoryId);
+    if (!existing) return;
+
+    const sentDate = normalizeOptionalDate(args.sentDate, "Sent Date");
+    if (!sentDate) {
+      throw new Error("Sent Date is required.");
+    }
+
+    await ctx.db.patch(
+      args.inventoryId,
+      {
+        returnReminderLastSentDate: sentDate,
+        updatedAt: Date.now(),
+      } as never,
+    );
+
+    await logHardwareActivity(ctx, {
+      inventoryId: args.inventoryId,
+      assetTag: existing.assetTag,
+      assetNameDescription: existing.assetNameDescription,
+      eventType: "return_reminder_sent",
+      message: "Return reminder email sent.",
+      relatedPerson: existing.borrower ?? existing.turnoverTo ?? undefined,
+      location: existing.locationPersonAssigned ?? existing.location,
+      status: existing.status,
+    });
+  },
+});
+
+export const sendDueReturnReminders = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const teamsReminderWebhookUrl = process.env.TEAMS_REMINDER_WEBHOOK_URL;
+    const teamsReminderSecret = process.env.TEAMS_REMINDER_WEBHOOK_SECRET;
+    const reminderTimeZone = process.env.RETURN_REMINDER_TIMEZONE || "Asia/Manila";
+
+    if (!teamsReminderWebhookUrl || !teamsReminderSecret) {
+      return {
+        sent: 0,
+        failed: 0,
+        skipped: 0,
+        reason: "Teams reminder configuration is incomplete.",
+      };
+    }
+
+    const rows = await ctx.runQuery(api.hardwareInventory.listAll, {});
+    const today = getCurrentDateInTimeZone(reminderTimeZone);
+    const candidates = rows.filter((row) => {
+      const borrowerEmail = (row as Record<string, unknown>).borrowerEmail as string | undefined;
+      const returnDueDate = (row as Record<string, unknown>).returnDueDate as string | undefined;
+      const returnReminderLastSentDate = (row as Record<string, unknown>)
+        .returnReminderLastSentDate as string | undefined;
+      return (
+        row.status === "Borrowed" &&
+        Boolean(borrowerEmail) &&
+        Boolean(returnDueDate) &&
+        returnDueDate! <= today &&
+        returnReminderLastSentDate !== today
+      );
+    });
+
+    if (!candidates.length) {
+      return { sent: 0, failed: 0, skipped: 0, date: today };
+    }
+
+    let sent = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const row of candidates) {
+      const borrowerEmail = (row as Record<string, unknown>).borrowerEmail as string | undefined;
+      const returnDueDate = (row as Record<string, unknown>).returnDueDate as string | undefined;
+      if (!borrowerEmail || !returnDueDate) {
+        skipped += 1;
+        continue;
+      }
+
+      try {
+        await sendTeamsReturnReminderRequest({
+          endpointUrl: teamsReminderWebhookUrl,
+          sharedSecret: teamsReminderSecret,
+          recipientEmail: borrowerEmail,
+          borrowerName: row.borrower ?? row.turnoverTo ?? undefined,
+          assetTag: row.assetTag,
+          assetNameDescription: row.assetNameDescription,
+          returnDueDate,
+        });
+        await ctx.runMutation(internal.hardwareInventory.markReturnReminderSent, {
+          inventoryId: row._id,
+          sentDate: today,
+        });
+        sent += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    return {
+      sent,
+      failed,
+      skipped,
+      date: today,
+    };
+  },
+});
+
+export const sendTestReturnReminder = action({
+  args: {
+    recipientEmail: v.string(),
+    borrowerName: v.optional(v.string()),
+  },
+  handler: async (_ctx, args) => {
+    const recipientEmail = normalizeOptionalEmail(args.recipientEmail);
+    if (!recipientEmail) {
+      throw new Error("Recipient Microsoft email is required.");
+    }
+
+    const teamsReminderWebhookUrl = process.env.TEAMS_REMINDER_WEBHOOK_URL;
+    const teamsReminderSecret = process.env.TEAMS_REMINDER_WEBHOOK_SECRET;
+    const reminderTimeZone = process.env.RETURN_REMINDER_TIMEZONE || "Asia/Manila";
+
+    if (!teamsReminderWebhookUrl || !teamsReminderSecret) {
+      throw new Error("Teams reminder configuration is incomplete.");
+    }
+
+    const borrowerName = normalizeOptional(args.borrowerName);
+    const dueDate = getCurrentDateInTimeZone(reminderTimeZone);
+
+    await sendTeamsReturnReminderRequest({
+      endpointUrl: teamsReminderWebhookUrl,
+      sharedSecret: teamsReminderSecret,
+      recipientEmail,
+      borrowerName,
+      assetTag: "IT-TEST-REMINDER",
+      assetNameDescription: "Teams direct message test",
+      returnDueDate: dueDate,
+    });
+
+    return {
+      recipientEmail,
+      dueDate,
+    };
   },
 });
 

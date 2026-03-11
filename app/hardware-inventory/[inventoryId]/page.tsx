@@ -29,6 +29,8 @@ type FormState = {
   status: HardwareStatus;
   turnoverTo: string;
   borrower: string;
+  borrowerEmail: string;
+  returnDueDate: string;
   assignedDate: string;
   purchaseDate: string;
   warranty: string;
@@ -40,6 +42,21 @@ type WorkstationComponent = {
   componentType?: string;
   specifications?: string;
   imageStorageId?: Id<"_storage">;
+};
+
+type ActivityTone = "blue" | "green" | "amber" | "red" | "slate";
+
+type HardwareActivityRecord = {
+  _id: string;
+  inventoryId?: string;
+  assetTag: string;
+  assetNameDescription?: string;
+  eventType: string;
+  message: string;
+  relatedPerson?: string;
+  location?: string;
+  status?: string;
+  createdAt: number;
 };
 
 const statusColors: Record<HardwareStatus, { bg: string; text: string; border: string }> = {
@@ -66,6 +83,115 @@ function formatDate(value?: number) {
 
 function formatText(value?: string) {
   return value && value.trim() ? value : "-";
+}
+
+function formatActivityTime(value: number) {
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getActivityMeta(eventType: string): {
+  label: string;
+  tone: ActivityTone;
+  urgent?: boolean;
+} {
+  switch (eventType) {
+    case "asset_created":
+      return { label: "Created", tone: "blue" };
+    case "asset_updated":
+      return { label: "Updated", tone: "slate" };
+    case "status_changed":
+      return { label: "Status Change", tone: "slate" };
+    case "asset_assigned":
+      return { label: "Assigned", tone: "blue" };
+    case "asset_borrowed":
+      return { label: "Borrowed", tone: "amber", urgent: true };
+    case "asset_returned":
+      return { label: "Returned", tone: "green" };
+    case "asset_for_repair":
+      return { label: "For Repair", tone: "red", urgent: true };
+    case "asset_retired":
+      return { label: "Retired", tone: "slate" };
+    case "reservation_created":
+      return { label: "Reserved", tone: "blue" };
+    case "reservation_claimed":
+      return { label: "Claimed", tone: "green" };
+    case "reservation_cancelled":
+      return { label: "Reservation Cancelled", tone: "amber" };
+    case "receiving_form_uploaded":
+      return { label: "Receiving Form", tone: "green" };
+    case "turnover_form_uploaded":
+      return { label: "Turnover Form", tone: "blue" };
+    case "drone_flight_report_uploaded":
+      return { label: "Flight Report", tone: "blue" };
+    case "return_reminder_sent":
+      return { label: "Reminder Sent", tone: "amber" };
+    case "asset_deleted":
+      return { label: "Deleted", tone: "red", urgent: true };
+    default:
+      return { label: "Activity", tone: "slate" };
+  }
+}
+
+function renderActivityIcon(eventType: string) {
+  switch (eventType) {
+    case "reservation_created":
+    case "reservation_claimed":
+    case "reservation_cancelled":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 4H17V8H7V4Z" stroke="currentColor" strokeWidth="2" />
+          <path d="M7 12H17V20H7V12Z" stroke="currentColor" strokeWidth="2" />
+          <path d="M9 8V12" stroke="currentColor" strokeWidth="2" />
+          <path d="M15 8V12" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      );
+    case "asset_borrowed":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M12 5L19 12L12 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+    case "asset_returned":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M19 12H5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M12 19L5 12L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+    case "asset_for_repair":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M14 6L18 10L10 18H6V14L14 6Z"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+        </svg>
+      );
+    case "receiving_form_uploaded":
+    case "turnover_form_uploaded":
+    case "drone_flight_report_uploaded":
+    case "return_reminder_sent":
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M8 3H16L20 7V21H4V3H8Z" stroke="currentColor" strokeWidth="2" />
+          <path d="M16 3V7H20" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      );
+    default:
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      );
+  }
 }
 
 function StatusChip({ status }: { status: HardwareStatus }) {
@@ -166,6 +292,13 @@ export default function HardwareInventoryDetailPage() {
   const updateAsset = useMutation(api.hardwareInventory.update);
   const removeAsset = useMutation(api.hardwareInventory.remove);
   const generateUploadUrl = useMutation(api.hardwareInventory.generateUploadUrl);
+  const returnDronePackage = useMutation(
+    (api.hardwareInventory as Record<string, unknown>)["returnDronePackage"] as never,
+  ) as unknown as (args: {
+    inventoryIds: never[];
+    reportTargetInventoryId: never;
+    droneFlightReportStorageId: never;
+  }) => Promise<unknown>;
   const imageUrl = useQuery(
     api.hardwareInventory.getImageUrl,
     row && row.imageStorageId ? { storageId: row.imageStorageId } : "skip",
@@ -187,11 +320,17 @@ export default function HardwareInventoryDetailPage() {
     api.hardwareInventory.getImageUrl,
     row && droneFlightReportStorageId ? { storageId: droneFlightReportStorageId } : "skip",
   );
+  const assetActivity = useQuery(
+    (api.hardwareInventory as Record<string, unknown>)["listRecentActivity"] as never,
+    row ? ({ limit: 20, inventoryId } as never) : "skip",
+  ) as unknown as HardwareActivityRecord[] | undefined;
 
   const [isEditing, setIsEditing] = useState(false);
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isReturningDrone, setIsReturningDrone] = useState(false);
+  const [returnDroneError, setReturnDroneError] = useState("");
   const [actionToast, setActionToast] = useState<{ id: number; message: string } | null>(null);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [clearImage, setClearImage] = useState(false);
@@ -201,10 +340,14 @@ export default function HardwareInventoryDetailPage() {
   const [clearTurnoverForm, setClearTurnoverForm] = useState(false);
   const [selectedDroneFlightReportFile, setSelectedDroneFlightReportFile] = useState<File | null>(null);
   const [clearDroneFlightReport, setClearDroneFlightReport] = useState(false);
+  const [selectedReturnDroneFlightReportFile, setSelectedReturnDroneFlightReportFile] = useState<File | null>(
+    null,
+  );
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const receivingFormInputRef = useRef<HTMLInputElement | null>(null);
   const turnoverFormInputRef = useRef<HTMLInputElement | null>(null);
   const droneFlightReportInputRef = useRef<HTMLInputElement | null>(null);
+  const returnDroneFlightReportInputRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<FormState>({
     assetTag: "",
     assetType: "",
@@ -217,6 +360,8 @@ export default function HardwareInventoryDetailPage() {
     status: "Available" as HardwareStatus,
     turnoverTo: "",
     borrower: "",
+    borrowerEmail: "",
+    returnDueDate: "",
     assignedDate: "",
     purchaseDate: "",
     warranty: "",
@@ -272,6 +417,8 @@ export default function HardwareInventoryDetailPage() {
       status: asset.status as HardwareStatus,
       turnoverTo: asset.assignedTo ?? asset.turnoverTo ?? "Unassigned",
       borrower: asset.borrower ?? "",
+      borrowerEmail: ((asset as Record<string, unknown>).borrowerEmail as string | undefined) ?? "",
+      returnDueDate: ((asset as Record<string, unknown>).returnDueDate as string | undefined) ?? "",
       assignedDate:
         isDesktopAsset
           ? (((asset as Record<string, unknown>).turnoverDate as string | undefined) ??
@@ -343,6 +490,20 @@ export default function HardwareInventoryDetailPage() {
     const isDroneEdit = form.assetType.trim().toLowerCase() === "drone";
     const isReturningBorrowedDrone = isDroneEdit && assetStatus === "Borrowed" && form.status !== "Borrowed";
     const hasCurrentDroneFlightReport = Boolean(droneFlightReportStorageId && !clearDroneFlightReport);
+    if (form.status === "Borrowed") {
+      if (!form.borrower.trim()) {
+        setFormError("Borrower Name is required when status is Borrowed.");
+        return;
+      }
+      if (!form.borrowerEmail.trim()) {
+        setFormError("Borrower Microsoft email is required when status is Borrowed.");
+        return;
+      }
+      if (!form.returnDueDate) {
+        setFormError("Return Due Date is required when status is Borrowed.");
+        return;
+      }
+    }
     if (isReturningBorrowedDrone && !selectedDroneFlightReportFile && !hasCurrentDroneFlightReport) {
       setFormError("Drone flight report is required when returning a borrowed drone.");
       return;
@@ -442,7 +603,9 @@ export default function HardwareInventoryDetailPage() {
         department: form.department,
         status: form.status,
         turnoverTo: form.personAssigned || "Unassigned",
-        borrower: form.borrower || undefined,
+        borrower: form.status === "Borrowed" ? form.borrower || undefined : undefined,
+        borrowerEmail: form.status === "Borrowed" ? form.borrowerEmail || undefined : undefined,
+        returnDueDate: form.status === "Borrowed" ? form.returnDueDate || undefined : undefined,
         assignedDate: isDesktopAsset ? undefined : form.assignedDate,
         turnoverDate: isDesktopAsset ? form.assignedDate || undefined : undefined,
         purchaseDate: form.purchaseDate,
@@ -509,6 +672,58 @@ export default function HardwareInventoryDetailPage() {
       window.alert("Delete failed. Please try again.");
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function handleReturnDroneKit() {
+    if (!isDroneAsset || assetStatus !== "Borrowed") {
+      return;
+    }
+    if (!selectedReturnDroneFlightReportFile) {
+      setReturnDroneError("Flight report is required before returning this drone kit.");
+      return;
+    }
+
+    try {
+      setIsReturningDrone(true);
+      setReturnDroneError("");
+
+      const uploadUrl = await generateUploadUrl();
+      const uploadResult = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": selectedReturnDroneFlightReportFile.type || "application/octet-stream",
+        },
+        body: selectedReturnDroneFlightReportFile,
+      });
+      if (!uploadResult.ok) {
+        throw new Error("Drone flight report upload failed.");
+      }
+
+      const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
+      if (!uploadData.storageId) {
+        throw new Error("Drone flight report upload failed.");
+      }
+
+      await returnDronePackage({
+        inventoryIds: [inventoryId as never],
+        reportTargetInventoryId: inventoryId as never,
+        droneFlightReportStorageId: uploadData.storageId as never,
+      });
+
+      setSelectedReturnDroneFlightReportFile(null);
+      setReturnDroneError("");
+      if (returnDroneFlightReportInputRef.current) {
+        returnDroneFlightReportInputRef.current.value = "";
+      }
+      showActionToast("Drone kit returned and flight report uploaded successfully.");
+      router.refresh();
+    } catch (error) {
+      setReturnDroneError(
+        error instanceof Error ? error.message : "Unable to return drone kit right now.",
+      );
+    } finally {
+      setIsReturningDrone(false);
     }
   }
 
@@ -787,6 +1002,118 @@ export default function HardwareInventoryDetailPage() {
               )}
             </section>
           ) : null}
+          {isDroneAsset ? (
+            <section className="panel" style={{ padding: 14 }}>
+              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>
+                Drone Kit Borrowing
+              </div>
+              <div className="drone-package-card">
+                <div className="drone-package-row">
+                  <div className="drone-package-topline">
+                    <div style={{ minWidth: 0 }}>
+                      <div className="drone-package-borrower">
+                        {formatText(asset.borrower ?? asset.turnoverTo)}
+                      </div>
+                      <div className="drone-package-meta">
+                        <span>{asset.assetTag}</span>
+                        <span>{formatText(asset.department)}</span>
+                        <span>{assetStatus}</span>
+                      </div>
+                    </div>
+                    <span
+                      className={`drone-package-state ${
+                        assetStatus === "Borrowed"
+                          ? "drone-package-state-warning"
+                          : "drone-package-state-complete"
+                      }`}
+                    >
+                      {assetStatus === "Borrowed"
+                        ? "Flight report required on return"
+                        : "Ready for next borrowing"}
+                    </span>
+                  </div>
+                  <div className="drone-package-meta-grid">
+                    <div className="drone-package-meta-item">
+                      <div className="drone-package-meta-label">Borrower</div>
+                      <div className="drone-package-meta-value">
+                        {formatText(asset.borrower ?? asset.turnoverTo)}
+                      </div>
+                    </div>
+                    <div className="drone-package-meta-item">
+                      <div className="drone-package-meta-label">Assigned Date</div>
+                      <div className="drone-package-meta-value">{formatText(asset.assignedDate)}</div>
+                    </div>
+                    <div className="drone-package-meta-item">
+                      <div className="drone-package-meta-label">Current Location</div>
+                      <div className="drone-package-meta-value">
+                        {formatText(asset.location ?? asset.locationPersonAssigned)}
+                      </div>
+                    </div>
+                  </div>
+                  {workstationComponents.length ? (
+                    <div className="drone-package-parts">
+                      {workstationComponents.map((component, index) => (
+                        <span
+                          key={`${component.assetTag ?? component.componentType ?? "drone-part"}-${index}`}
+                          className="drone-package-part"
+                        >
+                          {formatText(component.componentType)}: {formatText(component.assetTag)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {assetStatus === "Borrowed" ? (
+                    <div className="drone-return-form">
+                      <FileUploadCard
+                        label="Flight Report for Return"
+                        inputRef={returnDroneFlightReportInputRef}
+                        accept=".pdf,image/*"
+                        onFileChange={(file) => {
+                          setSelectedReturnDroneFlightReportFile(file);
+                          if (file) {
+                            setReturnDroneError("");
+                          }
+                        }}
+                        hasAttachment={Boolean(selectedReturnDroneFlightReportFile)}
+                        displayName={
+                          selectedReturnDroneFlightReportFile
+                            ? selectedReturnDroneFlightReportFile.name
+                            : "Drone flight report"
+                        }
+                        helperText={
+                          selectedReturnDroneFlightReportFile
+                            ? "Flight report selected. Submit return to move the kit back to main storage."
+                            : "Required before IT can return this drone kit."
+                        }
+                        badge="PDF"
+                        ariaLabel="Drone return flight report upload"
+                        onRemove={() => {
+                          setSelectedReturnDroneFlightReportFile(null);
+                          setReturnDroneError("");
+                          if (returnDroneFlightReportInputRef.current) {
+                            returnDroneFlightReportInputRef.current.value = "";
+                          }
+                        }}
+                      />
+                      {returnDroneError ? (
+                        <div className="reservation-error">{returnDroneError}</div>
+                      ) : null}
+                      <div className="drone-return-actions">
+                        <button
+                          className="btn-primary"
+                          type="button"
+                          onClick={() => void handleReturnDroneKit()}
+                          disabled={isReturningDrone}
+                        >
+                          {isReturningDrone ? "Returning..." : "Upload Flight Report & Return"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           <section
             className="panel"
@@ -805,6 +1132,14 @@ export default function HardwareInventoryDetailPage() {
             <DetailItem label="Department" value={asset.department} />
             <DetailItem label="Turnover To" value={asset.assignedTo ?? asset.turnoverTo} />
             <DetailItem label="Borrower" value={asset.borrower} />
+            <DetailItem
+              label="Borrower Microsoft Email"
+              value={(asset as Record<string, unknown>).borrowerEmail as string | undefined}
+            />
+            <DetailItem
+              label="Return Due Date"
+              value={(asset as Record<string, unknown>).returnDueDate as string | undefined}
+            />
             <DetailItem
               label={isDesktopAsset ? "Turnover Date" : "Assigned Date"}
               value={
@@ -830,6 +1165,58 @@ export default function HardwareInventoryDetailPage() {
             >
               <DetailItem label="Created At" value={formatDate(asset.createdAt)} />
               <DetailItem label="Updated At" value={formatDate(asset.updatedAt)} />
+            </div>
+          </section>
+          <section className="panel" style={{ padding: 14 }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+                marginBottom: 10,
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 14 }}>Activity Log</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                {assetActivity?.length ?? 0} event{assetActivity?.length === 1 ? "" : "s"}
+              </div>
+            </div>
+            <div className="activity-feed">
+              {(assetActivity ?? []).map((event) => {
+                const meta = getActivityMeta(event.eventType);
+                return (
+                  <div key={event._id} className={`activity-feed-card${meta.urgent ? " urgent" : ""}`}>
+                    <div className="activity-feed-main">
+                      <div className={`activity-feed-icon tone-${meta.tone}`}>
+                        {renderActivityIcon(event.eventType)}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="activity-feed-topline">
+                          <span className={`activity-feed-chip tone-${meta.tone}`}>{meta.label}</span>
+                          <span className="activity-feed-time">{formatActivityTime(event.createdAt)}</span>
+                        </div>
+                        <div className="activity-feed-title">
+                          {event.assetTag}
+                          {event.assetNameDescription ? ` - ${event.assetNameDescription}` : ""}
+                        </div>
+                        <div className="activity-feed-message">{event.message}</div>
+                        <div className="activity-feed-meta">
+                          <span>{event.relatedPerson || "No person linked"}</span>
+                          <span>{event.location || "-"}</span>
+                          <span>{event.status || "-"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {!(assetActivity ?? []).length ? (
+                <div className="activity-feed-empty">
+                  No activity has been logged for this asset yet.
+                </div>
+              ) : null}
             </div>
           </section>
         </div>
@@ -986,6 +1373,35 @@ export default function HardwareInventoryDetailPage() {
                 value={canEditBorrower ? form.borrower : "none"}
                 onChange={(e) => setForm((prev) => ({ ...prev, borrower: e.target.value }))}
                 placeholder="Borrower"
+                disabled={!canEditBorrower}
+                style={
+                  canEditBorrower
+                    ? undefined
+                    : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
+                }
+              />
+            </EditField>
+            <EditField label="Borrower Microsoft Email">
+              <input
+                className="input-base"
+                type="email"
+                value={canEditBorrower ? form.borrowerEmail : "none"}
+                onChange={(e) => setForm((prev) => ({ ...prev, borrowerEmail: e.target.value }))}
+                placeholder="name@company.com"
+                disabled={!canEditBorrower}
+                style={
+                  canEditBorrower
+                    ? undefined
+                    : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
+                }
+              />
+            </EditField>
+            <EditField label="Return Due Date">
+              <input
+                className="input-base"
+                type="date"
+                value={canEditBorrower ? form.returnDueDate : ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, returnDueDate: e.target.value }))}
                 disabled={!canEditBorrower}
                 style={
                   canEditBorrower

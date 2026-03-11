@@ -78,7 +78,10 @@ function formatBreadcrumbLabel(segment: string, index: number, segments: string[
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const themeRef = useRef<ThemeMode>("light");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const showAppChrome = pathname !== "/login";
   const pathnameSegments = pathname.split("/").filter(Boolean);
   const breadcrumbs = [
     { href: "/", label: "Home", isCurrent: pathnameSegments.length === 0 },
@@ -91,9 +94,46 @@ export default function AppShell({ children }: AppShellProps) {
 
   useEffect(() => {
     const initialTheme = resolveInitialTheme();
-    themeRef.current = initialTheme;
+    setThemeMode(initialTheme);
     applyTheme(initialTheme);
   }, []);
+
+  useEffect(() => {
+    setAccountMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!accountMenuRef.current?.contains(event.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [accountMenuOpen]);
+
+  function handleThemeChange(nextTheme: ThemeMode) {
+    setThemeMode(nextTheme);
+    applyTheme(nextTheme);
+  }
+
+  if (!showAppChrome) {
+    return <div className="auth-shell">{children}</div>;
+  }
 
   return (
     <div className="app-bg">
@@ -221,68 +261,105 @@ export default function AppShell({ children }: AppShellProps) {
             </div>
 
             <div className="topbar-right">
-              <button className="top-icon-btn top-notify-btn" type="button" aria-label="Notifications">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M15 17H9M18 17H20L18.6 15.6C18.2 15.2 18 14.7 18 14.2V11C18 7.7 15.8 5 12.7 4.3C12.3 3.5 11.7 3 11 3C10.3 3 9.7 3.5 9.3 4.3C6.2 5 4 7.7 4 11V14.2C4 14.7 3.8 15.2 3.4 15.6L2 17H4M15 17C15 19.2 13.2 21 11 21C8.8 21 7 19.2 7 17"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span className="notify-badge">2</span>
-              </button>
-              <button
-                className="top-icon-btn theme-toggle"
-                type="button"
-                onClick={() => {
-                  const nextTheme = themeRef.current === "dark" ? "light" : "dark";
-                  themeRef.current = nextTheme;
-                  applyTheme(nextTheme);
-                }}
-                aria-label="Toggle dark mode"
-                title="Toggle dark mode"
-              >
-                <svg
-                  className="theme-icon theme-icon-moon"
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden="true"
+              <div className="account-menu-wrap" ref={accountMenuRef}>
+                <button
+                  className={`account-trigger${accountMenuOpen ? " open" : ""}`}
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={accountMenuOpen}
+                  aria-label="Open account menu"
+                  onClick={() => setAccountMenuOpen((prev) => !prev)}
                 >
-                  <path
-                    d="M21 12.79A9 9 0 1 1 11.21 3C11.39 3 11.57 3.01 11.75 3.03A7 7 0 0 0 21 12.79Z"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <svg
-                  className="theme-icon theme-icon-sun"
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M12 4V2M12 22V20M4 12H2M22 12H20M18.364 5.636L16.95 7.05M7.05 16.95L5.636 18.364M18.364 18.364L16.95 16.95M7.05 7.05L5.636 5.636M12 17A5 5 0 1 0 12 7A5 5 0 0 0 12 17Z"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-              <div className="avatar-chip">
-                <div className="avatar-dot">IT</div>
-                <div className="avatar-copy">
-                  <div className="avatar-text">IT Operations</div>
-                  <div className="avatar-subtext">Admin Console</div>
-                </div>
+                  <span className="avatar-dot account-trigger-avatar">IT</span>
+                </button>
+
+                {accountMenuOpen ? (
+                  <div className="account-dropdown" role="menu" aria-label="Account menu">
+                    <div className="account-dropdown-summary">
+                      <div className="avatar-dot account-dropdown-avatar">IT</div>
+                      <div className="avatar-copy">
+                        <div className="avatar-text">IT Operations</div>
+                        <div className="avatar-subtext">Admin Console</div>
+                      </div>
+                    </div>
+
+                    <div className="account-dropdown-divider" />
+
+                    <div className="account-dropdown-row" role="group" aria-label="Appearance">
+                      <div className="account-dropdown-row-copy">
+                        <span className="account-dropdown-row-title">Appearance</span>
+                        <span className="account-dropdown-row-subtitle">Light or dark</span>
+                      </div>
+
+                      <div className="theme-switcher" aria-label="Theme switcher">
+                        <button
+                          type="button"
+                          className={`theme-switcher-btn${themeMode === "light" ? " active" : ""}`}
+                          aria-label="Use light theme"
+                          onClick={() => handleThemeChange("light")}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                              d="M12 4V2M12 22V20M4 12H2M22 12H20M18.364 5.636L16.95 7.05M7.05 16.95L5.636 18.364M18.364 18.364L16.95 16.95M7.05 7.05L5.636 5.636M12 17A5 5 0 1 0 12 7A5 5 0 0 0 12 17Z"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          className={`theme-switcher-btn${themeMode === "dark" ? " active" : ""}`}
+                          aria-label="Use dark theme"
+                          onClick={() => handleThemeChange("dark")}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                              d="M21 12.79A9 9 0 1 1 11.21 3C11.39 3 11.57 3.01 11.75 3.03A7 7 0 0 0 21 12.79Z"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="account-dropdown-divider" />
+
+                    <Link
+                      href="/logout"
+                      className="account-signout-link"
+                      role="menuitem"
+                      onClick={() => setAccountMenuOpen(false)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path
+                          d="M10 17L5 12L10 7"
+                          stroke="currentColor"
+                          strokeWidth="1.7"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M5 12H15"
+                          stroke="currentColor"
+                          strokeWidth="1.7"
+                          strokeLinecap="round"
+                        />
+                        <path
+                          d="M15 5H18C19.1046 5 20 5.89543 20 7V17C20 18.1046 19.1046 19 18 19H15"
+                          stroke="currentColor"
+                          strokeWidth="1.7"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <span>Sign out</span>
+                    </Link>
+                  </div>
+                ) : null}
               </div>
             </div>
           </header>
