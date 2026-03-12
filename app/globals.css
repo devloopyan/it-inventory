@@ -1,31 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f5f6fa;
+  --background: #ffffff;
   --foreground: #18181b;
-  --muted: #6b7280;
-  --muted-strong: #374151;
+  --muted: #7a807a;
+  --muted-strong: #2f3532;
   --brand-900: #4f6cf7;
   --brand-700: #6480ff;
   --brand-500: #dbe4ff;
   --surface: #ffffff;
-  --surface-subtle: #f9fafc;
-  --surface-elevated: #f4f6fb;
-  --border: #e4e8f0;
-  --border-subtle: #eceff5;
-  --ui-border: #d9e0ea;
+  --surface-subtle: #f8f9f5;
+  --surface-elevated: #f2f4ef;
+  --border: #e3e7df;
+  --border-subtle: #ebece6;
+  --ui-border: #dde2d9;
   --ring: #c7d2fe;
   --sidebar-bg: #ffffff;
-  --topbar-bg: rgba(245, 246, 250, 0.92);
-  --hover-bg: #f3f5f9;
-  --nav-hover-bg: rgba(17, 24, 39, 0.035);
-  --nav-active-bg: rgba(79, 108, 247, 0.08);
-  --nav-active-border: rgba(79, 108, 247, 0.12);
-  --nav-active-color: #3550d8;
+  --topbar-bg: rgba(255, 255, 255, 0.94);
+  --hover-bg: #f5f7f2;
+  --nav-hover-bg: rgba(12, 105, 113, 0.05);
+  --nav-active-bg: #ffffff;
+  --nav-active-border: rgba(222, 227, 219, 0.96);
+  --nav-active-color: #0c6971;
   --chip-bg: #ffffff;
-  --placeholder: #9ca3af;
-  --table-row-hover: #f7f9fc;
-  --analytics-bar: #dde3ec;
+  --placeholder: #a1a8a1;
+  --table-row-hover: #fafbf7;
+  --analytics-bar: #dfe5df;
   --activity-bg: #ffffff;
   --success-bg: #e4f8e9;
   --success-text: #1f9a51;
@@ -103,10 +103,15 @@ a {
 .app-bg {
   min-height: 100vh;
   background: var(--background);
+  width: 100%;
+  overflow-x: clip;
 }
 
 .app-shell {
   min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .app-sidebar {
@@ -114,12 +119,15 @@ a {
   top: 0;
   left: 0;
   bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   width: var(--sidebar-width);
   background: var(--sidebar-bg);
   border: none;
   border-right: 1px solid var(--border);
   border-radius: 0;
-  padding: 14px 12px;
+  padding: 18px 14px 14px;
   z-index: 40;
   backdrop-filter: none;
   box-shadow: none;
@@ -132,16 +140,17 @@ a {
   gap: 10px;
   color: var(--foreground);
   letter-spacing: 0.01em;
-  margin-bottom: 14px;
-  padding: 4px 6px 12px;
+  margin-bottom: 0;
+  padding: 2px 6px 16px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .logo-mark {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  border: 1px solid rgba(79, 108, 247, 0.14);
-  background: var(--brand-900);
+  border: 1px solid rgba(12, 105, 113, 0.14);
+  background: #0c6971;
   color: #fff;
   display: grid;
   place-items: center;
@@ -170,7 +179,31 @@ a {
 .side-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+}
+
+.sidebar-section {
+  display: grid;
+  gap: 12px;
+}
+
+.sidebar-section-label {
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebar-spacer {
+  flex: 1;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .side-link {
@@ -212,15 +245,18 @@ a {
 
 .app-main {
   margin-left: var(--sidebar-width);
+  width: calc(100% - var(--sidebar-width));
+  max-width: calc(100% - var(--sidebar-width));
   min-width: 0;
   min-height: 100vh;
   padding: calc(var(--topbar-height) + 18px) 20px 20px;
+  overflow-x: clip;
 }
 
 .app-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   position: fixed;
   top: 0;
@@ -327,6 +363,10 @@ a {
   position: relative;
 }
 
+.sidebar-account-wrap {
+  position: relative;
+}
+
 .account-trigger {
   width: 36px;
   height: 36px;
@@ -376,6 +416,14 @@ a {
   display: grid;
   gap: 8px;
   z-index: 60;
+}
+
+.sidebar-account-dropdown {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 12px);
+  left: 0;
+  width: 100%;
 }
 
 .account-dropdown-summary {
@@ -478,6 +526,78 @@ a {
 .account-signout-link:hover {
   background: var(--surface-subtle);
   color: var(--foreground);
+}
+
+.sidebar-account-card {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--foreground);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition:
+    border-color var(--interaction-duration) var(--interaction-ease),
+    background-color var(--interaction-duration) var(--interaction-ease),
+    box-shadow var(--interaction-duration) var(--interaction-ease);
+}
+
+.sidebar-account-card:hover,
+.sidebar-account-card.open {
+  border-color: var(--border);
+  background: var(--surface-subtle);
+  box-shadow: none;
+}
+
+.sidebar-account-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: #111827;
+  color: #fff;
+  border: none;
+  flex: 0 0 auto;
+}
+
+.sidebar-account-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  flex: 1;
+}
+
+.sidebar-account-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-account-role {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-account-chevron {
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  transition: transform var(--interaction-duration) var(--interaction-ease);
+}
+
+.sidebar-account-card.open .sidebar-account-chevron {
+  transform: rotate(180deg);
 }
 
 .mobile-menu-btn {
@@ -622,6 +742,8 @@ a {
 }
 
 .app-content {
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
 }
 
@@ -631,6 +753,9 @@ a {
   border-radius: 0;
   padding: 0;
   box-shadow: none;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .greet-title {
@@ -756,6 +881,13 @@ a {
   gap: 18px;
   grid-template-columns: 2fr 1fr;
   align-items: stretch;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.dashboard-row > * {
+  min-width: 0;
 }
 
 .dashboard-row-primary {
@@ -1292,6 +1424,8 @@ a {
 .saas-table-wrap {
   border: 1px solid var(--border);
   border-radius: 12px;
+  min-width: 0;
+  max-width: 100%;
   overflow: auto;
   background: var(--surface);
 }
@@ -1679,6 +1813,17 @@ select.status-select optgroup {
 .dashboard-page {
   display: grid;
   gap: 16px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+:root:not([data-theme="dark"]) .app-bg,
+:root:not([data-theme="dark"]) .app-main,
+:root:not([data-theme="dark"]) .app-topbar,
+:root:not([data-theme="dark"]) .app-content > div,
+:root:not([data-theme="dark"]) .dashboard-page {
+  background: #ffffff;
 }
 
 .dashboard-header {
@@ -1710,6 +1855,7 @@ select.status-select optgroup {
 
 .dashboard-panel {
   border-radius: 12px;
+  min-width: 0;
 }
 
 .dashboard-side-stack {
@@ -1795,10 +1941,12 @@ select.status-select optgroup {
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  min-width: 0;
 }
 
 .dashboard-group-list {
   max-height: 760px;
+  min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-gutter: stable;
@@ -3804,9 +3952,127 @@ select.status-select optgroup {
   color: #f0fdf4;
 }
 
+.dashboard-page {
+  --dashboard-soft-border: #e4e7e0;
+  --dashboard-soft-divider: #ecefe8;
+  --dashboard-soft-hover: #fafbf7;
+  --dashboard-soft-subtle-surface: #f5f7f2;
+  --dashboard-control-border: #dde3da;
+  --dashboard-control-hover: #f5f7f2;
+  --dashboard-control-active-bg: #edf4f2;
+  --dashboard-control-active-border: rgba(12, 105, 113, 0.16);
+  --dashboard-control-active-text: #0c6971;
+  --dashboard-primary-bg: #0c6971;
+  --dashboard-primary-hover: #0a5d63;
+}
+
+.dashboard-page .dashboard-panel,
+.dashboard-page .dashboard-reminder-card,
+.dashboard-page .dashboard-metric-strip,
+.dashboard-page .saas-card,
+.dashboard-page .saas-table-wrap,
+.dashboard-page .reservation-section,
+.dashboard-page .reservation-card,
+.dashboard-page .activity-feed-card,
+.dashboard-page .department-card {
+  border-color: var(--dashboard-soft-border);
+  box-shadow: none;
+}
+
+.dashboard-page .metric-item {
+  border-right-color: var(--dashboard-soft-divider);
+}
+
+.dashboard-page .saas-table th,
+.dashboard-page .saas-table td {
+  border-bottom-color: var(--dashboard-soft-divider);
+}
+
+.dashboard-page .table-row-hover:hover,
+.dashboard-page .department-card:hover,
+.dashboard-page .dashboard-tab-btn:hover,
+.dashboard-page .activity-feed-toggle:hover,
+.dashboard-page .activity-feed-action-btn:hover,
+.dashboard-page .btn-secondary:hover:not(:disabled),
+.dashboard-page .reservation-available-btn:hover {
+  border-color: var(--dashboard-control-border);
+  background: var(--dashboard-control-hover);
+}
+
+.dashboard-page .btn-secondary,
+.dashboard-page .dashboard-tab-btn,
+.dashboard-page .activity-feed-toggle,
+.dashboard-page .activity-feed-action-btn,
+.dashboard-page .reservation-section .btn-secondary,
+.dashboard-page .reservation-available-btn {
+  border-color: var(--dashboard-control-border);
+  background: #ffffff;
+  color: var(--foreground);
+}
+
+.dashboard-page .department-card,
+.dashboard-page .reservation-section,
+.dashboard-page .reservation-card,
+.dashboard-page .activity-feed-card,
+.dashboard-page .dashboard-reminder-card {
+  background: var(--surface);
+}
+
+.dashboard-page .department-card-label,
+.dashboard-page .department-card-count,
+.dashboard-page .dashboard-tab-btn.active,
+.dashboard-page .reservation-available-btn.is-selected,
+.dashboard-page .dashboard-reminder-badge {
+  background: var(--dashboard-control-active-bg);
+  color: var(--dashboard-control-active-text);
+}
+
+.dashboard-page .dashboard-tab-btn.active,
+.dashboard-page .reservation-available-btn.is-selected {
+  border-color: var(--dashboard-control-active-border);
+}
+
+.dashboard-page .btn-primary,
+.dashboard-page .dashboard-reminder-btn {
+  border-color: rgba(12, 105, 113, 0.18);
+  background: var(--dashboard-primary-bg);
+  color: #ffffff;
+}
+
+.dashboard-page .btn-primary:hover:not(:disabled),
+.dashboard-page .dashboard-reminder-btn:hover {
+  border-color: rgba(12, 105, 113, 0.22);
+  background: var(--dashboard-primary-hover);
+}
+
+:root[data-theme="dark"] .dashboard-page {
+  --dashboard-soft-border: #22262d;
+  --dashboard-soft-divider: #2a2f37;
+  --dashboard-soft-hover: #14181e;
+  --dashboard-soft-subtle-surface: #14181e;
+  --dashboard-control-border: #2a3138;
+  --dashboard-control-hover: #151a20;
+  --dashboard-control-active-bg: rgba(12, 105, 113, 0.18);
+  --dashboard-control-active-border: rgba(82, 201, 192, 0.22);
+  --dashboard-control-active-text: #93e0da;
+  --dashboard-primary-bg: #0c6971;
+  --dashboard-primary-hover: #0f767d;
+}
+
+:root[data-theme="dark"] .dashboard-page .department-card-label,
+:root[data-theme="dark"] .dashboard-page .department-card-count,
+:root[data-theme="dark"] .dashboard-page .dashboard-tab-btn.active,
+:root[data-theme="dark"] .dashboard-page .reservation-available-btn.is-selected,
+:root[data-theme="dark"] .dashboard-page .dashboard-reminder-badge {
+  background: var(--dashboard-control-active-bg);
+  color: var(--dashboard-control-active-text);
+}
+
 @media (max-width: 1024px) {
   .app-main {
     margin-left: 0;
+    width: 100%;
+    max-width: 100%;
     padding: calc(var(--topbar-height) + 12px) 16px 16px;
   }
 

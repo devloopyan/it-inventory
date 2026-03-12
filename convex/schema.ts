@@ -40,7 +40,7 @@ export default defineSchema({
     status: v.string(),
     turnoverTo: v.optional(v.string()),
     borrower: v.optional(v.string()),
-    // Legacy reminder fields kept only for existing records.
+    // Legacy compatibility fields kept only for existing records.
     borrowerEmail: v.optional(v.string()),
     returnDueDate: v.optional(v.string()),
     registerMode: v.optional(v.string()),
@@ -76,7 +76,7 @@ export default defineSchema({
     warranty: v.optional(v.string()),
     remarks: v.optional(v.string()),
     reservationBorrower: v.optional(v.string()),
-    // Legacy reminder fields kept only for existing records.
+    // Legacy compatibility fields kept only for existing records.
     reservationBorrowerEmail: v.optional(v.string()),
     reservationDepartment: v.optional(v.string()),
     reservationRequestedDate: v.optional(v.string()),
