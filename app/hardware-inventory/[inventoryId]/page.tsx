@@ -58,7 +58,7 @@ type HardwareActivityRecord = {
   status?: string;
   createdAt: number;
 };
-
+//status dropdown
 const statusColors: Record<HardwareStatus, { bg: string; text: string; border: string }> = {
   Available: { bg: "#dcfce7", text: "#166534", border: "#86efac" },
   Working: { bg: "#dbeafe", text: "#1d4ed8", border: "#93c5fd" },
@@ -100,7 +100,7 @@ function getActivityMeta(eventType: string): {
   urgent?: boolean;
 } {
   switch (eventType) {
-    case "asset_created":
+    case "asset_created":t  
       return { label: "Created", tone: "blue" };
     case "asset_updated":
       return { label: "Updated", tone: "slate" };
@@ -286,9 +286,12 @@ function EditField({ label, children }: { label: string; children: ReactNode }) 
 export default function HardwareInventoryDetailPage() {
   const params = useParams<{ inventoryId: string }>();
   const router = useRouter();
-  const inventoryId = params.inventoryId as Id<"hardwareInventory">;
+  const inventoryId = params?.inventoryId as Id<"hardwareInventory"> | undefined;
 
-  const row = useQuery(api.hardwareInventory.getById, { inventoryId });
+  const row = useQuery(
+    api.hardwareInventory.getById,
+    inventoryId ? { inventoryId } : "skip",
+  );
   const updateAsset = useMutation(api.hardwareInventory.update);
   const removeAsset = useMutation(api.hardwareInventory.remove);
   const generateUploadUrl = useMutation(api.hardwareInventory.generateUploadUrl);
@@ -322,7 +325,7 @@ export default function HardwareInventoryDetailPage() {
   );
   const assetActivity = useQuery(
     (api.hardwareInventory as Record<string, unknown>)["listRecentActivity"] as never,
-    row ? ({ limit: 20, inventoryId } as never) : "skip",
+    row && inventoryId ? ({ limit: 20, inventoryId } as never) : "skip",
   ) as unknown as HardwareActivityRecord[] | undefined;
 
   const [isEditing, setIsEditing] = useState(false);
@@ -468,6 +471,10 @@ export default function HardwareInventoryDetailPage() {
 
   async function handleSave() {
     setFormError("");
+    if (!inventoryId) {
+      setFormError("Asset details could not be resolved.");
+      return;
+    }
     if (
       !form.assetTag ||
       !form.assetType ||
@@ -496,7 +503,7 @@ export default function HardwareInventoryDetailPage() {
         return;
       }
       if (!form.borrowerEmail.trim()) {
-        setFormError("Borrower Microsoft email is required when status is Borrowed.");
+        setFormError("Borrower email is required when status is Borrowed.");
         return;
       }
       if (!form.returnDueDate) {
@@ -654,6 +661,10 @@ export default function HardwareInventoryDetailPage() {
     if (isDeleting || isSaving) {
       return;
     }
+    if (!inventoryId) {
+      window.alert("Asset details could not be resolved.");
+      return;
+    }
 
     const confirmed = window.confirm(
       `Delete hardware asset ${asset.assetTag}? This action cannot be undone.`,
@@ -676,7 +687,7 @@ export default function HardwareInventoryDetailPage() {
   }
 
   async function handleReturnDroneKit() {
-    if (!isDroneAsset || assetStatus !== "Borrowed") {
+    if (!inventoryId || !isDroneAsset || assetStatus !== "Borrowed") {
       return;
     }
     if (!selectedReturnDroneFlightReportFile) {

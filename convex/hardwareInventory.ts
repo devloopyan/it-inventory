@@ -1,7 +1,6 @@
-import { action, internalAction, internalMutation, mutation, query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { api, internal } from "./_generated/api";
 
 const STATUS_OPTIONS = [
   "Borrowed",
@@ -39,7 +38,7 @@ function normalizeOptionalEmail(value?: string) {
   if (!next) return undefined;
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailPattern.test(next)) {
-    throw new Error("Borrower Microsoft email is invalid.");
+    throw new Error("Borrower email is invalid.");
   }
   return next;
 }
@@ -51,52 +50,6 @@ function normalizeOptionalDate(value?: string, label = "Date") {
     throw new Error(`${label} must use YYYY-MM-DD format.`);
   }
   return next;
-}
-
-function getCurrentDateInTimeZone(timeZone: string) {
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = formatter.formatToParts(new Date());
-  const values = Object.fromEntries(
-    parts
-      .filter((part) => part.type === "year" || part.type === "month" || part.type === "day")
-      .map((part) => [part.type, part.value]),
-  ) as Record<"year" | "month" | "day", string>;
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-async function sendTeamsReturnReminderRequest(args: {
-  endpointUrl: string;
-  sharedSecret: string;
-  recipientEmail: string;
-  borrowerName?: string;
-  assetTag: string;
-  assetNameDescription?: string;
-  returnDueDate: string;
-}) {
-  const response = await fetch(args.endpointUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-reminder-secret": args.sharedSecret,
-    },
-    body: JSON.stringify({
-      recipientEmail: args.recipientEmail,
-      borrowerName: args.borrowerName,
-      assetTag: args.assetTag,
-      assetNameDescription: args.assetNameDescription,
-      returnDueDate: args.returnDueDate,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || `Teams reminder failed for ${args.recipientEmail}.`);
-  }
 }
 
 function resolveTurnoverTo(personAssigned?: string, fallbackTurnoverTo?: string) {
@@ -598,7 +551,7 @@ export const create = mutation({
         throw new Error("Borrower Name is required when status is Borrowed.");
       }
       if (!borrowerEmail) {
-        throw new Error("Borrower Microsoft email is required when status is Borrowed.");
+        throw new Error("Borrower email is required when status is Borrowed.");
       }
       if (!returnDueDate) {
         throw new Error("Return Due Date is required when status is Borrowed.");
@@ -750,7 +703,6 @@ export const create = mutation({
         borrower: effectiveStatus === "Borrowed" ? borrower : undefined,
         borrowerEmail: effectiveStatus === "Borrowed" ? borrowerEmail : undefined,
         returnDueDate: effectiveStatus === "Borrowed" ? returnDueDate : undefined,
-        returnReminderLastSentDate: undefined,
         registerMode,
         workstationType,
         specsTier,
@@ -924,7 +876,7 @@ export const update = mutation({
         throw new Error("Borrower Name is required when status is Borrowed.");
       }
       if (!borrowerEmail) {
-        throw new Error("Borrower Microsoft email is required when status is Borrowed.");
+        throw new Error("Borrower email is required when status is Borrowed.");
       }
       if (!returnDueDate) {
         throw new Error("Return Due Date is required when status is Borrowed.");
@@ -976,7 +928,6 @@ export const update = mutation({
       borrower?: string | undefined;
       borrowerEmail?: string | undefined;
       returnDueDate?: string | undefined;
-      returnReminderLastSentDate?: string | undefined;
       assignedTo?: string | undefined;
     } = {
       assetTag,
@@ -1091,16 +1042,10 @@ export const update = mutation({
       patchData.borrower = borrower;
       patchData.borrowerEmail = borrowerEmail;
       patchData.returnDueDate = returnDueDate;
-      if (previousReturnDueDate !== returnDueDate) {
-        patchData.returnReminderLastSentDate = undefined;
-      }
     } else {
       patchData.borrower = undefined;
       patchData.borrowerEmail = undefined;
       patchData.returnDueDate = undefined;
-      if (previousBorrowerEmail || previousReturnDueDate) {
-        patchData.returnReminderLastSentDate = undefined;
-      }
     }
 
     await ctx.db.patch(args.inventoryId, patchData as never);
@@ -1205,7 +1150,7 @@ export const reserveAsset = mutation({
     const slipNote = normalizeOptional(args.slipNote);
 
     if (!borrowerEmail) {
-      throw new Error("Borrower Microsoft email is required.");
+      throw new Error("Borrower email is required.");
     }
     if (!returnDueDate) {
       throw new Error("Return Due Date is required.");
@@ -1334,17 +1279,15 @@ export const claimReservation = mutation({
       updatedAt: number;
       droneFlightReportStorageId?: undefined;
       droneMissingPartsNote?: string | undefined;
-      returnReminderLastSentDate?: undefined;
     } = {
       status: "Borrowed",
       borrower: borrowerName,
-      borrowerEmail: normalizeRequired(borrowerEmail ?? "", "Borrower Microsoft email"),
+      borrowerEmail: normalizeRequired(borrowerEmail ?? "", "Borrower email"),
       department: reservationDepartment ?? existing.department,
       turnoverTo: nextTurnoverTo,
       returnDueDate: normalizeRequired(reservationReturnDueDate ?? "", "Return Due Date"),
       reservationStatus: "Claimed",
       updatedAt: Date.now(),
-      returnReminderLastSentDate: undefined,
     };
     if (shouldResetDroneFlightReport) {
       patchData.droneFlightReportStorageId = undefined;
@@ -1422,7 +1365,6 @@ export const returnDronePackage = mutation({
         borrower: undefined;
         borrowerEmail: undefined;
         returnDueDate: undefined;
-        returnReminderLastSentDate: undefined;
         updatedAt: number;
         droneFlightReportStorageId?: Id<"_storage"> | undefined;
         droneMissingPartsNote?: undefined;
@@ -1433,7 +1375,6 @@ export const returnDronePackage = mutation({
         borrower: undefined,
         borrowerEmail: undefined,
         returnDueDate: undefined,
-        returnReminderLastSentDate: undefined,
         droneMissingPartsNote: undefined,
         updatedAt: now,
       };
@@ -1479,157 +1420,6 @@ export const returnDronePackage = mutation({
     }
 
     return { returned: packageRows.length };
-  },
-});
-
-export const markReturnReminderSent = internalMutation({
-  args: {
-    inventoryId: v.id("hardwareInventory"),
-    sentDate: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.get(args.inventoryId);
-    if (!existing) return;
-
-    const sentDate = normalizeOptionalDate(args.sentDate, "Sent Date");
-    if (!sentDate) {
-      throw new Error("Sent Date is required.");
-    }
-
-    await ctx.db.patch(
-      args.inventoryId,
-      {
-        returnReminderLastSentDate: sentDate,
-        updatedAt: Date.now(),
-      } as never,
-    );
-
-    await logHardwareActivity(ctx, {
-      inventoryId: args.inventoryId,
-      assetTag: existing.assetTag,
-      assetNameDescription: existing.assetNameDescription,
-      eventType: "return_reminder_sent",
-      message: "Return reminder email sent.",
-      relatedPerson: existing.borrower ?? existing.turnoverTo ?? undefined,
-      location: existing.locationPersonAssigned ?? existing.location,
-      status: existing.status,
-    });
-  },
-});
-
-export const sendDueReturnReminders = internalAction({
-  args: {},
-  handler: async (ctx) => {
-    const teamsReminderWebhookUrl = process.env.TEAMS_REMINDER_WEBHOOK_URL;
-    const teamsReminderSecret = process.env.TEAMS_REMINDER_WEBHOOK_SECRET;
-    const reminderTimeZone = process.env.RETURN_REMINDER_TIMEZONE || "Asia/Manila";
-
-    if (!teamsReminderWebhookUrl || !teamsReminderSecret) {
-      return {
-        sent: 0,
-        failed: 0,
-        skipped: 0,
-        reason: "Teams reminder configuration is incomplete.",
-      };
-    }
-
-    const rows = await ctx.runQuery(api.hardwareInventory.listAll, {});
-    const today = getCurrentDateInTimeZone(reminderTimeZone);
-    const candidates = rows.filter((row) => {
-      const borrowerEmail = (row as Record<string, unknown>).borrowerEmail as string | undefined;
-      const returnDueDate = (row as Record<string, unknown>).returnDueDate as string | undefined;
-      const returnReminderLastSentDate = (row as Record<string, unknown>)
-        .returnReminderLastSentDate as string | undefined;
-      return (
-        row.status === "Borrowed" &&
-        Boolean(borrowerEmail) &&
-        Boolean(returnDueDate) &&
-        returnDueDate! <= today &&
-        returnReminderLastSentDate !== today
-      );
-    });
-
-    if (!candidates.length) {
-      return { sent: 0, failed: 0, skipped: 0, date: today };
-    }
-
-    let sent = 0;
-    let failed = 0;
-    let skipped = 0;
-
-    for (const row of candidates) {
-      const borrowerEmail = (row as Record<string, unknown>).borrowerEmail as string | undefined;
-      const returnDueDate = (row as Record<string, unknown>).returnDueDate as string | undefined;
-      if (!borrowerEmail || !returnDueDate) {
-        skipped += 1;
-        continue;
-      }
-
-      try {
-        await sendTeamsReturnReminderRequest({
-          endpointUrl: teamsReminderWebhookUrl,
-          sharedSecret: teamsReminderSecret,
-          recipientEmail: borrowerEmail,
-          borrowerName: row.borrower ?? row.turnoverTo ?? undefined,
-          assetTag: row.assetTag,
-          assetNameDescription: row.assetNameDescription,
-          returnDueDate,
-        });
-        await ctx.runMutation(internal.hardwareInventory.markReturnReminderSent, {
-          inventoryId: row._id,
-          sentDate: today,
-        });
-        sent += 1;
-      } catch {
-        failed += 1;
-      }
-    }
-
-    return {
-      sent,
-      failed,
-      skipped,
-      date: today,
-    };
-  },
-});
-
-export const sendTestReturnReminder = action({
-  args: {
-    recipientEmail: v.string(),
-    borrowerName: v.optional(v.string()),
-  },
-  handler: async (_ctx, args) => {
-    const recipientEmail = normalizeOptionalEmail(args.recipientEmail);
-    if (!recipientEmail) {
-      throw new Error("Recipient Microsoft email is required.");
-    }
-
-    const teamsReminderWebhookUrl = process.env.TEAMS_REMINDER_WEBHOOK_URL;
-    const teamsReminderSecret = process.env.TEAMS_REMINDER_WEBHOOK_SECRET;
-    const reminderTimeZone = process.env.RETURN_REMINDER_TIMEZONE || "Asia/Manila";
-
-    if (!teamsReminderWebhookUrl || !teamsReminderSecret) {
-      throw new Error("Teams reminder configuration is incomplete.");
-    }
-
-    const borrowerName = normalizeOptional(args.borrowerName);
-    const dueDate = getCurrentDateInTimeZone(reminderTimeZone);
-
-    await sendTeamsReturnReminderRequest({
-      endpointUrl: teamsReminderWebhookUrl,
-      sharedSecret: teamsReminderSecret,
-      recipientEmail,
-      borrowerName,
-      assetTag: "IT-TEST-REMINDER",
-      assetNameDescription: "Teams direct message test",
-      returnDueDate: dueDate,
-    });
-
-    return {
-      recipientEmail,
-      dueDate,
-    };
   },
 });
 

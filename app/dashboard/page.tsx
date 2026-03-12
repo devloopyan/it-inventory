@@ -293,10 +293,6 @@ export default function DashboardPage() {
   const [reservationSlipNote, setReservationSlipNote] = useState("");
   const [reservationError, setReservationError] = useState("");
   const [reservationBusyId, setReservationBusyId] = useState("");
-  const [teamsTestEmail, setTeamsTestEmail] = useState("");
-  const [teamsTestBusy, setTeamsTestBusy] = useState(false);
-  const [teamsTestError, setTeamsTestError] = useState("");
-  const [teamsTestMessage, setTeamsTestMessage] = useState("");
   const migrationRan = useRef(false);
 
   useEffect(() => {
@@ -344,7 +340,7 @@ export default function DashboardPage() {
       return;
     }
     if (!reservationBorrowerEmail.trim()) {
-      setReservationError("Borrower Microsoft email is required.");
+      setReservationError("Borrower email is required.");
       return;
     }
     if (!reservationRequestedDate) {
@@ -401,44 +397,6 @@ export default function DashboardPage() {
       setReservationError(error instanceof Error ? error.message : "Cancel failed.");
     } finally {
       setReservationBusyId("");
-    }
-  }
-
-  async function handleSendTeamsTest() {
-    if (!teamsTestEmail.trim()) {
-      setTeamsTestError("Enter a Microsoft email first.");
-      setTeamsTestMessage("");
-      return;
-    }
-
-    try {
-      setTeamsTestBusy(true);
-      setTeamsTestError("");
-      setTeamsTestMessage("");
-      const response = await fetch("/api/internal/teams-test-reminder", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          recipientEmail: teamsTestEmail,
-        }),
-      });
-      const result = (await response.json()) as {
-        recipientEmail?: string;
-        dueDate?: string;
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(result.error || "Teams test reminder failed.");
-      }
-      setTeamsTestMessage(
-        `Test reminder sent to ${result.recipientEmail}. Due date used: ${result.dueDate}.`,
-      );
-    } catch (error) {
-      setTeamsTestError(error instanceof Error ? error.message : "Teams test reminder failed.");
-    } finally {
-      setTeamsTestBusy(false);
     }
   }
 
@@ -719,16 +677,14 @@ export default function DashboardPage() {
                 />
               </div>
               <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                  Microsoft Email
-                </div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Email</div>
                 <input
                   className="input-base reservation-input"
                   type="email"
                   value={reservationBorrowerEmail}
                   onChange={(e) => setReservationBorrowerEmail(e.target.value)}
                   placeholder="name@company.com"
-                  aria-label="Borrower Microsoft email"
+                  aria-label="Borrower email"
                 />
               </div>
             </div>
@@ -1090,47 +1046,6 @@ export default function DashboardPage() {
             >
               Review Now
             </button>
-            <div
-              style={{
-                marginTop: 14,
-                paddingTop: 14,
-                borderTop: "1px solid var(--border)",
-                display: "grid",
-                gap: 8,
-              }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 700 }}>Send Teams Test</div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                Sends a direct Teams reminder to the Microsoft account below.
-              </div>
-              <input
-                className="input-base"
-                type="email"
-                value={teamsTestEmail}
-                onChange={(event) => {
-                  setTeamsTestEmail(event.target.value);
-                  setTeamsTestError("");
-                  setTeamsTestMessage("");
-                }}
-                placeholder="name@company.com"
-                aria-label="Test Teams recipient email"
-                disabled={teamsTestBusy}
-              />
-              <button
-                className="btn-secondary"
-                type="button"
-                onClick={() => void handleSendTeamsTest()}
-                disabled={teamsTestBusy}
-              >
-                {teamsTestBusy ? "Sending..." : "Send Test"}
-              </button>
-              {teamsTestError ? (
-                <div style={{ fontSize: 12, color: "#b91c1c" }}>{teamsTestError}</div>
-              ) : null}
-              {teamsTestMessage ? (
-                <div style={{ fontSize: 12, color: "var(--foreground)" }}>{teamsTestMessage}</div>
-              ) : null}
-            </div>
           </div>
           <div className="panel dashboard-panel dashboard-department-panel" style={{ padding: 16 }}>
             <h3 style={{ marginTop: 0, marginBottom: 6 }}>Assets per Department</h3>

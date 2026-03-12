@@ -902,7 +902,7 @@ export default function HardwareInventoryPage() {
         return;
       }
       if (!form.borrowerEmail.trim()) {
-        setFormError("Borrower Microsoft email is required when status is Borrowed.");
+        setFormError("Borrower email is required when status is Borrowed.");
         return;
       }
       if (!form.returnDueDate) {

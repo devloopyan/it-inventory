@@ -82,7 +82,7 @@ export default function AppShell({ children }: AppShellProps) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const showAppChrome = pathname !== "/login";
-  const pathnameSegments = pathname.split("/").filter(Boolean);
+  const pathnameSegments = pathname?.split("/").filter(Boolean) ?? [];
   const breadcrumbs = [
     { href: "/", label: "Home", isCurrent: pathnameSegments.length === 0 },
     ...pathnameSegments.map((segment, index) => ({

@@ -42,7 +42,6 @@ export default defineSchema({
     borrower: v.optional(v.string()),
     borrowerEmail: v.optional(v.string()),
     returnDueDate: v.optional(v.string()),
-    returnReminderLastSentDate: v.optional(v.string()),
     registerMode: v.optional(v.string()),
     workstationType: v.optional(v.string()),
     specsTier: v.optional(v.string()),
