@@ -134,10 +134,6 @@ function getReservationPickupDate(row: Record<string, unknown>) {
   return (row.reservationPickupDate as string | undefined) ?? "";
 }
 
-function getReservationReturnDueDate(row: Record<string, unknown>) {
-  return (row.reservationReturnDueDate as string | undefined) ?? "";
-}
-
 function isDroneKitRecord(row: {
   assetType?: string;
   registerMode?: string;
@@ -175,8 +171,6 @@ function getActivityMeta(eventType: string): {
       return { label: "Returned", tone: "green" };
     case "drone_flight_report_uploaded":
       return { label: "Flight Report", tone: "blue" };
-    case "return_reminder_sent":
-      return { label: "Reminder Sent", tone: "amber" };
     case "receiving_form_uploaded":
       return { label: "Receiving Form", tone: "green" };
     case "turnover_form_uploaded":
@@ -231,7 +225,6 @@ function renderActivityIcon(eventType: string) {
     case "receiving_form_uploaded":
     case "turnover_form_uploaded":
     case "drone_flight_report_uploaded":
-    case "return_reminder_sent":
       return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M8 3H16L20 7V21H4V3H8Z" stroke="currentColor" strokeWidth="2" />
@@ -266,11 +259,9 @@ export default function DashboardPage() {
   ) as unknown as (args: {
     inventoryId: never;
     borrowerName: string;
-    borrowerEmail: string;
     department: string;
     requestedDate: string;
     expectedPickupDate?: string;
-    returnDueDate: string;
     slipNote?: string;
   }) => Promise<unknown>;
   const claimReservation = useMutation(
@@ -285,11 +276,9 @@ export default function DashboardPage() {
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [reservationTargetId, setReservationTargetId] = useState<string>("");
   const [reservationBorrower, setReservationBorrower] = useState("");
-  const [reservationBorrowerEmail, setReservationBorrowerEmail] = useState("");
   const [reservationDepartment, setReservationDepartment] = useState("");
   const [reservationRequestedDate, setReservationRequestedDate] = useState("");
   const [reservationPickupDate, setReservationPickupDate] = useState("");
-  const [reservationReturnDueDate, setReservationReturnDueDate] = useState("");
   const [reservationSlipNote, setReservationSlipNote] = useState("");
   const [reservationError, setReservationError] = useState("");
   const [reservationBusyId, setReservationBusyId] = useState("");
@@ -316,11 +305,9 @@ export default function DashboardPage() {
   function resetReservationForm() {
     setReservationTargetId("");
     setReservationBorrower("");
-    setReservationBorrowerEmail("");
     setReservationDepartment("");
     setReservationRequestedDate("");
     setReservationPickupDate("");
-    setReservationReturnDueDate("");
     setReservationSlipNote("");
     setReservationError("");
     setReservationBusyId("");
@@ -339,16 +326,8 @@ export default function DashboardPage() {
       setReservationError("Department is required.");
       return;
     }
-    if (!reservationBorrowerEmail.trim()) {
-      setReservationError("Borrower email is required.");
-      return;
-    }
     if (!reservationRequestedDate) {
       setReservationError("Requested date is required.");
-      return;
-    }
-    if (!reservationReturnDueDate) {
-      setReservationError("Return due date is required.");
       return;
     }
 
@@ -358,11 +337,9 @@ export default function DashboardPage() {
       await reserveAsset({
         inventoryId: reservationTargetId as never,
         borrowerName: reservationBorrower,
-        borrowerEmail: reservationBorrowerEmail,
         department: reservationDepartment,
         requestedDate: reservationRequestedDate,
         expectedPickupDate: reservationPickupDate || undefined,
-        returnDueDate: reservationReturnDueDate,
         slipNote: reservationSlipNote || undefined,
       });
       setActiveTab("reserved");
@@ -658,7 +635,6 @@ export default function DashboardPage() {
                 </div>
                 <div className="reservation-form-note">
                   When claimed, the asset status will change to Borrowed.
-                  A return due date is required.
                   {selectedReservationIsDrone ? " A flight report is required upon return." : ""}
                 </div>
               </div>
@@ -674,17 +650,6 @@ export default function DashboardPage() {
                   onChange={(e) => setReservationBorrower(e.target.value)}
                   placeholder="Enter borrower name"
                   aria-label="Borrower name"
-                />
-              </div>
-              <div className="reservation-form-field">
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Email</div>
-                <input
-                  className="input-base reservation-input"
-                  type="email"
-                  value={reservationBorrowerEmail}
-                  onChange={(e) => setReservationBorrowerEmail(e.target.value)}
-                  placeholder="name@company.com"
-                  aria-label="Borrower email"
                 />
               </div>
             </div>
@@ -731,20 +696,6 @@ export default function DashboardPage() {
                   value={reservationPickupDate}
                   onChange={(e) => setReservationPickupDate(e.target.value)}
                   aria-label="Expected pickup date"
-                />
-              </div>
-            </div>
-            <div className="reservation-form-grid">
-              <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                  Return Due Date
-                </div>
-                <input
-                  className="input-base reservation-input"
-                  type="date"
-                  value={reservationReturnDueDate}
-                  onChange={(e) => setReservationReturnDueDate(e.target.value)}
-                  aria-label="Return due date"
                 />
               </div>
             </div>
@@ -858,19 +809,13 @@ export default function DashboardPage() {
                   const reservationRow = row as Record<string, unknown>;
                   const pickupDate = getReservationPickupDate(reservationRow);
                   const requestDate = getReservationRequestedDate(reservationRow);
-                  const returnDueDate = getReservationReturnDueDate(reservationRow);
                   const reservationAssignee = [
                     getReservationBorrower(reservationRow),
                     getReservationDepartment(reservationRow),
                   ]
                     .filter(Boolean)
                     .join(" | ");
-                  const reserveLabel = [
-                    pickupDate ? `Pickup ${pickupDate}` : `Requested ${requestDate}`,
-                    returnDueDate ? `Due ${returnDueDate}` : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" | ");
+                  const reserveLabel = pickupDate ? `Pickup ${pickupDate}` : `Requested ${requestDate}`;
                   return (
                     <div key={row._id} className="reservation-card reservation-card-reserved">
                       <div className="reservation-card-row">

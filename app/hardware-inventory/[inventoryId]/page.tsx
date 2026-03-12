@@ -29,8 +29,6 @@ type FormState = {
   status: HardwareStatus;
   turnoverTo: string;
   borrower: string;
-  borrowerEmail: string;
-  returnDueDate: string;
   assignedDate: string;
   purchaseDate: string;
   warranty: string;
@@ -100,7 +98,7 @@ function getActivityMeta(eventType: string): {
   urgent?: boolean;
 } {
   switch (eventType) {
-    case "asset_created":t  
+    case "asset_created":
       return { label: "Created", tone: "blue" };
     case "asset_updated":
       return { label: "Updated", tone: "slate" };
@@ -128,8 +126,6 @@ function getActivityMeta(eventType: string): {
       return { label: "Turnover Form", tone: "blue" };
     case "drone_flight_report_uploaded":
       return { label: "Flight Report", tone: "blue" };
-    case "return_reminder_sent":
-      return { label: "Reminder Sent", tone: "amber" };
     case "asset_deleted":
       return { label: "Deleted", tone: "red", urgent: true };
     default:
@@ -178,7 +174,6 @@ function renderActivityIcon(eventType: string) {
     case "receiving_form_uploaded":
     case "turnover_form_uploaded":
     case "drone_flight_report_uploaded":
-    case "return_reminder_sent":
       return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M8 3H16L20 7V21H4V3H8Z" stroke="currentColor" strokeWidth="2" />
@@ -363,8 +358,6 @@ export default function HardwareInventoryDetailPage() {
     status: "Available" as HardwareStatus,
     turnoverTo: "",
     borrower: "",
-    borrowerEmail: "",
-    returnDueDate: "",
     assignedDate: "",
     purchaseDate: "",
     warranty: "",
@@ -420,8 +413,6 @@ export default function HardwareInventoryDetailPage() {
       status: asset.status as HardwareStatus,
       turnoverTo: asset.assignedTo ?? asset.turnoverTo ?? "Unassigned",
       borrower: asset.borrower ?? "",
-      borrowerEmail: ((asset as Record<string, unknown>).borrowerEmail as string | undefined) ?? "",
-      returnDueDate: ((asset as Record<string, unknown>).returnDueDate as string | undefined) ?? "",
       assignedDate:
         isDesktopAsset
           ? (((asset as Record<string, unknown>).turnoverDate as string | undefined) ??
@@ -500,14 +491,6 @@ export default function HardwareInventoryDetailPage() {
     if (form.status === "Borrowed") {
       if (!form.borrower.trim()) {
         setFormError("Borrower Name is required when status is Borrowed.");
-        return;
-      }
-      if (!form.borrowerEmail.trim()) {
-        setFormError("Borrower email is required when status is Borrowed.");
-        return;
-      }
-      if (!form.returnDueDate) {
-        setFormError("Return Due Date is required when status is Borrowed.");
         return;
       }
     }
@@ -611,8 +594,6 @@ export default function HardwareInventoryDetailPage() {
         status: form.status,
         turnoverTo: form.personAssigned || "Unassigned",
         borrower: form.status === "Borrowed" ? form.borrower || undefined : undefined,
-        borrowerEmail: form.status === "Borrowed" ? form.borrowerEmail || undefined : undefined,
-        returnDueDate: form.status === "Borrowed" ? form.returnDueDate || undefined : undefined,
         assignedDate: isDesktopAsset ? undefined : form.assignedDate,
         turnoverDate: isDesktopAsset ? form.assignedDate || undefined : undefined,
         purchaseDate: form.purchaseDate,
@@ -1144,14 +1125,6 @@ export default function HardwareInventoryDetailPage() {
             <DetailItem label="Turnover To" value={asset.assignedTo ?? asset.turnoverTo} />
             <DetailItem label="Borrower" value={asset.borrower} />
             <DetailItem
-              label="Borrower Microsoft Email"
-              value={(asset as Record<string, unknown>).borrowerEmail as string | undefined}
-            />
-            <DetailItem
-              label="Return Due Date"
-              value={(asset as Record<string, unknown>).returnDueDate as string | undefined}
-            />
-            <DetailItem
               label={isDesktopAsset ? "Turnover Date" : "Assigned Date"}
               value={
                 isDesktopAsset
@@ -1384,35 +1357,6 @@ export default function HardwareInventoryDetailPage() {
                 value={canEditBorrower ? form.borrower : "none"}
                 onChange={(e) => setForm((prev) => ({ ...prev, borrower: e.target.value }))}
                 placeholder="Borrower"
-                disabled={!canEditBorrower}
-                style={
-                  canEditBorrower
-                    ? undefined
-                    : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
-                }
-              />
-            </EditField>
-            <EditField label="Borrower Microsoft Email">
-              <input
-                className="input-base"
-                type="email"
-                value={canEditBorrower ? form.borrowerEmail : "none"}
-                onChange={(e) => setForm((prev) => ({ ...prev, borrowerEmail: e.target.value }))}
-                placeholder="name@company.com"
-                disabled={!canEditBorrower}
-                style={
-                  canEditBorrower
-                    ? undefined
-                    : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
-                }
-              />
-            </EditField>
-            <EditField label="Return Due Date">
-              <input
-                className="input-base"
-                type="date"
-                value={canEditBorrower ? form.returnDueDate : ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, returnDueDate: e.target.value }))}
                 disabled={!canEditBorrower}
                 style={
                   canEditBorrower

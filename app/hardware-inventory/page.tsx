@@ -85,8 +85,6 @@ type SortKey =
   | "status"
   | "turnoverTo"
   | "borrower"
-  | "borrowerEmail"
-  | "returnDueDate"
   | "assignedDate"
   | "purchaseDate"
   | "warranty"
@@ -103,8 +101,6 @@ type FormState = {
   department: string;
   status: HardwareStatus;
   borrower: string;
-  borrowerEmail: string;
-  returnDueDate: string;
   assignedDate: string;
   purchaseDate: string;
   warranty: string;
@@ -122,8 +118,6 @@ const defaultForm: FormState = {
   department: "",
   status: "Available",
   borrower: "",
-  borrowerEmail: "",
-  returnDueDate: "",
   assignedDate: "",
   purchaseDate: "",
   warranty: "",
@@ -443,7 +437,7 @@ export default function HardwareInventoryPage() {
   const [sortKey, setSortKey] = useState<SortKey>("assetTag");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [inlineEdits, setInlineEdits] = useState<
-    Record<string, { status: HardwareStatus; borrower: string; borrowerEmail: string; returnDueDate: string }>
+    Record<string, { status: HardwareStatus; borrower: string }>
   >({});
   const [inlineSavingId, setInlineSavingId] = useState<string>("");
 
@@ -556,8 +550,6 @@ export default function HardwareInventoryPage() {
     { label: "Turnover to", key: "turnoverTo" },
     { label: "Status", key: "status" },
     { label: "Borrower", key: "borrower" },
-    { label: "Microsoft Email", key: "borrowerEmail" },
-    { label: "Return Due", key: "returnDueDate" },
   ];
 
   const totalPages = result?.totalPages ?? 1;
@@ -573,25 +565,13 @@ export default function HardwareInventoryPage() {
     return ((row as Record<string, unknown>).borrower as string | undefined) ?? "";
   }
 
-  function resolveRowBorrowerEmail(row: (typeof tableRows)[number]) {
-    return ((row as Record<string, unknown>).borrowerEmail as string | undefined) ?? "";
-  }
-
-  function resolveRowReturnDueDate(row: (typeof tableRows)[number]) {
-    return ((row as Record<string, unknown>).returnDueDate as string | undefined) ?? "";
-  }
-
   function getInlineRowState(row: (typeof tableRows)[number]) {
     const key = String(row._id);
     const baseStatus = resolveRowStatus(row);
     const baseBorrower = resolveRowBorrower(row);
-    const baseBorrowerEmail = resolveRowBorrowerEmail(row);
-    const baseReturnDueDate = resolveRowReturnDueDate(row);
     return inlineEdits[key] ?? {
       status: baseStatus,
       borrower: baseBorrower,
-      borrowerEmail: baseBorrowerEmail,
-      returnDueDate: baseReturnDueDate,
     };
   }
 
@@ -599,8 +579,6 @@ export default function HardwareInventoryPage() {
     row: (typeof tableRows)[number],
     nextStatus: HardwareStatus,
     nextBorrower: string,
-    nextBorrowerEmail: string,
-    nextReturnDueDate: string,
   ) {
     const rowId = String(row._id);
     const locationPersonAssigned = row.locationPersonAssigned ?? row.location ?? "";
@@ -641,9 +619,6 @@ export default function HardwareInventoryPage() {
         status: nextStatus,
         turnoverTo,
         borrower: nextStatus === "Borrowed" ? nextBorrower.trim() || undefined : undefined,
-        borrowerEmail:
-          nextStatus === "Borrowed" ? nextBorrowerEmail.trim() || undefined : undefined,
-        returnDueDate: nextStatus === "Borrowed" ? nextReturnDueDate || undefined : undefined,
         personAssigned: row.assignedTo || undefined,
         assignedDate: row.assignedDate || undefined,
         turnoverDate: row.turnoverDate || undefined,
@@ -658,8 +633,6 @@ export default function HardwareInventoryPage() {
         [rowId]: {
           status: resolveRowStatus(row),
           borrower: resolveRowBorrower(row),
-          borrowerEmail: resolveRowBorrowerEmail(row),
-          returnDueDate: resolveRowReturnDueDate(row),
         },
       }));
       setFormError(error instanceof Error ? error.message : "Unable to update asset row.");
@@ -672,25 +645,15 @@ export default function HardwareInventoryPage() {
     const editState = getInlineRowState(row);
     const baseStatus = resolveRowStatus(row);
     const baseBorrower = resolveRowBorrower(row).trim();
-    const baseBorrowerEmail = resolveRowBorrowerEmail(row).trim();
-    const baseReturnDueDate = resolveRowReturnDueDate(row);
 
     if (editState.status !== "Borrowed") return;
     if (
       editState.status === baseStatus &&
-      editState.borrower.trim() === baseBorrower &&
-      editState.borrowerEmail.trim() === baseBorrowerEmail &&
-      editState.returnDueDate === baseReturnDueDate
+      editState.borrower.trim() === baseBorrower
     ) {
       return;
     }
-    await persistInlineUpdate(
-      row,
-      editState.status,
-      editState.borrower,
-      editState.borrowerEmail,
-      editState.returnDueDate,
-    );
+    await persistInlineUpdate(row, editState.status, editState.borrower);
   }
 
   const handleSort = (key: SortKey | null) => {
@@ -901,14 +864,6 @@ export default function HardwareInventoryPage() {
         setFormError("Borrower Name is required when status is Borrowed.");
         return;
       }
-      if (!form.borrowerEmail.trim()) {
-        setFormError("Borrower email is required when status is Borrowed.");
-        return;
-      }
-      if (!form.returnDueDate) {
-        setFormError("Return Due Date is required when status is Borrowed.");
-        return;
-      }
     }
 
     try {
@@ -958,8 +913,6 @@ export default function HardwareInventoryPage() {
         department: departmentToSave,
         status: form.status,
         borrower: form.status === "Borrowed" ? form.borrower || undefined : undefined,
-        borrowerEmail: form.status === "Borrowed" ? form.borrowerEmail || undefined : undefined,
-        returnDueDate: form.status === "Borrowed" ? form.returnDueDate || undefined : undefined,
         assignedDate: assignedDateToSave || undefined,
         turnoverDate: turnoverDateToSave,
         purchaseDate: form.purchaseDate,
@@ -1415,41 +1368,6 @@ export default function HardwareInventoryPage() {
                       : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
                   }
                   onChange={(e) => setForm((prev) => ({ ...prev, borrower: e.target.value }))}
-                />
-              </div>
-              <div style={{ display: "grid", gap: 4 }}>
-                <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                  Borrower Microsoft Email {form.status === "Borrowed" ? <span style={{ color: "#dc2626" }}>*</span> : null}
-                </label>
-                <input
-                  className="input-base"
-                  type="email"
-                  placeholder={form.status === "Borrowed" ? "name@company.com" : "Available when status is Borrowed"}
-                  value={form.status === "Borrowed" ? form.borrowerEmail : ""}
-                  disabled={form.status !== "Borrowed"}
-                  style={
-                    form.status === "Borrowed"
-                      ? undefined
-                      : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
-                  }
-                  onChange={(e) => setForm((prev) => ({ ...prev, borrowerEmail: e.target.value }))}
-                />
-              </div>
-              <div style={{ display: "grid", gap: 4 }}>
-                <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                  Return Due Date {form.status === "Borrowed" ? <span style={{ color: "#dc2626" }}>*</span> : null}
-                </label>
-                <input
-                  className="input-base"
-                  type="date"
-                  value={form.status === "Borrowed" ? form.returnDueDate : ""}
-                  disabled={form.status !== "Borrowed"}
-                  style={
-                    form.status === "Borrowed"
-                      ? undefined
-                      : { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" }
-                  }
-                  onChange={(e) => setForm((prev) => ({ ...prev, returnDueDate: e.target.value }))}
                 />
               </div>
             </>
@@ -2702,31 +2620,18 @@ export default function HardwareInventoryPage() {
                           onChange={(event) => {
                             const nextStatus = event.target.value as HardwareStatus;
                             const rowId = String(row._id);
-                            const nextBorrower =
-                              nextStatus === "Borrowed" ? editState.borrower : "";
-                            const nextBorrowerEmail =
-                              nextStatus === "Borrowed" ? editState.borrowerEmail : "";
-                            const nextReturnDueDate =
-                              nextStatus === "Borrowed" ? editState.returnDueDate : "";
+                            const nextBorrower = nextStatus === "Borrowed" ? editState.borrower : "";
 
                             setInlineEdits((prev) => ({
                               ...prev,
                               [rowId]: {
                                 status: nextStatus,
                                 borrower: nextBorrower,
-                                borrowerEmail: nextBorrowerEmail,
-                                returnDueDate: nextReturnDueDate,
                               },
                             }));
 
                             if (nextStatus !== "Borrowed") {
-                              void persistInlineUpdate(
-                                row,
-                                nextStatus,
-                                nextBorrower,
-                                nextBorrowerEmail,
-                                nextReturnDueDate,
-                              );
+                              void persistInlineUpdate(row, nextStatus, nextBorrower);
                             }
                           }}
                         >
@@ -2767,85 +2672,6 @@ export default function HardwareInventoryPage() {
                               [rowId]: {
                                 status: editState.status,
                                 borrower: nextBorrower,
-                                borrowerEmail: editState.borrowerEmail,
-                                returnDueDate: editState.returnDueDate,
-                              },
-                            }));
-                          }}
-                          onBlur={() => {
-                            void handleInlineBorrowerCommit(row);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              (event.currentTarget as HTMLInputElement).blur();
-                            }
-                          }}
-                        />
-                      );
-                    })()}
-                  </td>
-                  <td>
-                    {(() => {
-                      const editState = getInlineRowState(row);
-                      const isBorrowed = editState.status === "Borrowed";
-                      const isSaving = inlineSavingId === String(row._id);
-                      return (
-                        <input
-                          className="input-base"
-                          type="email"
-                          style={{ minHeight: 36 }}
-                          value={isBorrowed ? editState.borrowerEmail : "none"}
-                          placeholder={isBorrowed ? "name@company.com" : "none"}
-                          disabled={!isBorrowed || isSaving}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => {
-                            const nextBorrowerEmail = event.target.value;
-                            const rowId = String(row._id);
-                            setInlineEdits((prev) => ({
-                              ...prev,
-                              [rowId]: {
-                                status: editState.status,
-                                borrower: editState.borrower,
-                                borrowerEmail: nextBorrowerEmail,
-                                returnDueDate: editState.returnDueDate,
-                              },
-                            }));
-                          }}
-                          onBlur={() => {
-                            void handleInlineBorrowerCommit(row);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              (event.currentTarget as HTMLInputElement).blur();
-                            }
-                          }}
-                        />
-                      );
-                    })()}
-                  </td>
-                  <td>
-                    {(() => {
-                      const editState = getInlineRowState(row);
-                      const isBorrowed = editState.status === "Borrowed";
-                      const isSaving = inlineSavingId === String(row._id);
-                      return (
-                        <input
-                          className="input-base"
-                          type="date"
-                          style={{ minHeight: 36 }}
-                          value={isBorrowed ? editState.returnDueDate : ""}
-                          disabled={!isBorrowed || isSaving}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => {
-                            const nextReturnDueDate = event.target.value;
-                            const rowId = String(row._id);
-                            setInlineEdits((prev) => ({
-                              ...prev,
-                              [rowId]: {
-                                status: editState.status,
-                                borrower: editState.borrower,
-                                borrowerEmail: editState.borrowerEmail,
-                                returnDueDate: nextReturnDueDate,
                               },
                             }));
                           }}
@@ -2865,7 +2691,7 @@ export default function HardwareInventoryPage() {
               ))}
               {!tableRows.length ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: "center", color: "#6b7280", padding: 16 }}>
+                  <td colSpan={7} style={{ textAlign: "center", color: "#6b7280", padding: 16 }}>
                     No hardware assets found.
                   </td>
                 </tr>
