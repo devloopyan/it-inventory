@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import FileUploadCard from "./file-upload-card";
+import ChecklistSelect, { type ChecklistSelectOption } from "./checklist-select";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
 import { HARDWARE_ASSET_TYPES, buildNextHardwareAssetTag } from "@/lib/hardwareAssetTypes";
 import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
@@ -17,6 +18,26 @@ const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRI
 const workstationTypes = ["Laptop", "Desktop/PC"] as const;
 const specsTierOptions = ["LOW", "MID", "HIGH-END"] as const;
 const componentTypeOptions = ["Monitor", "Headset", "Keyboard", "Mouse", "Speaker", "AVR", "Other"] as const;
+const assetTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = assetTypeOptions.map((assetType) => ({
+  value: assetType,
+  label: assetType,
+}));
+const departmentSelectOptions: ReadonlyArray<ChecklistSelectOption> = departmentOptions.map((department) => ({
+  value: department,
+  label: department,
+}));
+const locationSelectOptions: ReadonlyArray<ChecklistSelectOption> = locationOptions.map((location) => ({
+  value: location,
+  label: location,
+}));
+const specsTierSelectOptions: ReadonlyArray<ChecklistSelectOption> = specsTierOptions.map((tier) => ({
+  value: tier,
+  label: tier,
+}));
+const componentTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = componentTypeOptions.map((option) => ({
+  value: option,
+  label: option,
+}));
 const hardwareInventoryPendingToastKey = "hardware-inventory:pending-toast";
 
 type RegisterMode = "general" | "workstation" | "droneKit";
@@ -182,6 +203,31 @@ const statusStyles: Record<
   NEW: { background: "#ede9fe", color: "#6d28d9", borderColor: "#c4b5fd" },
   "Pre-owned": { background: "#fef3c7", color: "#b45309", borderColor: "#fcd34d" },
 };
+
+function buildStatusSelectOptions(styleMap: Record<HardwareStatus, { background: string; color: string; borderColor: string }>) {
+  return statuses.map((status) => ({
+    value: status,
+    label: status,
+    markerVariant: "dot" as const,
+    markerColor: styleMap[status]?.color ?? "#64748b",
+    triggerStyle: {
+      backgroundColor: styleMap[status]?.background ?? "#ffffff",
+      color: styleMap[status]?.color ?? "var(--foreground)",
+      borderColor: styleMap[status]?.borderColor ?? "var(--border)",
+      fontWeight: 600,
+    },
+  }));
+}
+
+const assetStatusSelectOptions: ReadonlyArray<ChecklistSelectOption> = buildStatusSelectOptions(statusStyles);
+const assetStatusFilterOptions: ReadonlyArray<ChecklistSelectOption> = [
+  { value: "", label: "All Statuses" },
+  ...assetStatusSelectOptions,
+];
+const locationFilterSelectOptions: ReadonlyArray<ChecklistSelectOption> = [
+  { value: "", label: "All Locations" },
+  ...locationSelectOptions,
+];
 
 const DRONE_KIT_DEFAULT_DEPARTMENT = "IT OPERATIONS";
 
@@ -457,7 +503,6 @@ export default function HardwareInventoryPage() {
     page: 1,
     pageSize: 5000,
   });
-
   const createAsset = useMutation(api.hardwareInventory.create);
   const updateAsset = useMutation(api.hardwareInventory.update);
   const migrateLegacy = useMutation(api.hardwareInventory.migrateLegacy);
@@ -539,8 +584,665 @@ export default function HardwareInventoryPage() {
       ? desktopGeneratedTags?.mainAssetTag ?? ""
       : isDroneKitMode
         ? droneKitGeneratedTags?.kitAssetTag ?? ""
-      : buildNextHardwareAssetTag(assetTypeForCreate, knownAssetTags)
+        : buildNextHardwareAssetTag(assetTypeForCreate, knownAssetTags)
     : "";
+  const droneKitCards = [
+    {
+      key: "droneUnit",
+      title: "Drone Unit",
+      fields: (
+        <>
+          <div className="drone-kit-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base input-readonly-tone"
+              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              value={droneKitGeneratedTags?.droneUnitAssetTag ?? ""}
+              readOnly
+              aria-label="Auto-generated drone unit asset tag"
+              style={{ color: "var(--foreground)", fontWeight: 700 }}
+            />
+          </div>
+          <div className="drone-kit-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Serial Number <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Drone unit serial number"
+              value={droneKitForm.droneUnitSerialNumber}
+              onChange={(e) =>
+                setDroneKitForm((prev) => ({
+                  ...prev,
+                  droneUnitSerialNumber: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="drone-kit-card-field drone-kit-card-field--wide">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Specifications <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Drone unit specifications"
+              value={droneKitForm.droneUnitSpecs}
+              onChange={(e) =>
+                setDroneKitForm((prev) => ({
+                  ...prev,
+                  droneUnitSpecs: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </>
+      ),
+      upload: (
+        <FileUploadCard
+          compact
+          label={
+            <>
+              Asset Image <span style={{ color: "#dc2626" }}>*</span>
+            </>
+          }
+          inputRef={imageInputRef}
+          accept="image/*"
+          onFileChange={(file) => setSelectedImageFile(file)}
+          file={selectedImageFile}
+          hasAttachment={Boolean(selectedImageFile)}
+          displayName={selectedImageFile ? selectedImageFile.name : "Drone unit image"}
+          helperText={
+            selectedImageFile
+              ? "Ready to save with this unit image."
+              : "Attach the drone unit image."
+          }
+          badge="IMG"
+          ariaLabel="Drone unit asset image upload"
+          title="Upload drone unit asset image"
+          onRemove={
+            selectedImageFile
+              ? () => {
+                  setSelectedImageFile(null);
+                  if (imageInputRef.current) {
+                    imageInputRef.current.value = "";
+                  }
+                }
+              : undefined
+          }
+        />
+      ),
+    },
+    {
+      key: "battery",
+      title: "Battery",
+      fields: (
+        <>
+          <div className="drone-kit-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base input-readonly-tone"
+              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              value={droneKitGeneratedTags?.batteryAssetTag ?? ""}
+              readOnly
+              aria-label="Auto-generated drone battery asset tag"
+              style={{ color: "var(--foreground)", fontWeight: 700 }}
+            />
+          </div>
+          <div className="drone-kit-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Serial Number
+            </label>
+            <input
+              className="input-base"
+              placeholder="Battery serial number"
+              value={droneKitForm.batterySerialNumber}
+              onChange={(e) =>
+                setDroneKitForm((prev) => ({
+                  ...prev,
+                  batterySerialNumber: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="drone-kit-card-field drone-kit-card-field--wide">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Specifications <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Battery specifications"
+              value={droneKitForm.batterySpecs}
+              onChange={(e) =>
+                setDroneKitForm((prev) => ({
+                  ...prev,
+                  batterySpecs: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </>
+      ),
+      upload: (
+        <FileUploadCard
+          compact
+          label={
+            <>
+              Asset Image <span style={{ color: "#dc2626" }}>*</span>
+            </>
+          }
+          inputRef={batteryImageInputRef}
+          accept="image/*"
+          onFileChange={(file) =>
+            setDroneKitComponentImageFiles((prev) => ({ ...prev, battery: file }))
+          }
+          file={droneKitComponentImageFiles.battery}
+          hasAttachment={Boolean(droneKitComponentImageFiles.battery)}
+          displayName={
+            droneKitComponentImageFiles.battery
+              ? droneKitComponentImageFiles.battery.name
+              : "Battery image"
+          }
+          helperText={
+            droneKitComponentImageFiles.battery
+              ? "Ready to save with this battery image."
+              : "Attach the battery image."
+          }
+          badge="IMG"
+          ariaLabel="Battery asset image upload"
+          title="Upload battery asset image"
+          onRemove={
+            droneKitComponentImageFiles.battery
+              ? () => {
+                  setDroneKitComponentImageFiles((prev) => ({ ...prev, battery: null }));
+                  if (batteryImageInputRef.current) {
+                    batteryImageInputRef.current.value = "";
+                  }
+                }
+              : undefined
+          }
+        />
+      ),
+    },
+    {
+      key: "propeller",
+      title: "Propeller",
+      fields: (
+        <>
+          <div className="drone-kit-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base input-readonly-tone"
+              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              value={droneKitGeneratedTags?.propellerAssetTag ?? ""}
+              readOnly
+              aria-label="Auto-generated drone propeller asset tag"
+              style={{ color: "var(--foreground)", fontWeight: 700 }}
+            />
+          </div>
+          <div className="drone-kit-card-field drone-kit-card-field--wide">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Specifications <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Propeller specifications"
+              value={droneKitForm.propellerSpecs}
+              onChange={(e) =>
+                setDroneKitForm((prev) => ({
+                  ...prev,
+                  propellerSpecs: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </>
+      ),
+      upload: (
+        <FileUploadCard
+          compact
+          label={
+            <>
+              Asset Image <span style={{ color: "#dc2626" }}>*</span>
+            </>
+          }
+          inputRef={propellerImageInputRef}
+          accept="image/*"
+          onFileChange={(file) =>
+            setDroneKitComponentImageFiles((prev) => ({ ...prev, propeller: file }))
+          }
+          file={droneKitComponentImageFiles.propeller}
+          hasAttachment={Boolean(droneKitComponentImageFiles.propeller)}
+          displayName={
+            droneKitComponentImageFiles.propeller
+              ? droneKitComponentImageFiles.propeller.name
+              : "Propeller image"
+          }
+          helperText={
+            droneKitComponentImageFiles.propeller
+              ? "Ready to save with this propeller image."
+              : "Attach the propeller image."
+          }
+          badge="IMG"
+          ariaLabel="Propeller asset image upload"
+          title="Upload propeller asset image"
+          onRemove={
+            droneKitComponentImageFiles.propeller
+              ? () => {
+                  setDroneKitComponentImageFiles((prev) => ({ ...prev, propeller: null }));
+                  if (propellerImageInputRef.current) {
+                    propellerImageInputRef.current.value = "";
+                  }
+                }
+              : undefined
+          }
+        />
+      ),
+    },
+    {
+      key: "charger",
+      title: "Charger",
+      fields: (
+        <>
+          <div className="drone-kit-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base input-readonly-tone"
+              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              value={droneKitGeneratedTags?.chargerAssetTag ?? ""}
+              readOnly
+              aria-label="Auto-generated drone charger asset tag"
+              style={{ color: "var(--foreground)", fontWeight: 700 }}
+            />
+          </div>
+          <div className="drone-kit-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Serial Number
+            </label>
+            <input
+              className="input-base"
+              placeholder="Charger serial number"
+              value={droneKitForm.chargerSerialNumber}
+              onChange={(e) =>
+                setDroneKitForm((prev) => ({
+                  ...prev,
+                  chargerSerialNumber: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="drone-kit-card-field drone-kit-card-field--wide">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Specifications <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Charger specifications"
+              value={droneKitForm.chargerSpecs}
+              onChange={(e) =>
+                setDroneKitForm((prev) => ({
+                  ...prev,
+                  chargerSpecs: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </>
+      ),
+      upload: (
+        <FileUploadCard
+          compact
+          label={
+            <>
+              Asset Image <span style={{ color: "#dc2626" }}>*</span>
+            </>
+          }
+          inputRef={chargerImageInputRef}
+          accept="image/*"
+          onFileChange={(file) =>
+            setDroneKitComponentImageFiles((prev) => ({ ...prev, charger: file }))
+          }
+          file={droneKitComponentImageFiles.charger}
+          hasAttachment={Boolean(droneKitComponentImageFiles.charger)}
+          displayName={
+            droneKitComponentImageFiles.charger
+              ? droneKitComponentImageFiles.charger.name
+              : "Charger image"
+          }
+          helperText={
+            droneKitComponentImageFiles.charger
+              ? "Ready to save with this charger image."
+              : "Attach the charger image."
+          }
+          badge="IMG"
+          ariaLabel="Charger asset image upload"
+          title="Upload charger asset image"
+          onRemove={
+            droneKitComponentImageFiles.charger
+              ? () => {
+                  setDroneKitComponentImageFiles((prev) => ({ ...prev, charger: null }));
+                  if (chargerImageInputRef.current) {
+                    chargerImageInputRef.current.value = "";
+                  }
+                }
+              : undefined
+          }
+        />
+      ),
+    },
+    {
+      key: "controller",
+      title: "Controller",
+      fields: (
+        <>
+          <div className="drone-kit-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base input-readonly-tone"
+              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              value={droneKitGeneratedTags?.controllerAssetTag ?? ""}
+              readOnly
+              aria-label="Auto-generated drone controller asset tag"
+              style={{ color: "var(--foreground)", fontWeight: 700 }}
+            />
+          </div>
+          <div className="drone-kit-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Serial Number
+            </label>
+            <input
+              className="input-base"
+              placeholder="Controller serial number"
+              value={droneKitForm.controllerSerialNumber}
+              onChange={(e) =>
+                setDroneKitForm((prev) => ({
+                  ...prev,
+                  controllerSerialNumber: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="drone-kit-card-field drone-kit-card-field--wide">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Specifications <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Controller specifications"
+              value={droneKitForm.controllerSpecs}
+              onChange={(e) =>
+                setDroneKitForm((prev) => ({
+                  ...prev,
+                  controllerSpecs: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </>
+      ),
+      upload: (
+        <FileUploadCard
+          compact
+          label={
+            <>
+              Asset Image <span style={{ color: "#dc2626" }}>*</span>
+            </>
+          }
+          inputRef={controllerImageInputRef}
+          accept="image/*"
+          onFileChange={(file) =>
+            setDroneKitComponentImageFiles((prev) => ({ ...prev, controller: file }))
+          }
+          file={droneKitComponentImageFiles.controller}
+          hasAttachment={Boolean(droneKitComponentImageFiles.controller)}
+          displayName={
+            droneKitComponentImageFiles.controller
+              ? droneKitComponentImageFiles.controller.name
+              : "Controller image"
+          }
+          helperText={
+            droneKitComponentImageFiles.controller
+              ? "Ready to save with this controller image."
+              : "Attach the controller image."
+          }
+          badge="IMG"
+          ariaLabel="Controller asset image upload"
+          title="Upload controller asset image"
+          onRemove={
+            droneKitComponentImageFiles.controller
+              ? () => {
+                  setDroneKitComponentImageFiles((prev) => ({ ...prev, controller: null }));
+                  if (controllerImageInputRef.current) {
+                    controllerImageInputRef.current.value = "";
+                  }
+                }
+              : undefined
+          }
+        />
+      ),
+    },
+  ];
+  const desktopWorkstationCards = [
+    {
+      key: "monitor",
+      title: "Monitor",
+      wide: true,
+      fields: (
+        <>
+          <div className="workstation-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base input-readonly-tone"
+              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              value={desktopGeneratedTags?.monitorAssetTag ?? ""}
+              readOnly
+              aria-label="Auto-generated monitor asset tag"
+              style={{ color: "var(--foreground)", fontWeight: 700 }}
+            />
+          </div>
+          <div className="workstation-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Serial Number <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Monitor serial number"
+              value={desktopForm.monitorSerialNumber}
+              onChange={(e) =>
+                setDesktopForm((prev) => ({
+                  ...prev,
+                  monitorSerialNumber: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="workstation-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Specifications <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Monitor specifications"
+              value={desktopForm.monitorSpecs}
+              onChange={(e) =>
+                setDesktopForm((prev) => ({ ...prev, monitorSpecs: e.target.value }))
+              }
+            />
+          </div>
+          <div className="workstation-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Consumables
+            </label>
+            <input
+              className="input-base"
+              placeholder="Wires / cables"
+              value={desktopForm.monitorConsumables}
+              onChange={(e) =>
+                setDesktopForm((prev) => ({
+                  ...prev,
+                  monitorConsumables: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </>
+      ),
+    },
+    {
+      key: "mouse",
+      title: "Mouse",
+      fields: (
+        <>
+          <div className="workstation-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base input-readonly-tone"
+              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              value={desktopGeneratedTags?.mouseAssetTag ?? ""}
+              readOnly
+              aria-label="Auto-generated mouse asset tag"
+              style={{ color: "var(--foreground)", fontWeight: 700 }}
+            />
+          </div>
+          <div className="workstation-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Serial Number
+            </label>
+            <input
+              className="input-base"
+              placeholder="Mouse serial number"
+              value={desktopForm.mouseSerialNumber ?? ""}
+              onChange={(e) =>
+                setDesktopForm((prev) => ({
+                  ...prev,
+                  mouseSerialNumber: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="workstation-card-field workstation-card-field--wide">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Specifications <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Mouse specifications"
+              value={desktopForm.mouseSpecs}
+              onChange={(e) =>
+                setDesktopForm((prev) => ({
+                  ...prev,
+                  mouseSpecs: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </>
+      ),
+    },
+    {
+      key: "keyboard",
+      title: "Keyboard",
+      fields: (
+        <>
+          <div className="workstation-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base input-readonly-tone"
+              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              value={desktopGeneratedTags?.keyboardAssetTag ?? ""}
+              readOnly
+              aria-label="Auto-generated keyboard asset tag"
+              style={{ color: "var(--foreground)", fontWeight: 700 }}
+            />
+          </div>
+          <div className="workstation-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Serial Number
+            </label>
+            <input
+              className="input-base"
+              placeholder="Keyboard serial number"
+              value={desktopForm.keyboardSerialNumber ?? ""}
+              onChange={(e) =>
+                setDesktopForm((prev) => ({
+                  ...prev,
+                  keyboardSerialNumber: e.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="workstation-card-field workstation-card-field--wide">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Specifications <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="Keyboard specifications"
+              value={desktopForm.keyboardSpecs}
+              onChange={(e) =>
+                setDesktopForm((prev) => ({
+                  ...prev,
+                  keyboardSpecs: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </>
+      ),
+    },
+    {
+      key: "systemUnit",
+      title: "System Unit",
+      fields: (
+        <>
+          <div className="workstation-card-field">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Asset Tag <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base input-readonly-tone"
+              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              value={desktopGeneratedTags?.systemUnitAssetTag ?? ""}
+              readOnly
+              aria-label="Auto-generated system unit asset tag"
+              style={{ color: "var(--foreground)", fontWeight: 700 }}
+            />
+          </div>
+          <div className="workstation-card-field workstation-card-field--wide">
+            <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+              Specifications <span style={{ color: "#dc2626" }}>*</span>
+            </label>
+            <input
+              className="input-base"
+              placeholder="System unit specifications"
+              value={desktopForm.systemUnitSpecs}
+              onChange={(e) =>
+                setDesktopForm((prev) => ({
+                  ...prev,
+                  systemUnitSpecs: e.target.value,
+                }))
+              }
+            />
+          </div>
+        </>
+      ),
+    },
+  ];
 
   const headerConfig: { label: string; key: SortKey | null }[] = [
     { label: "Asset Tag", key: "assetTag" },
@@ -1051,7 +1753,7 @@ export default function HardwareInventoryPage() {
   }
 
   return (
-    <div>
+    <div className="asset-page">
       {formSuccess ? (
         <div className="floating-toast floating-toast-success" role="status" aria-live="polite">
           {formSuccess.message}
@@ -1068,8 +1770,8 @@ export default function HardwareInventoryPage() {
             marginBottom: 10,
           }}
         >
-          <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Hardware Asset Register</h2>
-          <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>
+          <h2 className="type-title-lg">Hardware Asset Register</h2>
+          <div className="type-label">
             Fields marked <span style={{ color: "#dc2626" }}>*</span> are required
           </div>
         </div>
@@ -1083,7 +1785,9 @@ export default function HardwareInventoryPage() {
                 setSpecTier("");
               }}
             >
-              General Asset
+              <span className="register-pill-tab-inner">
+                <span>General Asset</span>
+              </span>
             </button>
             <button
               type="button"
@@ -1093,7 +1797,9 @@ export default function HardwareInventoryPage() {
                 setForm((prev) => ({ ...prev, assetType: workstationType }));
               }}
             >
-              Add Workstation
+              <span className="register-pill-tab-inner">
+                <span>Add Workstation</span>
+              </span>
             </button>
             <button
               type="button"
@@ -1104,7 +1810,9 @@ export default function HardwareInventoryPage() {
                 setForm((prev) => ({ ...prev, assetType: "Drone" }));
               }}
             >
-              Add Drone Kit
+              <span className="register-pill-tab-inner">
+                <span>Add Drone Kit</span>
+              </span>
             </button>
           </div>
           {registerMode === "workstation" ? (
@@ -1126,11 +1834,13 @@ export default function HardwareInventoryPage() {
           ) : null}
         </div>
         <div
-          className="register-fields-grid"
+          className={`register-fields-grid${isDroneKitMode ? " drone-kit-overview-grid" : registerMode === "workstation" ? " workstation-overview-grid" : ""}`}
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 10,
+            gridTemplateColumns: isDroneKitMode || registerMode === "workstation"
+              ? "repeat(auto-fit, minmax(180px, 1fr))"
+              : "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: isDroneKitMode || registerMode === "workstation" ? 8 : 10,
           }}
         >
           {!isDesktopWorkstation ? (
@@ -1155,9 +1865,6 @@ export default function HardwareInventoryPage() {
                 fontWeight: autoAssetTag ? 700 : 500,
               }}
             />
-            <div className="register-field-note">
-              Generated automatically as IT-[TYPE]-0000.
-            </div>
             </div>
           ) : null}
           <div style={{ display: "grid", gap: 4 }}>
@@ -1173,18 +1880,13 @@ export default function HardwareInventoryPage() {
                 style={{ color: "var(--foreground)", fontWeight: 600 }}
               />
             ) : (
-              <select
-                className="input-base"
+              <ChecklistSelect
                 value={form.assetType}
-                onChange={(e) => setForm((prev) => ({ ...prev, assetType: e.target.value }))}
-              >
-                <option value="">Select asset type</option>
-                {assetTypeOptions.map((assetType) => (
-                  <option key={assetType} value={assetType}>
-                    {assetType}
-                  </option>
-                ))}
-              </select>
+                options={assetTypeSelectOptions}
+                placeholder="Select asset type"
+                ariaLabel="Asset type"
+                onChange={(value) => setForm((prev) => ({ ...prev, assetType: value }))}
+              />
             )}
           </div>
           {!isDesktopWorkstation && !isDroneKitMode ? (
@@ -1220,18 +1922,13 @@ export default function HardwareInventoryPage() {
               <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
                 Specs Tier <span style={{ color: "#dc2626" }}>*</span>
               </label>
-              <select
-                className="input-base"
+              <ChecklistSelect
                 value={specTier}
-                onChange={(e) => setSpecTier(e.target.value as SpecsTier | "")}
-              >
-                <option value="">Select specs tier</option>
-                {specsTierOptions.map((tier) => (
-                  <option key={tier} value={tier}>
-                    {tier}
-                  </option>
-                ))}
-              </select>
+                options={specsTierSelectOptions}
+                placeholder="Select specs tier"
+                ariaLabel="Specs tier"
+                onChange={(value) => setSpecTier(value as SpecsTier | "")}
+              />
             </div>
           ) : null}
           {!isDesktopWorkstation && !isDroneKitMode ? (
@@ -1251,20 +1948,13 @@ export default function HardwareInventoryPage() {
             <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
               Location <span style={{ color: "#dc2626" }}>*</span>
             </label>
-            <select
-              className="input-base"
+            <ChecklistSelect
               value={form.locationPersonAssigned}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, locationPersonAssigned: e.target.value }))
-              }
-            >
-              <option value="">Select location</option>
-              {locationOptions.map((location) => (
-                <option key={location} value={location}>
-                  {location}
-                </option>
-              ))}
-            </select>
+              options={locationSelectOptions}
+              placeholder="Select location"
+              ariaLabel="Location"
+              onChange={(value) => setForm((prev) => ({ ...prev, locationPersonAssigned: value }))}
+            />
           </div>
           {!isDroneKitMode ? (
             <div style={{ display: "grid", gap: 4 }}>
@@ -1306,50 +1996,26 @@ export default function HardwareInventoryPage() {
               <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
                 Department <span style={{ color: "#dc2626" }}>*</span>
               </label>
-              <select
-                className="input-base"
+              <ChecklistSelect
                 value={form.department}
-                onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
-              >
-                <option value="">Select department</option>
-                {departmentOptions.map((department) => (
-                  <option key={department} value={department}>
-                    {department}
-                  </option>
-                ))}
-              </select>
+                options={departmentSelectOptions}
+                placeholder="Select department"
+                ariaLabel="Department"
+                onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
+              />
             </div>
           ) : null}
           <div style={{ display: "grid", gap: 4 }}>
             <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
               Status <span style={{ color: "#dc2626" }}>*</span>
             </label>
-              <select
-                className="input-base status-select"
-                style={{
-                  background: statusStyles[form.status]?.background ?? "#ffffff",
-                  color: statusStyles[form.status]?.color ?? "var(--foreground)",
-                  borderColor: statusStyles[form.status]?.borderColor ?? "#e8eff9",
-                  fontWeight: 600,
-                }}
-                value={form.status}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, status: e.target.value as FormState["status"] }))
-                }
-              >
-                {statuses.map((status) => (
-                  <option
-                    key={status}
-                    value={status}
-                    style={{
-                      backgroundColor: "#ffffff",
-                      color: statusStyles[status]?.color ?? "var(--foreground)",
-                    }}
-                  >
-                    {status}
-                  </option>
-               ))}
-              </select>
+            <ChecklistSelect
+              value={form.status}
+              options={assetStatusSelectOptions}
+              placeholder="Select status"
+              ariaLabel="Status"
+              onChange={(value) => setForm((prev) => ({ ...prev, status: value as FormState["status"] }))}
+            />
           </div>
           {!isDroneKitMode ? (
             <>
@@ -1424,7 +2090,13 @@ export default function HardwareInventoryPage() {
               onChange={(e) => setForm((prev) => ({ ...prev, warranty: e.target.value }))}
             />
           </div>
-          <div style={{ display: "grid", gap: 4 }}>
+          <div
+            style={
+              isDroneKitMode || registerMode === "workstation"
+                ? { display: "grid", gap: 4, gridColumn: "1 / -1" }
+                : { display: "grid", gap: 4 }
+            }
+          >
             <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
               Remarks (optional)
             </label>
@@ -1437,294 +2109,23 @@ export default function HardwareInventoryPage() {
           </div>
         </div>
         {isDesktopWorkstation ? (
-          <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Monitor</div>
-              <div
-                className="register-fields-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Monitor Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base input-readonly-tone"
-                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
-                    value={desktopGeneratedTags?.monitorAssetTag ?? ""}
-                    readOnly
-                    aria-label="Auto-generated monitor asset tag"
-                    style={{ color: "var(--foreground)", fontWeight: 700 }}
-                  />
+          <div className="workstation-sections">
+            <div className="workstation-sections-grid">
+              {desktopWorkstationCards.map((card) => (
+                <div
+                  key={card.key}
+                  className={`panel workstation-component-card${card.wide ? " workstation-component-card--wide" : ""}`}
+                >
+                  <div className="workstation-component-title">{card.title}</div>
+                  <div className="workstation-component-fields">{card.fields}</div>
                 </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Monitor Serial Number <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Monitor Serial Number"
-                    value={desktopForm.monitorSerialNumber}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({
-                        ...prev,
-                        monitorSerialNumber: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Monitor Specs <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Monitor Specs"
-                    value={desktopForm.monitorSpecs}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({ ...prev, monitorSpecs: e.target.value }))
-                    }
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Monitor Consumables (wires)
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Wires / cables"
-                    value={desktopForm.monitorConsumables}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({
-                        ...prev,
-                        monitorConsumables: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
+              ))}
             </div>
-
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Mouse</div>
-              <div
-                className="register-fields-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Mouse Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base input-readonly-tone"
-                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
-                    value={desktopGeneratedTags?.mouseAssetTag ?? ""}
-                    readOnly
-                    aria-label="Auto-generated mouse asset tag"
-                    style={{ color: "var(--foreground)", fontWeight: 700 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Mouse Serial Number
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Mouse Serial Number"
-                    value={desktopForm.mouseSerialNumber ?? ""}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({
-                        ...prev,
-                        mouseSerialNumber: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Mouse Specs <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Mouse Specs"
-                    value={desktopForm.mouseSpecs}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({
-                        ...prev,
-                        mouseSpecs: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Keyboard</div>
-              <div
-                className="register-fields-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Keyboard Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base input-readonly-tone"
-                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
-                    value={desktopGeneratedTags?.keyboardAssetTag ?? ""}
-                    readOnly
-                    aria-label="Auto-generated keyboard asset tag"
-                    style={{ color: "var(--foreground)", fontWeight: 700 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Keyboard Serial Number
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Keyboard Serial Number"
-                    value={desktopForm.keyboardSerialNumber ?? ""}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({
-                        ...prev,
-                        keyboardSerialNumber: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Keyboard Specs <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Keyboard Specs"
-                    value={desktopForm.keyboardSpecs}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({
-                        ...prev,
-                        keyboardSpecs: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700 }}>System Unit</div>
-              <div
-                className="register-fields-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    System Unit Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base input-readonly-tone"
-                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
-                    value={desktopGeneratedTags?.systemUnitAssetTag ?? ""}
-                    readOnly
-                    aria-label="Auto-generated system unit asset tag"
-                    style={{ color: "var(--foreground)", fontWeight: 700 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Specs <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="System Unit Specs"
-                    value={desktopForm.systemUnitSpecs}
-                    onChange={(e) =>
-                      setDesktopForm((prev) => ({
-                        ...prev,
-                        systemUnitSpecs: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
+            <div className="panel workstation-extra-components-card">
+              <div className="workstation-extra-components-head">
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>Extra Components</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                  <div className="workstation-component-title">Extra Components</div>
+                  <div className="workstation-extra-components-copy">
                     Add separately tagged peripherals like another monitor or a headset.
                   </div>
                 </div>
@@ -1745,22 +2146,13 @@ export default function HardwareInventoryPage() {
                 </button>
               </div>
               {desktopForm.extraComponents.length ? (
-                <div style={{ display: "grid", gap: 8 }}>
+                <div className="workstation-extra-components-list">
                   {desktopForm.extraComponents.map((component, index) => (
                     <div
-                      className="register-fields-grid"
                       key={`${index}-${component.assetTag}`}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto",
-                        gap: 8,
-                        alignItems: "end",
-                        padding: 10,
-                        border: "1px solid var(--border)",
-                        borderRadius: 14,
-                      }}
+                      className="workstation-extra-component-row"
                     >
-                      <div style={{ display: "grid", gap: 4 }}>
+                      <div className="workstation-card-field">
                         <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
                           Asset Tag <span style={{ color: "#dc2626" }}>*</span>
                         </label>
@@ -1775,38 +2167,34 @@ export default function HardwareInventoryPage() {
                           style={{ color: "var(--foreground)", fontWeight: 700 }}
                         />
                       </div>
-                      <div style={{ display: "grid", gap: 4 }}>
+                      <div className="workstation-card-field">
                         <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
                           Component Type <span style={{ color: "#dc2626" }}>*</span>
                         </label>
-                        <select
-                          className="input-base"
+                        <ChecklistSelect
                           value={component.componentType}
-                          onChange={(e) =>
+                          options={componentTypeSelectOptions}
+                          placeholder="Select component type"
+                          ariaLabel={`Component type for extra component ${index + 1}`}
+                          onChange={(value) =>
                             setDesktopForm((prev) => ({
                               ...prev,
                               extraComponents: prev.extraComponents.map((item, itemIndex) =>
                                 itemIndex === index
-                                  ? { ...item, componentType: e.target.value }
+                                  ? { ...item, componentType: value }
                                   : item,
                               ),
                             }))
                           }
-                        >
-                          {componentTypeOptions.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </div>
-                      <div style={{ display: "grid", gap: 4 }}>
+                      <div className="workstation-card-field">
                         <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
                           Specs <span style={{ color: "#dc2626" }}>*</span>
                         </label>
                         <input
                           className="input-base"
-                          placeholder="Component Specs"
+                          placeholder="Component specs"
                           value={component.specifications}
                           onChange={(e) =>
                             setDesktopForm((prev) => ({
@@ -1846,509 +2234,16 @@ export default function HardwareInventoryPage() {
           </div>
         ) : null}
         {isDroneKitMode ? (
-          <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Drone Unit</div>
-              <div
-                className="register-fields-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Drone Unit Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base input-readonly-tone"
-                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
-                    value={droneKitGeneratedTags?.droneUnitAssetTag ?? ""}
-                    readOnly
-                    aria-label="Auto-generated drone unit asset tag"
-                    style={{ color: "var(--foreground)", fontWeight: 700 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Drone Unit Serial Number <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Drone Unit Serial Number"
-                    value={droneKitForm.droneUnitSerialNumber}
-                    onChange={(e) =>
-                      setDroneKitForm((prev) => ({
-                        ...prev,
-                        droneUnitSerialNumber: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Drone Unit Specs <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Drone Unit Specs"
-                    value={droneKitForm.droneUnitSpecs}
-                    onChange={(e) =>
-                      setDroneKitForm((prev) => ({
-                        ...prev,
-                        droneUnitSpecs: e.target.value,
-                      }))
-                    }
-                  />
+          <div className="drone-kit-sections">
+            {droneKitCards.map((card) => (
+              <div key={card.key} className="panel drone-kit-component-card">
+                <div className="drone-kit-component-title">{card.title}</div>
+                <div className="drone-kit-component-layout">
+                  <div className="drone-kit-component-fields">{card.fields}</div>
+                  <div className="drone-kit-component-upload">{card.upload}</div>
                 </div>
               </div>
-              <div style={{ maxWidth: 420 }}>
-                <FileUploadCard
-                  label={
-                    <>
-                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
-                    </>
-                  }
-                  inputRef={imageInputRef}
-                  accept="image/*"
-                  onFileChange={(file) => setSelectedImageFile(file)}
-                  hasAttachment={Boolean(selectedImageFile)}
-                  displayName={selectedImageFile ? selectedImageFile.name : "Drone unit asset image"}
-                  helperText={
-                    selectedImageFile
-                      ? "Ready to save with this drone unit image attached."
-                      : "Attach the drone unit asset image."
-                  }
-                  badge="IMG"
-                  ariaLabel="Drone unit asset image upload"
-                  title="Upload drone unit asset image"
-                  onRemove={
-                    selectedImageFile
-                      ? () => {
-                          setSelectedImageFile(null);
-                          if (imageInputRef.current) {
-                            imageInputRef.current.value = "";
-                          }
-                        }
-                      : undefined
-                  }
-                />
-              </div>
-            </div>
-
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Battery</div>
-              <div
-                className="register-fields-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Battery Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base input-readonly-tone"
-                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
-                    value={droneKitGeneratedTags?.batteryAssetTag ?? ""}
-                    readOnly
-                    aria-label="Auto-generated drone battery asset tag"
-                    style={{ color: "var(--foreground)", fontWeight: 700 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Battery Serial Number
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Battery Serial Number"
-                    value={droneKitForm.batterySerialNumber}
-                    onChange={(e) =>
-                      setDroneKitForm((prev) => ({
-                        ...prev,
-                        batterySerialNumber: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Battery Specs <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Battery Specs"
-                    value={droneKitForm.batterySpecs}
-                    onChange={(e) =>
-                      setDroneKitForm((prev) => ({
-                        ...prev,
-                        batterySpecs: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div style={{ maxWidth: 420 }}>
-                <FileUploadCard
-                  label={
-                    <>
-                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
-                    </>
-                  }
-                  inputRef={batteryImageInputRef}
-                  accept="image/*"
-                  onFileChange={(file) =>
-                    setDroneKitComponentImageFiles((prev) => ({ ...prev, battery: file }))
-                  }
-                  hasAttachment={Boolean(droneKitComponentImageFiles.battery)}
-                  displayName={
-                    droneKitComponentImageFiles.battery
-                      ? droneKitComponentImageFiles.battery.name
-                      : "Battery asset image"
-                  }
-                  helperText={
-                    droneKitComponentImageFiles.battery
-                      ? "Ready to save with this battery image attached."
-                      : "Attach the battery asset image."
-                  }
-                  badge="IMG"
-                  ariaLabel="Battery asset image upload"
-                  title="Upload battery asset image"
-                  onRemove={
-                    droneKitComponentImageFiles.battery
-                      ? () => {
-                          setDroneKitComponentImageFiles((prev) => ({ ...prev, battery: null }));
-                          if (batteryImageInputRef.current) {
-                            batteryImageInputRef.current.value = "";
-                          }
-                        }
-                      : undefined
-                  }
-                />
-              </div>
-            </div>
-
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Propeller</div>
-              <div
-                className="register-fields-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Propeller Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base input-readonly-tone"
-                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
-                    value={droneKitGeneratedTags?.propellerAssetTag ?? ""}
-                    readOnly
-                    aria-label="Auto-generated drone propeller asset tag"
-                    style={{ color: "var(--foreground)", fontWeight: 700 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Propeller Specs <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Propeller Specs"
-                    value={droneKitForm.propellerSpecs}
-                    onChange={(e) =>
-                      setDroneKitForm((prev) => ({
-                        ...prev,
-                        propellerSpecs: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div style={{ maxWidth: 420 }}>
-                <FileUploadCard
-                  label={
-                    <>
-                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
-                    </>
-                  }
-                  inputRef={propellerImageInputRef}
-                  accept="image/*"
-                  onFileChange={(file) =>
-                    setDroneKitComponentImageFiles((prev) => ({ ...prev, propeller: file }))
-                  }
-                  hasAttachment={Boolean(droneKitComponentImageFiles.propeller)}
-                  displayName={
-                    droneKitComponentImageFiles.propeller
-                      ? droneKitComponentImageFiles.propeller.name
-                      : "Propeller asset image"
-                  }
-                  helperText={
-                    droneKitComponentImageFiles.propeller
-                      ? "Ready to save with this propeller image attached."
-                      : "Attach the propeller asset image."
-                  }
-                  badge="IMG"
-                  ariaLabel="Propeller asset image upload"
-                  title="Upload propeller asset image"
-                  onRemove={
-                    droneKitComponentImageFiles.propeller
-                      ? () => {
-                          setDroneKitComponentImageFiles((prev) => ({ ...prev, propeller: null }));
-                          if (propellerImageInputRef.current) {
-                            propellerImageInputRef.current.value = "";
-                          }
-                        }
-                      : undefined
-                  }
-                />
-              </div>
-            </div>
-
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Charger</div>
-              <div
-                className="register-fields-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Charger Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base input-readonly-tone"
-                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
-                    value={droneKitGeneratedTags?.chargerAssetTag ?? ""}
-                    readOnly
-                    aria-label="Auto-generated drone charger asset tag"
-                    style={{ color: "var(--foreground)", fontWeight: 700 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Charger Serial Number
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Charger Serial Number"
-                    value={droneKitForm.chargerSerialNumber}
-                    onChange={(e) =>
-                      setDroneKitForm((prev) => ({
-                        ...prev,
-                        chargerSerialNumber: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Charger Specs <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Charger Specs"
-                    value={droneKitForm.chargerSpecs}
-                    onChange={(e) =>
-                      setDroneKitForm((prev) => ({
-                        ...prev,
-                        chargerSpecs: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div style={{ maxWidth: 420 }}>
-                <FileUploadCard
-                  label={
-                    <>
-                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
-                    </>
-                  }
-                  inputRef={chargerImageInputRef}
-                  accept="image/*"
-                  onFileChange={(file) =>
-                    setDroneKitComponentImageFiles((prev) => ({ ...prev, charger: file }))
-                  }
-                  hasAttachment={Boolean(droneKitComponentImageFiles.charger)}
-                  displayName={
-                    droneKitComponentImageFiles.charger
-                      ? droneKitComponentImageFiles.charger.name
-                      : "Charger asset image"
-                  }
-                  helperText={
-                    droneKitComponentImageFiles.charger
-                      ? "Ready to save with this charger image attached."
-                      : "Attach the charger asset image."
-                  }
-                  badge="IMG"
-                  ariaLabel="Charger asset image upload"
-                  title="Upload charger asset image"
-                  onRemove={
-                    droneKitComponentImageFiles.charger
-                      ? () => {
-                          setDroneKitComponentImageFiles((prev) => ({ ...prev, charger: null }));
-                          if (chargerImageInputRef.current) {
-                            chargerImageInputRef.current.value = "";
-                          }
-                        }
-                      : undefined
-                  }
-                />
-              </div>
-            </div>
-
-            <div
-              className="panel"
-              style={{
-                padding: 12,
-                display: "grid",
-                gap: 8,
-                borderRadius: 16,
-                boxShadow: "none",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Controller</div>
-              <div
-                className="register-fields-grid"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Controller Asset Tag <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base input-readonly-tone"
-                    placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
-                    value={droneKitGeneratedTags?.controllerAssetTag ?? ""}
-                    readOnly
-                    aria-label="Auto-generated drone controller asset tag"
-                    style={{ color: "var(--foreground)", fontWeight: 700 }}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Controller Serial Number
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Controller Serial Number"
-                    value={droneKitForm.controllerSerialNumber}
-                    onChange={(e) =>
-                      setDroneKitForm((prev) => ({
-                        ...prev,
-                        controllerSerialNumber: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                    Controller Specs <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <input
-                    className="input-base"
-                    placeholder="Controller Specs"
-                    value={droneKitForm.controllerSpecs}
-                    onChange={(e) =>
-                      setDroneKitForm((prev) => ({
-                        ...prev,
-                        controllerSpecs: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-              <div style={{ maxWidth: 420 }}>
-                <FileUploadCard
-                  label={
-                    <>
-                      Asset Image <span style={{ color: "#dc2626" }}>*</span>
-                    </>
-                  }
-                  inputRef={controllerImageInputRef}
-                  accept="image/*"
-                  onFileChange={(file) =>
-                    setDroneKitComponentImageFiles((prev) => ({ ...prev, controller: file }))
-                  }
-                  hasAttachment={Boolean(droneKitComponentImageFiles.controller)}
-                  displayName={
-                    droneKitComponentImageFiles.controller
-                      ? droneKitComponentImageFiles.controller.name
-                      : "Controller asset image"
-                  }
-                  helperText={
-                    droneKitComponentImageFiles.controller
-                      ? "Ready to save with this controller image attached."
-                      : "Attach the controller asset image."
-                  }
-                  badge="IMG"
-                  ariaLabel="Controller asset image upload"
-                  title="Upload controller asset image"
-                  onRemove={
-                    droneKitComponentImageFiles.controller
-                      ? () => {
-                          setDroneKitComponentImageFiles((prev) => ({ ...prev, controller: null }));
-                          if (controllerImageInputRef.current) {
-                            controllerImageInputRef.current.value = "";
-                          }
-                        }
-                      : undefined
-                  }
-                />
-              </div>
-            </div>
+            ))}
           </div>
         ) : null}
         <div className="upload-action-grid" style={{ marginTop: 12 }}>
@@ -2362,6 +2257,7 @@ export default function HardwareInventoryPage() {
               inputRef={imageInputRef}
               accept="image/*"
               onFileChange={(file) => setSelectedImageFile(file)}
+              file={selectedImageFile}
               hasAttachment={Boolean(selectedImageFile)}
               displayName={selectedImageFile ? selectedImageFile.name : "Asset image"}
               helperText={
@@ -2389,6 +2285,7 @@ export default function HardwareInventoryPage() {
             inputRef={receivingFormInputRef}
             accept=".pdf,image/*"
             onFileChange={(file) => setSelectedReceivingFormFile(file)}
+            file={selectedReceivingFormFile}
             hasAttachment={Boolean(selectedReceivingFormFile)}
             displayName={selectedReceivingFormFile ? selectedReceivingFormFile.name : "Receiving form"}
             helperText={
@@ -2420,6 +2317,7 @@ export default function HardwareInventoryPage() {
                 setForm((prev) => ({ ...prev, status: "Assigned" }));
               }
             }}
+            file={selectedTurnoverFormFile}
             hasAttachment={Boolean(selectedTurnoverFormFile)}
             displayName={selectedTurnoverFormFile ? selectedTurnoverFormFile.name : "Turnover form"}
             helperText={
@@ -2454,90 +2352,71 @@ export default function HardwareInventoryPage() {
           </div>
         </div>
         {formError ? (
-          <p style={{ color: "#b91c1c", marginTop: 8, fontSize: 13 }}>{formError}</p>
+          <p style={{ color: "#b91c1c", marginTop: 8, fontSize: "var(--type-body-sm)" }}>{formError}</p>
         ) : null}
       </section>
 
-      <section className="panel" style={{ marginTop: 16, padding: 14 }}>
+      <section className="panel" style={{ marginTop: 16, padding: 14, display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gap: 4 }}>
+          <div className="type-subsection-title">Asset Master Table</div>
+          <div className="type-section-copy">
+            Review all registered assets, filter by status or location, and update borrower or status details directly
+            from the table.
+          </div>
+        </div>
         <div
+          className="hardware-master-toolbar"
           style={{
             display: "grid",
-            gridTemplateColumns: "2fr repeat(2, minmax(0, 1fr))",
+            gridTemplateColumns: "minmax(0, 252px) repeat(2, minmax(0, 172px))",
+            justifyContent: "start",
             gap: 8,
           }}
         >
-          <div className="search-field">
+          <div className="search-field hardware-toolbar-search">
             <span className="search-icon">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
                 <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" />
               </svg>
             </span>
-              <input
-                className="input-base"
-                placeholder="Search asset, serial, assignee..."
-                value={search}
-                onChange={(e) => {
+            <input
+              className="input-base"
+              placeholder="Search asset, serial, assignee"
+              value={search}
+              onChange={(e) => {
                 setSearch(e.target.value);
                 setPage(1);
               }}
             />
           </div>
-          <select
-            className="input-base status-select"
-            style={
-              statusFilter
-                ? {
-                    background:
-                      statusStyles[statusFilter as HardwareStatus]?.background ?? "#ffffff",
-                    color:
-                      statusStyles[statusFilter as HardwareStatus]?.color ?? "var(--foreground)",
-                    borderColor:
-                      statusStyles[statusFilter as HardwareStatus]?.borderColor ?? "#e8eff9",
-                    fontWeight: 600,
-                  }
-                : undefined
-            }
+          <ChecklistSelect
             value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
+            options={assetStatusFilterOptions}
+            placeholder="All Statuses"
+            ariaLabel="Filter by status"
+            compact
+            minMenuWidth={156}
+            onChange={(value) => {
+              setStatusFilter(value);
               setPage(1);
             }}
-          >
-            <option value="" style={{ backgroundColor: "#ffffff", color: "var(--foreground)" }}>
-              All Statuses
-            </option>
-            {statuses.map((status) => (
-              <option
-                key={status}
-                value={status}
-                style={{
-                  backgroundColor: "#ffffff",
-                  color: statusStyles[status]?.color ?? "var(--foreground)",
-                }}
-              >
-                {status}
-              </option>
-            ))}
-          </select>
-          <select
-            className="input-base"
+          />
+          <ChecklistSelect
             value={locationFilter}
-            onChange={(e) => {
-              setLocationFilter(e.target.value);
+            options={locationFilterSelectOptions}
+            placeholder="All Locations"
+            ariaLabel="Filter by location"
+            compact
+            minMenuWidth={156}
+            onChange={(value) => {
+              setLocationFilter(value);
               setPage(1);
             }}
-          >
-            <option value="">All Locations</option>
-            {locationOptions.map((location) => (
-              <option key={location} value={location}>
-                {location}
-              </option>
-            ))}
-          </select>
+          />
         </div>
 
-        <div className="saas-table-wrap" style={{ marginTop: 12 }}>
+        <div className="saas-table-wrap">
           <table className="saas-table hardware-master-table" style={{ minWidth: 1300 }}>
             <colgroup>
               <col style={{ width: 104 }} />
@@ -2605,20 +2484,15 @@ export default function HardwareInventoryPage() {
                       const editState = getInlineRowState(row);
                       const isSaving = inlineSavingId === String(row._id);
                       return (
-                        <select
-                          className="input-base status-select"
-                          style={{
-                            minHeight: 36,
-                            minWidth: 120,
-                            background: statusStyles[editState.status]?.background ?? "#ffffff",
-                            color: statusStyles[editState.status]?.color ?? "var(--foreground)",
-                            borderColor: statusStyles[editState.status]?.borderColor ?? "#e8eff9",
-                          }}
+                        <ChecklistSelect
                           value={editState.status}
+                          options={assetStatusSelectOptions}
+                          placeholder="Select status"
+                          ariaLabel={`Status for asset ${row.assetTag}`}
                           disabled={isSaving}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => {
-                            const nextStatus = event.target.value as HardwareStatus;
+                          minMenuWidth={156}
+                          onChange={(value) => {
+                            const nextStatus = value as HardwareStatus;
                             const rowId = String(row._id);
                             const nextBorrower = nextStatus === "Borrowed" ? editState.borrower : "";
 
@@ -2634,20 +2508,7 @@ export default function HardwareInventoryPage() {
                               void persistInlineUpdate(row, nextStatus, nextBorrower);
                             }
                           }}
-                        >
-                          {statuses.map((status) => (
-                            <option
-                              key={status}
-                              value={status}
-                              style={{
-                                background: "#ffffff",
-                                color: statusStyles[status]?.color ?? "var(--foreground)",
-                              }}
-                            >
-                              {status}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       );
                     })()}
                   </td>

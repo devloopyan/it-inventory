@@ -5,6 +5,8 @@ import AppShell from "./app-shell";
 
 const nunito = Nunito({
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
   variable: "--font-nunito",
 });
 
@@ -15,7 +17,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={nunito.variable}>
+      <body className={`${nunito.className} ${nunito.variable}`}>
         <Providers>
           <AppShell>{children}</AppShell>
         </Providers>

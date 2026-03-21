@@ -644,14 +644,6 @@ export const create = mutation({
       throw new Error("Asset Tag already exists.");
     }
 
-    const existingBySerial = await ctx.db
-      .query("hardwareInventory")
-      .withIndex("by_serialNumber", (q) => q.eq("serialNumber", serialNumber))
-      .first();
-    if (existingBySerial) {
-      throw new Error("Serial Number already exists.");
-    }
-
     const now = Date.now();
     const inventoryId = await ctx.db.insert("hardwareInventory", {
       assetTag,
@@ -844,14 +836,6 @@ export const update = mutation({
       .first();
     if (existingByTag && existingByTag._id !== args.inventoryId) {
       throw new Error("Asset Tag already exists.");
-    }
-
-    const existingBySerial = await ctx.db
-      .query("hardwareInventory")
-      .withIndex("by_serialNumber", (q) => q.eq("serialNumber", serialNumber))
-      .first();
-    if (existingBySerial && existingBySerial._id !== args.inventoryId) {
-      throw new Error("Serial Number already exists.");
     }
 
     const patchData: {
