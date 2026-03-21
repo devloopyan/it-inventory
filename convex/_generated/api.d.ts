@@ -12,6 +12,7 @@ import type * as assetLogs from "../assetLogs.js";
 import type * as assets from "../assets.js";
 import type * as borrowers from "../borrowers.js";
 import type * as hardwareInventory from "../hardwareInventory.js";
+import type * as monitoring from "../monitoring.js";
 
 import type {
   ApiFromModules,
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   assets: typeof assets;
   borrowers: typeof borrowers;
   hardwareInventory: typeof hardwareInventory;
+  monitoring: typeof monitoring;
 }>;
 
 /**

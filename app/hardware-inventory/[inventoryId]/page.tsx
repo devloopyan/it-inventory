@@ -7,6 +7,7 @@ import { useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
 import FileUploadCard from "../file-upload-card";
+import ChecklistSelect, { type ChecklistSelectOption } from "../checklist-select";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
 import { HARDWARE_ASSET_TYPES } from "@/lib/hardwareAssetTypes";
 import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
@@ -15,6 +16,18 @@ const statuses = HARDWARE_STATUSES;
 const assetTypeOptions = HARDWARE_ASSET_TYPES;
 const departmentOptions = HARDWARE_DEPARTMENTS;
 const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRID"] as const;
+const assetTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = assetTypeOptions.map((assetType) => ({
+  value: assetType,
+  label: assetType,
+}));
+const departmentSelectOptions: ReadonlyArray<ChecklistSelectOption> = departmentOptions.map((department) => ({
+  value: department,
+  label: department,
+}));
+const locationSelectOptions: ReadonlyArray<ChecklistSelectOption> = locationOptions.map((location) => ({
+  value: location,
+  label: location,
+}));
 const hardwareInventoryPendingToastKey = "hardware-inventory:pending-toast";
 
 type FormState = {
@@ -67,6 +80,23 @@ const statusColors: Record<HardwareStatus, { bg: string; text: string; border: s
   NEW: { bg: "#ede9fe", text: "#6d28d9", border: "#c4b5fd" },
   "Pre-owned": { bg: "#fef3c7", text: "#b45309", border: "#fcd34d" },
 };
+
+function buildStatusSelectOptions(styleMap: Record<HardwareStatus, { bg: string; text: string; border: string }>) {
+  return statuses.map((status) => ({
+    value: status,
+    label: status,
+    markerVariant: "dot" as const,
+    markerColor: styleMap[status]?.text ?? "#64748b",
+    triggerStyle: {
+      backgroundColor: styleMap[status]?.bg ?? "#ffffff",
+      color: styleMap[status]?.text ?? "var(--foreground)",
+      borderColor: styleMap[status]?.border ?? "var(--border)",
+      fontWeight: 600,
+    },
+  }));
+}
+
+const assetStatusSelectOptions: ReadonlyArray<ChecklistSelectOption> = buildStatusSelectOptions(statusColors);
 
 function formatDate(value?: number) {
   if (!value) return "-";
@@ -199,7 +229,7 @@ function StatusChip({ status }: { status: HardwareStatus }) {
         color: style.text,
         borderRadius: 999,
         padding: "4px 10px",
-        fontSize: 12,
+        fontSize: "var(--type-label)",
         fontWeight: 700,
       }}
     >
@@ -219,10 +249,10 @@ function DetailItem({
 }) {
   return (
     <div className="saas-card" style={{ padding: 12, minHeight: multiline ? 84 : undefined }}>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>
+      <div style={{ fontSize: "var(--type-label)", color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>
         {label}
       </div>
-      <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.4, whiteSpace: "pre-wrap" }}>
+      <div style={{ fontSize: "var(--type-body)", fontWeight: 600, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
         {formatText(value)}
       </div>
     </div>
@@ -238,12 +268,12 @@ function WorkstationComponentCard({ component }: { component: WorkstationCompone
   return (
     <div className="saas-card" style={{ padding: 12, display: "grid", gap: 10 }}>
       <div style={{ display: "grid", gap: 4 }}>
-        <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+        <div style={{ fontSize: "var(--type-label)", color: "var(--muted)", fontWeight: 600 }}>
           {formatText(component.componentType)}
         </div>
-        <div style={{ fontSize: 16, fontWeight: 700 }}>{formatText(component.assetTag)}</div>
+        <div style={{ fontSize: "var(--type-title-sm)", fontWeight: 700 }}>{formatText(component.assetTag)}</div>
       </div>
-      <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--muted-strong)", whiteSpace: "pre-wrap" }}>
+      <div style={{ fontSize: "var(--type-body-sm)", lineHeight: 1.5, color: "var(--muted-strong)", whiteSpace: "pre-wrap" }}>
         {formatText(component.specifications)}
       </div>
       {component.imageStorageId ? (
@@ -377,16 +407,22 @@ export default function HardwareInventoryDetailPage() {
   }, [actionToast]);
 
   if (row === undefined) {
-    return <div className="panel" style={{ padding: 16 }}>Loading asset details...</div>;
+    return (
+      <div className="asset-page">
+        <div className="panel" style={{ padding: 16 }}>Loading asset details...</div>
+      </div>
+    );
   }
 
   if (row === null) {
     return (
-      <div className="panel" style={{ padding: 16 }}>
-        <p style={{ marginBottom: 12 }}>Hardware asset not found.</p>
-        <Link href="/hardware-inventory" className="btn-secondary">
-          Back to Hardware Inventory
-        </Link>
+      <div className="asset-page">
+        <div className="panel" style={{ padding: 16 }}>
+          <p style={{ marginBottom: 12 }}>Hardware asset not found.</p>
+          <Link href="/hardware-inventory" className="btn-secondary">
+            Back to Hardware Inventory
+          </Link>
+        </div>
       </div>
     );
   }
@@ -728,11 +764,20 @@ export default function HardwareInventoryDetailPage() {
   const selectedDepartmentInOptions = departmentOptions.includes(
     form.department as (typeof departmentOptions)[number],
   );
+  const assetTypeDropdownOptions = selectedAssetTypeInOptions || !form.assetType
+    ? assetTypeSelectOptions
+    : [{ value: form.assetType, label: form.assetType }, ...assetTypeSelectOptions];
+  const locationDropdownOptions = selectedLocationInOptions || !form.locationPersonAssigned
+    ? locationSelectOptions
+    : [{ value: form.locationPersonAssigned, label: form.locationPersonAssigned }, ...locationSelectOptions];
+  const departmentDropdownOptions = selectedDepartmentInOptions || !form.department
+    ? departmentSelectOptions
+    : [{ value: form.department, label: form.department }, ...departmentSelectOptions];
   const canEditBorrower = form.status === "Borrowed";
   const isDroneAssetSelected = form.assetType.trim().toLowerCase() === "drone";
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div className="asset-page" style={{ display: "grid", gap: 16 }}>
       {actionToast ? (
         <div className="floating-toast floating-toast-success" role="status" aria-live="polite">
           {actionToast.message}
@@ -749,18 +794,18 @@ export default function HardwareInventoryDetailPage() {
           }}
         >
           <div style={{ minWidth: 240 }}>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 6 }}>
+            <div className="type-page-kicker" style={{ marginBottom: 6 }}>
               Hardware Inventory / Asset Details
             </div>
-            <h1 style={{ fontSize: 30, fontWeight: 700, margin: 0, lineHeight: 1.2 }}>
+            <h1 className="type-page-title">
               {asset.assetTag}
             </h1>
-            <div style={{ marginTop: 6, color: "var(--muted)", fontSize: 14 }}>
+            <div className="type-page-subtitle" style={{ marginTop: 6 }}>
               {formatText(asset.assetNameDescription)}
             </div>
             <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
               <StatusChip status={assetStatus} />
-              <span style={{ color: "var(--muted)", fontSize: 13 }}>
+              <span style={{ color: "var(--muted)", fontSize: "var(--type-body-sm)" }}>
                 Updated {formatDate(asset.updatedAt)}
               </span>
             </div>
@@ -883,7 +928,7 @@ export default function HardwareInventoryDetailPage() {
       {!isEditing ? (
         <div style={{ display: "grid", gap: 12 }}>
           <section className="panel" style={{ padding: 14 }}>
-            <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>Asset Image</div>
+            <div className="type-subsection-title" style={{ marginBottom: 10 }}>Asset Image</div>
             {asset.imageStorageId ? (
               imageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -907,7 +952,7 @@ export default function HardwareInventoryDetailPage() {
           </section>
           {isDroneAsset && workstationComponents.length ? (
             <section className="panel" style={{ padding: 14 }}>
-              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>Drone Kit Components</div>
+              <div className="type-subsection-title" style={{ marginBottom: 10 }}>Drone Kit Components</div>
               <div
                 style={{
                   display: "grid",
@@ -925,7 +970,7 @@ export default function HardwareInventoryDetailPage() {
             </section>
           ) : null}
           <section className="panel" style={{ padding: 14 }}>
-            <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>
+            <div className="type-subsection-title" style={{ marginBottom: 10 }}>
               Receiving Form (Admin)
             </div>
             {receivingFormStorageId ? (
@@ -947,7 +992,7 @@ export default function HardwareInventoryDetailPage() {
             )}
           </section>
           <section className="panel" style={{ padding: 14 }}>
-            <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>
+            <div className="type-subsection-title" style={{ marginBottom: 10 }}>
               Signed Turnover/Acknowledgment Form
             </div>
             {asset.turnoverFormStorageId ? (
@@ -970,7 +1015,7 @@ export default function HardwareInventoryDetailPage() {
           </section>
           {isDroneAsset ? (
             <section className="panel" style={{ padding: 14 }}>
-              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>
+              <div className="type-subsection-title" style={{ marginBottom: 10 }}>
                 Drone Flight Report
               </div>
               {droneFlightReportStorageId ? (
@@ -996,7 +1041,7 @@ export default function HardwareInventoryDetailPage() {
           ) : null}
           {isDroneAsset ? (
             <section className="panel" style={{ padding: 14 }}>
-              <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>
+              <div className="type-subsection-title" style={{ marginBottom: 10 }}>
                 Drone Kit Borrowing
               </div>
               <div className="drone-package-card">
@@ -1139,7 +1184,7 @@ export default function HardwareInventoryDetailPage() {
           </section>
 
           <section className="panel" style={{ padding: 14 }}>
-            <div style={{ fontWeight: 700, marginBottom: 10, fontSize: 14 }}>System Metadata</div>
+            <div className="type-subsection-title" style={{ marginBottom: 10 }}>System Metadata</div>
             <div
               style={{
                 display: "grid",
@@ -1162,8 +1207,8 @@ export default function HardwareInventoryDetailPage() {
                 marginBottom: 10,
               }}
             >
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Activity Log</div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+              <div className="type-subsection-title">Activity Log</div>
+              <div style={{ fontSize: "var(--type-label)", color: "var(--muted)" }}>
                 {assetActivity?.length ?? 0} event{assetActivity?.length === 1 ? "" : "s"}
               </div>
             </div>
@@ -1213,7 +1258,7 @@ export default function HardwareInventoryDetailPage() {
             gap: 12,
           }}
         >
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Edit Hardware Asset</div>
+          <div className="type-section-title">Edit Hardware Asset</div>
           <div
             style={{
               display: "grid",
@@ -1231,21 +1276,13 @@ export default function HardwareInventoryDetailPage() {
               />
             </EditField>
             <EditField label="Asset Type">
-              <select
-                className="input-base"
+              <ChecklistSelect
                 value={form.assetType}
-                onChange={(e) => setForm((prev) => ({ ...prev, assetType: e.target.value }))}
-              >
-                {!selectedAssetTypeInOptions && form.assetType ? (
-                  <option value={form.assetType}>{form.assetType}</option>
-                ) : null}
-                <option value="">Select asset type</option>
-                {assetTypeOptions.map((assetType) => (
-                  <option key={assetType} value={assetType}>
-                    {assetType}
-                  </option>
-                ))}
-              </select>
+                options={assetTypeDropdownOptions}
+                placeholder="Select asset type"
+                ariaLabel="Asset type"
+                onChange={(value) => setForm((prev) => ({ ...prev, assetType: value }))}
+              />
             </EditField>
             <EditField label="Asset Name / Description">
               <input
@@ -1274,23 +1311,13 @@ export default function HardwareInventoryDetailPage() {
               />
             </EditField>
             <EditField label="Location">
-              <select
-                className="input-base"
+              <ChecklistSelect
                 value={form.locationPersonAssigned}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, locationPersonAssigned: e.target.value }))
-                }
-              >
-                {!selectedLocationInOptions && form.locationPersonAssigned ? (
-                  <option value={form.locationPersonAssigned}>{form.locationPersonAssigned}</option>
-                ) : null}
-                <option value="">Select Location</option>
-                {locationOptions.map((location) => (
-                  <option key={location} value={location}>
-                    {location}
-                  </option>
-                ))}
-              </select>
+                options={locationDropdownOptions}
+                placeholder="Select location"
+                ariaLabel="Location"
+                onChange={(value) => setForm((prev) => ({ ...prev, locationPersonAssigned: value }))}
+              />
             </EditField>
             <EditField label="Turnover To">
               <input
@@ -1307,49 +1334,22 @@ export default function HardwareInventoryDetailPage() {
               />
             </EditField>
             <EditField label="Department">
-              <select
-                className="input-base"
+              <ChecklistSelect
                 value={form.department}
-                onChange={(e) => setForm((prev) => ({ ...prev, department: e.target.value }))}
-              >
-                {!selectedDepartmentInOptions && form.department ? (
-                  <option value={form.department}>{form.department}</option>
-                ) : null}
-                <option value="">Select department</option>
-                {departmentOptions.map((department) => (
-                  <option key={department} value={department}>
-                    {department}
-                  </option>
-                ))}
-              </select>
+                options={departmentDropdownOptions}
+                placeholder="Select department"
+                ariaLabel="Department"
+                onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
+              />
             </EditField>
             <EditField label="Status">
-              <select
-                className="input-base status-select"
-                style={{
-                  background: statusColors[form.status]?.bg ?? "#ffffff",
-                  color: statusColors[form.status]?.text ?? "var(--foreground)",
-                  borderColor: statusColors[form.status]?.border ?? "#e8eff9",
-                  fontWeight: 600,
-                }}
+              <ChecklistSelect
                 value={form.status}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, status: e.target.value as HardwareStatus }))
-                }
-              >
-                {statuses.map((status) => (
-                  <option
-                    key={status}
-                    value={status}
-                    style={{
-                      backgroundColor: "#ffffff",
-                      color: statusColors[status]?.text ?? "var(--foreground)",
-                    }}
-                  >
-                    {status}
-                  </option>
-                ))}
-              </select>
+                options={assetStatusSelectOptions}
+                placeholder="Select status"
+                ariaLabel="Status"
+                onChange={(value) => setForm((prev) => ({ ...prev, status: value as HardwareStatus }))}
+              />
             </EditField>
             <EditField label="Borrower">
               <input

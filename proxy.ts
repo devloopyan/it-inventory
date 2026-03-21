@@ -4,7 +4,7 @@ import { resolveSafeRedirectPath, SESSION_COOKIE_NAME, verifySessionToken } from
 
 const PUBLIC_FILE_PATTERN = /\.[^/]+$/;
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (PUBLIC_FILE_PATTERN.test(pathname)) {

@@ -14,7 +14,7 @@ function getErrorMessage(error?: string) {
     case "invalid":
       return "Incorrect IT username or password.";
     case "config":
-      return "Set IT_LOGIN_USERNAME, IT_LOGIN_PASSWORD, and IT_LOGIN_SECRET in .env.local before signing in.";
+      return "Set IT_LOGIN_USERNAME, IT_LOGIN_PASSWORD, and IT_LOGIN_SECRET in the deployment environment before signing in.";
     default:
       return "";
   }
