@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import FileUploadCard from "../file-upload-card";
 import ChecklistSelect, { type ChecklistSelectOption } from "../checklist-select";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
-import { HARDWARE_ASSET_TYPES } from "@/lib/hardwareAssetTypes";
+import { HARDWARE_ASSET_TYPE_EXAMPLES, HARDWARE_ASSET_TYPES } from "@/lib/hardwareAssetTypes";
 import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
 
 const statuses = HARDWARE_STATUSES;
@@ -19,6 +19,7 @@ const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRI
 const assetTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = assetTypeOptions.map((assetType) => ({
   value: assetType,
   label: assetType,
+  description: HARDWARE_ASSET_TYPE_EXAMPLES[assetType],
 }));
 const departmentSelectOptions: ReadonlyArray<ChecklistSelectOption> = departmentOptions.map((department) => ({
   value: department,

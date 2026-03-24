@@ -23,6 +23,29 @@ export const HARDWARE_ASSET_TYPES = [
 
 export type HardwareAssetType = (typeof HARDWARE_ASSET_TYPES)[number];
 
+export const HARDWARE_ASSET_TYPE_EXAMPLES: Record<HardwareAssetType, string> = {
+  Laptop: "Office laptop, field laptop",
+  "Desktop/PC": "System unit, office desktop",
+  Drone: "Drone unit, aerial mapping drone",
+  "Drone Battery": "Spare battery, flight battery",
+  "Drone Propeller": "Propeller set, replacement blades",
+  "Drone Charger": "Battery charger, charging hub",
+  "Drone Controller": "Remote controller, RC unit",
+  Phone: "Company phone, hotline phone",
+  Tablet: "Site tablet, inspection tablet",
+  Monitor: "External monitor, second display",
+  Keyboard: "USB keyboard, wireless keyboard",
+  Mouse: "USB mouse, wireless mouse",
+  Headset: "Call headset, conference headset",
+  Speaker: "Desk speaker, meeting speaker",
+  Printer: "Office printer, label printer",
+  "Network Device": "Router, switch, access point",
+  "Flashdrive/USB": "USB flash drive, recovery drive",
+  "External Drive": "External HDD, SSD backup drive",
+  "Audio Visual Equipment": "Projector, webcam, conference camera",
+  "Other IT Asset": "UPS, docking station, AVR",
+};
+
 export const HARDWARE_ASSET_TAG_PREFIXES: Record<HardwareAssetType, string> = {
   Laptop: "IT-LAP",
   "Desktop/PC": "IT-PC",
