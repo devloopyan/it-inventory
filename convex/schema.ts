@@ -239,4 +239,19 @@ export default defineSchema({
   })
     .index("by_holidayDate", ["holidayDate"])
     .index("by_active", ["active"]),
+  dashboardCalendarEvents: defineTable({
+    title: v.string(),
+    requestedBy: v.optional(v.string()),
+    assignedStaff: v.array(v.string()),
+    neededItems: v.string(),
+    location: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    startAt: v.number(),
+    endAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdBy: v.optional(v.string()),
+  })
+    .index("by_startAt", ["startAt"])
+    .index("by_updatedAt", ["updatedAt"]),
 });

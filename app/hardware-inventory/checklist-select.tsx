@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 export type ChecklistSelectOption = {
   value: string;
   label: string;
+  description?: string;
   triggerStyle?: CSSProperties;
   markerVariant?: "checkbox" | "dot" | "none";
   markerColor?: string;
@@ -159,6 +160,7 @@ export default function ChecklistSelect({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={ariaLabel}
+        title={selectedOption?.description}
         disabled={disabled}
         style={triggerStyle}
         onClick={() => {
@@ -201,6 +203,7 @@ export default function ChecklistSelect({
                       setOpen(false);
                       triggerRef.current?.focus();
                     }}
+                    title={option.description}
                   >
                     {option.markerVariant === "dot" ? (
                       <span className="checklist-select-dot-wrap" aria-hidden="true">

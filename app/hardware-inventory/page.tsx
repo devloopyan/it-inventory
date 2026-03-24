@@ -8,7 +8,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import FileUploadCard from "./file-upload-card";
 import ChecklistSelect, { type ChecklistSelectOption } from "./checklist-select";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
-import { HARDWARE_ASSET_TYPES, buildNextHardwareAssetTag } from "@/lib/hardwareAssetTypes";
+import {
+  HARDWARE_ASSET_TYPE_EXAMPLES,
+  HARDWARE_ASSET_TYPES,
+  buildNextHardwareAssetTag,
+} from "@/lib/hardwareAssetTypes";
 import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
 
 const statuses = HARDWARE_STATUSES;
@@ -21,6 +25,7 @@ const componentTypeOptions = ["Monitor", "Headset", "Keyboard", "Mouse", "Speake
 const assetTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = assetTypeOptions.map((assetType) => ({
   value: assetType,
   label: assetType,
+  description: HARDWARE_ASSET_TYPE_EXAMPLES[assetType],
 }));
 const departmentSelectOptions: ReadonlyArray<ChecklistSelectOption> = departmentOptions.map((department) => ({
   value: department,

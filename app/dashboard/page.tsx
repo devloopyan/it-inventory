@@ -45,13 +45,48 @@ type DashboardCalendarEvent = {
   meetingLocation?: string;
   workflowType: string;
   category: string;
-  eventKind: "meeting" | "ticket" | "borrowing" | "internet";
+  eventKind: "meeting" | "ticket" | "borrowing" | "internet" | "support";
   eventStartAt: number;
   eventEndAt?: number;
   status: string;
   relatedAssetsCount: number;
   contextLine?: string;
+  referenceLabel?: string;
+  assignedStaff?: string[];
+  neededItems?: string;
+  notes?: string;
+  href?: string;
 };
+
+type DashboardSupportEventFormState = {
+  title: string;
+  requestedBy: string;
+  assignedStaff: string[];
+  startAt: string;
+  endAt: string;
+  location: string;
+  neededItems: string;
+  notes: string;
+};
+
+type DashboardReminderWindow = "today" | "tomorrow" | "nextWeek";
+
+const defaultSupportEventForm: DashboardSupportEventFormState = {
+  title: "",
+  requestedBy: "",
+  assignedStaff: [],
+  startAt: "",
+  endAt: "",
+  location: "",
+  neededItems: "",
+  notes: "",
+};
+
+const IT_SUPPORT_STAFF_OPTIONS = [
+  "Belle Clarice Dela Cerna",
+  "Josef Scott Suico",
+  "Leanne Ondong",
+] as const;
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -102,21 +137,6 @@ function groupBy<T>(rows: T[], key: (row: T) => string) {
     map.get(groupKey)?.push(row);
   });
   return map;
-}
-
-function isOfficialTurnover(row: {
-  department?: string;
-  turnoverTo?: string;
-  turnoverFormStorageId?: unknown;
-}) {
-  const department = (row.department ?? "").trim();
-  const turnoverTo = (row.turnoverTo ?? "").trim();
-  return (
-    department.length > 0 &&
-    turnoverTo.length > 0 &&
-    turnoverTo.toLowerCase() !== "unassigned" &&
-    Boolean(row.turnoverFormStorageId)
-  );
 }
 
 function isWorkstationRecord(row: {
@@ -238,6 +258,85 @@ function formatCalendarEventTime(start: number, end?: number) {
   return `${startLabel} - ${endLabel}`;
 }
 
+function toDateTimeLocalValue(value?: number) {
+  if (!value) return "";
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function toTimestamp(value: string) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.getTime();
+}
+
+function getStartOfCalendarDay(date: Date) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function addCalendarDays(date: Date, amount: number) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + amount);
+  return copy;
+}
+
+function getNextWeekStart(date: Date) {
+  const day = getStartOfCalendarDay(date).getDay();
+  const daysUntilNextMonday = ((8 - day) % 7) || 7;
+  return addCalendarDays(getStartOfCalendarDay(date), daysUntilNextMonday);
+}
+
+function formatCalendarRangeLabel(start: Date, end: Date) {
+  const startLabel = start.toLocaleString("en-US", { month: "long", day: "numeric" });
+  const endLabel = end.toLocaleString("en-US", { month: "long", day: "numeric" });
+  return `${startLabel} to ${endLabel}`;
+}
+
+function buildReminderWindowMeta(mode: DashboardReminderWindow, baseDate: Date) {
+  if (mode === "tomorrow") {
+    const tomorrow = addCalendarDays(getStartOfCalendarDay(baseDate), 1);
+    return {
+      badge: "TOMORROW",
+      title: "Tomorrow's Reminders",
+      copy: `Meetings, field support, and other monitoring work scheduled for ${formatCalendarDateLabel(tomorrow)}.`,
+      empty: "No reminders scheduled for tomorrow yet.",
+      dateKeys: [getCalendarDateKey(tomorrow)],
+    };
+  }
+
+  if (mode === "nextWeek") {
+    const start = getNextWeekStart(baseDate);
+    const end = addCalendarDays(start, 6);
+    return {
+      badge: "NEXT WEEK",
+      title: "Next Week's Reminders",
+      copy: `Meetings, field support, and other monitoring work scheduled for ${formatCalendarRangeLabel(start, end)}.`,
+      empty: "No reminders scheduled for next week yet.",
+      dateKeys: Array.from({ length: 7 }, (_, index) => getCalendarDateKey(addCalendarDays(start, index))),
+    };
+  }
+
+  const today = getStartOfCalendarDay(baseDate);
+  return {
+    badge: "TODAY",
+    title: "Today's Reminders",
+    copy: `Meetings, field support, and other monitoring work scheduled for ${formatCalendarDateLabel(today)}.`,
+    empty: "No reminders scheduled for today yet.",
+    dateKeys: [getCalendarDateKey(today)],
+  };
+}
+
+function getDefaultSupportEventStart(dayKey: string) {
+  const date = parseCalendarDateKey(dayKey);
+  date.setHours(8, 0, 0, 0);
+  return toDateTimeLocalValue(date.getTime());
+}
+
 function getMeetingCalendarStatusClass(status?: string) {
   switch (status) {
     case "New":
@@ -263,6 +362,8 @@ function getDashboardCalendarEventClass(event: DashboardCalendarEvent) {
       return "is-internet";
     case "borrowing":
       return "is-borrowing";
+    case "support":
+      return "is-support";
     case "ticket":
     default:
       return "is-ticket";
@@ -277,6 +378,8 @@ function getDashboardCalendarEventKindLabel(event: DashboardCalendarEvent) {
       return "Internet Outage";
     case "borrowing":
       return "Borrowing Request";
+    case "support":
+      return "IT Support";
     case "ticket":
     default:
       return "Ticket";
@@ -413,14 +516,198 @@ function renderActivityIcon(eventType: string) {
   }
 }
 
+function DashboardFilterChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden="true"
+      style={{
+        transform: open ? "rotate(180deg)" : undefined,
+        transition: "transform var(--interaction-duration) var(--interaction-ease)",
+      }}
+    >
+      <path
+        d="M2.75 4.5L6 7.75L9.25 4.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function DashboardFilterCheckIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 6.1L4.9 8.5L9.5 3.9"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function DashboardStaffDropdown(props: {
+  value: string[];
+  options: ReadonlyArray<string>;
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const summary = props.value.length
+    ? props.value.length === 1
+      ? props.value[0]
+      : `${props.value.length} selected`
+    : "Select IT staff";
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`monitoring-filter-dropdown${open ? " is-open" : ""}${props.value.length ? " is-active" : ""}`}
+      style={{ width: "100%", minWidth: 0 }}
+    >
+      <button
+        type="button"
+        className="monitoring-filter-trigger"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Assigned IT staff"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="monitoring-filter-trigger-main">
+          <span className="monitoring-filter-trigger-text">{summary}</span>
+        </span>
+        <span className="monitoring-filter-trigger-icon" aria-hidden="true">
+          <DashboardFilterChevronIcon open={open} />
+        </span>
+      </button>
+      {open ? (
+        <div className="monitoring-filter-menu" role="menu" aria-label="Assigned IT staff options">
+          {props.options.map((option) => {
+            const selected = props.value.includes(option);
+
+            return (
+              <button
+                key={option}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={selected}
+                className={`monitoring-filter-option${selected ? " is-selected" : ""}`}
+                onClick={() => {
+                  props.onChange(
+                    selected ? props.value.filter((item) => item !== option) : [...props.value, option],
+                  );
+                }}
+              >
+                <span className="monitoring-filter-check" aria-hidden="true">
+                  {selected ? <DashboardFilterCheckIcon /> : null}
+                </span>
+                <span className="monitoring-filter-option-text">{option}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DashboardCalendarAgendaCard({ event, compactTimeLabel = false }: { event: DashboardCalendarEvent; compactTimeLabel?: boolean }) {
+  const cardContent = (
+    <>
+      <div className="dashboard-calendar-agenda-card-top">
+        <span className={`dashboard-calendar-status-pill ${getDashboardCalendarEventClass(event)}`}>
+          {getDashboardCalendarEventKindLabel(event)}
+        </span>
+        <span className="dashboard-calendar-agenda-ticket">
+          {compactTimeLabel
+            ? formatCalendarEventTime(event.eventStartAt, event.eventEndAt)
+            : event.referenceLabel || event.ticketNumber || formatCalendarEventTime(event.eventStartAt, event.eventEndAt)}
+        </span>
+      </div>
+      <strong className="dashboard-calendar-agenda-card-title">{getDashboardCalendarEventTitle(event)}</strong>
+      <div className="dashboard-calendar-agenda-meta">{formatCalendarEventTime(event.eventStartAt, event.eventEndAt)}</div>
+      <div className="dashboard-calendar-agenda-meta">{event.contextLine || event.category}</div>
+      <div className="dashboard-calendar-agenda-footer">
+        <span>
+          {event.eventKind === "support"
+            ? [event.referenceLabel, event.requesterName].filter(Boolean).join(" · ") || "IT support event"
+            : [event.requesterName, event.status].filter(Boolean).join(" · ")}
+        </span>
+        <span>
+          {event.eventKind === "support"
+            ? event.neededItems || "No needed items listed"
+            : event.relatedAssetsCount
+              ? `${event.relatedAssetsCount} linked asset${event.relatedAssetsCount === 1 ? "" : "s"}`
+              : "No linked assets"}
+        </span>
+      </div>
+    </>
+  );
+
+  if (event.href) {
+    return (
+      <Link href={event.href} className="dashboard-calendar-agenda-card">
+        {cardContent}
+      </Link>
+    );
+  }
+
+  return <div className="dashboard-calendar-agenda-card">{cardContent}</div>;
+}
+
 export default function DashboardPage() {
   const [calendarMonth, setCalendarMonth] = useState(() => getCalendarMonthStart(new Date()));
   const [selectedMeetingDay, setSelectedMeetingDay] = useState(() => getCalendarDateKey(new Date()));
   const [isCalendarDetailOpen, setIsCalendarDetailOpen] = useState(false);
+  const [reminderWindow, setReminderWindow] = useState<DashboardReminderWindow>("today");
+  const [isReminderWindowOpen, setIsReminderWindowOpen] = useState(false);
+  const [showSupportEventCreate, setShowSupportEventCreate] = useState(false);
+  const [supportEventForm, setSupportEventForm] = useState<DashboardSupportEventFormState>(() => ({
+    ...defaultSupportEventForm,
+    startAt: getDefaultSupportEventStart(getCalendarDateKey(new Date())),
+  }));
+  const [supportEventSaving, setSupportEventSaving] = useState(false);
+  const [supportEventError, setSupportEventError] = useState("");
   const meetingCalendarRange = getCalendarGridRange(calendarMonth);
   const allRows = useQuery(api.hardwareInventory.listAll, {});
   const monitoringOverview = useQuery(api.monitoring.getOverview, {});
-  const calendarFeed = useQuery(api.monitoring.getMeetingCalendar, {
+  const monitoringCalendarFeed = useQuery(api.monitoring.getMeetingCalendar, {
+    rangeStart: meetingCalendarRange.gridStart.getTime(),
+    rangeEnd: meetingCalendarRange.gridEnd.getTime(),
+  }) as DashboardCalendarEvent[] | undefined;
+  const supportCalendarFeed = useQuery(api.dashboardCalendar.listSupportEvents, {
     rangeStart: meetingCalendarRange.gridStart.getTime(),
     rangeEnd: meetingCalendarRange.gridEnd.getTime(),
   }) as DashboardCalendarEvent[] | undefined;
@@ -429,6 +716,7 @@ export default function DashboardPage() {
     { limit: 8 } as never,
   ) as unknown as HardwareActivityRecord[] | undefined;
   const migrateLegacy = useMutation(api.hardwareInventory.migrateLegacy);
+  const createSupportEvent = useMutation(api.dashboardCalendar.createSupportEvent);
   const reserveAsset = useMutation(
     (api.hardwareInventory as Record<string, unknown>)["reserveAsset"] as never,
   ) as unknown as (args: {
@@ -447,7 +735,6 @@ export default function DashboardPage() {
   ) as unknown as (args: { inventoryId: never }) => Promise<unknown>;
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("workstation");
-  const [departmentDrilldown, setDepartmentDrilldown] = useState("");
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [reservationTargetId, setReservationTargetId] = useState<string>("");
   const [reservationBorrower, setReservationBorrower] = useState("");
@@ -459,6 +746,14 @@ export default function DashboardPage() {
   const [reservationBusyId, setReservationBusyId] = useState("");
   const migrationRan = useRef(false);
   const workspaceSectionRef = useRef<HTMLElement | null>(null);
+  const reminderWindowRef = useRef<HTMLDivElement | null>(null);
+  const calendarFeed = useMemo(() => {
+    if (monitoringCalendarFeed === undefined || supportCalendarFeed === undefined) return undefined;
+    return [
+      ...monitoringCalendarFeed.map((event) => ({ ...event, href: `/monitoring/${event._id}` })),
+      ...supportCalendarFeed,
+    ].sort((left, right) => left.eventStartAt - right.eventStartAt);
+  }, [monitoringCalendarFeed, supportCalendarFeed]);
 
   useEffect(() => {
     const selectedDate = parseCalendarDateKey(selectedMeetingDay);
@@ -495,6 +790,38 @@ export default function DashboardPage() {
     migrationRan.current = true;
     void migrateLegacy();
   }, [allRows, migrateLegacy]);
+
+  useEffect(() => {
+    if (!isReminderWindowOpen) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (reminderWindowRef.current?.contains(event.target as Node)) return;
+      setIsReminderWindowOpen(false);
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [isReminderWindowOpen]);
+
+  useEffect(() => {
+    if (!reservationTargetId || activeTab !== "available") return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        resetReservationForm();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [activeTab, reservationTargetId]);
 
   function resetReservationForm() {
     setReservationTargetId("");
@@ -573,7 +900,6 @@ export default function DashboardPage() {
 
   function focusWorkspaceTab(nextTab: TabKey) {
     setSearch("");
-    setDepartmentDrilldown("");
     setActiveTab(nextTab);
     workspaceSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -772,21 +1098,6 @@ export default function DashboardPage() {
     [activityFeed, activityExpanded],
   );
   const hasMoreActivity = (activityFeed?.length ?? 0) > 3;
-  const assetsPerDepartment = useMemo(() => {
-    const grouped = new Map<string, number>();
-    for (const row of allRows ?? []) {
-      if (!isOfficialTurnover(row)) continue;
-      const department = row.department?.trim() ?? "";
-      grouped.set(department, (grouped.get(department) ?? 0) + 1);
-    }
-    return [...grouped.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [allRows]);
-  const masterRowsWithDepartmentDrilldown = useMemo(() => {
-    if (!departmentDrilldown) return tabRows;
-    return tabRows.filter(
-      (row) => isOfficialTurnover(row) && (row.department?.trim() ?? "") === departmentDrilldown,
-    );
-  }, [tabRows, departmentDrilldown]);
 
   const activeTabSummary: Record<TabKey, string> = {
     master: "Full inventory register with department drilldown and signed-turnover filtering.",
@@ -913,106 +1224,118 @@ export default function DashboardPage() {
     if (!reservationTargetId || !selectedReservationRow || activeTab !== "available") return null;
 
     return (
-      <section className="saas-card" style={{ padding: 16, display: "grid", gap: 12 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <div className="reservation-form-title">Reserve {selectedReservationRow.assetTag}</div>
-            <div className="reservation-form-note">
-              When claimed, the asset status will change to Borrowed.
-              {selectedReservationIsDrone ? " A flight report is required upon return." : ""}
-            </div>
-            <div style={{ marginTop: 8, fontSize: 13, color: "var(--muted-strong)" }}>
-              {selectedReservationRow.assetNameDescription ?? "-"}
-            </div>
-          </div>
-          <button className="btn-secondary" type="button" onClick={resetReservationForm}>
-            Clear Selection
-          </button>
-        </div>
-        <div className="reservation-form-grid">
-          <div className="reservation-form-field">
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Borrower Name</div>
-            <input
-              className="input-base reservation-input"
-              value={reservationBorrower}
-              onChange={(e) => setReservationBorrower(e.target.value)}
-              placeholder="Enter borrower name"
-              aria-label="Borrower name"
-            />
-          </div>
-          <div className="reservation-form-field">
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Department</div>
-            <select
-              className="input-base reservation-input"
-              value={reservationDepartment}
-              onChange={(e) => setReservationDepartment(e.target.value)}
-              aria-label="Reservation department"
-            >
-              <option value="">Select department</option>
-              {HARDWARE_DEPARTMENTS.map((department) => (
-                <option key={department} value={department}>
-                  {department}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="reservation-form-grid">
-          <div className="reservation-form-field">
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Requested Date</div>
-            <input
-              className="input-base reservation-input"
-              type="date"
-              value={reservationRequestedDate}
-              onChange={(e) => setReservationRequestedDate(e.target.value)}
-              aria-label="Requested date"
-            />
-          </div>
-          <div className="reservation-form-field">
-            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-              Expected Pickup Date
-            </div>
-            <input
-              className="input-base reservation-input"
-              type="date"
-              value={reservationPickupDate}
-              onChange={(e) => setReservationPickupDate(e.target.value)}
-              aria-label="Expected pickup date"
-            />
-          </div>
-        </div>
-        <div className="reservation-form-field">
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Borrower Slip Note</div>
-          <textarea
-            className="input-base reservation-input reservation-textarea"
-            value={reservationSlipNote}
-            onChange={(e) => setReservationSlipNote(e.target.value)}
-            placeholder="Enter borrower slip reference or note"
-          />
-        </div>
-        {reservationError ? <div className="reservation-error">{reservationError}</div> : null}
-        <div className="reservation-form-actions">
-          <button className="btn-secondary" type="button" onClick={resetReservationForm}>
-            Cancel
-          </button>
-          <button
-            className="btn-primary"
-            type="button"
-            onClick={() => void handleReserveSubmit()}
-            disabled={reservationBusyId === reservationTargetId}
+      <div className="reservation-form-overlay" role="presentation">
+        <div className="reservation-form-backdrop" onClick={resetReservationForm} />
+        <div className="reservation-form-shell">
+          <section
+            className="reservation-form-wrap"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reservation-form-title"
           >
-            {reservationBusyId === reservationTargetId ? "Saving..." : "Save Reservation"}
-          </button>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div id="reservation-form-title" className="reservation-form-title">
+                  Reserve {selectedReservationRow.assetTag}
+                </div>
+                <div className="reservation-form-note">
+                  When claimed, the asset status will change to Borrowed.
+                  {selectedReservationIsDrone ? " A flight report is required upon return." : ""}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 13, color: "var(--muted-strong)" }}>
+                  {selectedReservationRow.assetNameDescription ?? "-"}
+                </div>
+              </div>
+              <button className="btn-secondary" type="button" onClick={resetReservationForm}>
+                Close
+              </button>
+            </div>
+            <div className="reservation-form-grid">
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Borrower Name</div>
+                <input
+                  className="input-base reservation-input"
+                  value={reservationBorrower}
+                  onChange={(e) => setReservationBorrower(e.target.value)}
+                  placeholder="Enter borrower name"
+                  aria-label="Borrower name"
+                />
+              </div>
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Department</div>
+                <select
+                  className="input-base reservation-input"
+                  value={reservationDepartment}
+                  onChange={(e) => setReservationDepartment(e.target.value)}
+                  aria-label="Reservation department"
+                >
+                  <option value="">Select department</option>
+                  {HARDWARE_DEPARTMENTS.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="reservation-form-grid">
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Requested Date</div>
+                <input
+                  className="input-base reservation-input"
+                  type="date"
+                  value={reservationRequestedDate}
+                  onChange={(e) => setReservationRequestedDate(e.target.value)}
+                  aria-label="Requested date"
+                />
+              </div>
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                  Expected Pickup Date
+                </div>
+                <input
+                  className="input-base reservation-input"
+                  type="date"
+                  value={reservationPickupDate}
+                  onChange={(e) => setReservationPickupDate(e.target.value)}
+                  aria-label="Expected pickup date"
+                />
+              </div>
+            </div>
+            <div className="reservation-form-field">
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Borrower Slip Note</div>
+              <textarea
+                className="input-base reservation-input reservation-textarea"
+                value={reservationSlipNote}
+                onChange={(e) => setReservationSlipNote(e.target.value)}
+                placeholder="Enter borrower slip reference or note"
+              />
+            </div>
+            {reservationError ? <div className="reservation-error">{reservationError}</div> : null}
+            <div className="reservation-form-actions">
+              <button className="btn-secondary" type="button" onClick={resetReservationForm}>
+                Cancel
+              </button>
+              <button
+                className="btn-primary"
+                type="button"
+                onClick={() => void handleReserveSubmit()}
+                disabled={reservationBusyId === reservationTargetId}
+              >
+                {reservationBusyId === reservationTargetId ? "Saving..." : "Save Reservation"}
+              </button>
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     );
   };
 
@@ -1042,33 +1365,78 @@ export default function DashboardPage() {
 
     return grouped;
   }, [calendarFeed]);
-  const monthCalendarEvents = useMemo(
-    () =>
-      (calendarFeed ?? []).filter(
-        (item) =>
-          item.eventStartAt <= meetingCalendarRange.monthEnd.getTime() &&
-          (item.eventEndAt ?? item.eventStartAt) >= meetingCalendarRange.monthStart.getTime(),
-      ),
-    [calendarFeed, meetingCalendarRange.monthEnd, meetingCalendarRange.monthStart],
-  );
   const selectedMeetingDate = useMemo(() => parseCalendarDateKey(selectedMeetingDay), [selectedMeetingDay]);
   const selectedDayEvents = useMemo(
     () => eventsByDay.get(selectedMeetingDay) ?? [],
     [eventsByDay, selectedMeetingDay],
   );
+  const reminderWindowMeta = useMemo(() => buildReminderWindowMeta(reminderWindow, new Date()), [reminderWindow]);
+  const reminderEvents = useMemo(() => {
+    const seen = new Set<string>();
+    const entries: DashboardCalendarEvent[] = [];
+
+    for (const dayKey of reminderWindowMeta.dateKeys) {
+      for (const event of eventsByDay.get(dayKey) ?? []) {
+        if (seen.has(event._id)) continue;
+        seen.add(event._id);
+        entries.push(event);
+      }
+    }
+
+    return entries.sort((left, right) => left.eventStartAt - right.eventStartAt);
+  }, [eventsByDay, reminderWindowMeta]);
   const selectedDayRelatedAssets = useMemo(
     () => selectedDayEvents.reduce((total, item) => total + item.relatedAssetsCount, 0),
     [selectedDayEvents],
-  );
-  const monthRelatedAssets = useMemo(
-    () => monthCalendarEvents.reduce((total, item) => total + item.relatedAssetsCount, 0),
-    [monthCalendarEvents],
   );
   const calendarMonthLabel = formatCalendarMonthLabel(calendarMonth);
   const selectedDayLabel = formatCalendarDateLabel(selectedMeetingDate);
   function openCalendarDetail(dayKey: string) {
     setSelectedMeetingDay(dayKey);
     setIsCalendarDetailOpen(true);
+  }
+
+  function openSupportEventCreate() {
+    setSupportEventError("");
+    setSupportEventForm({
+      ...defaultSupportEventForm,
+      startAt: getDefaultSupportEventStart(selectedMeetingDay),
+    });
+    setShowSupportEventCreate(true);
+  }
+
+  async function handleCreateSupportEvent() {
+    const assignedStaff = supportEventForm.assignedStaff.map((value) => value.trim()).filter(Boolean);
+    const startAt = toTimestamp(supportEventForm.startAt);
+    const endAt = toTimestamp(supportEventForm.endAt);
+
+    if (!startAt) {
+      setSupportEventError("Schedule start is required.");
+      return;
+    }
+
+    try {
+      setSupportEventSaving(true);
+      setSupportEventError("");
+      await createSupportEvent({
+        title: supportEventForm.title,
+        requestedBy: supportEventForm.requestedBy || undefined,
+        assignedStaff,
+        neededItems: supportEventForm.neededItems,
+        location: supportEventForm.location || undefined,
+        notes: supportEventForm.notes || undefined,
+        startAt,
+        endAt,
+        createdBy: "Dashboard",
+      });
+      setSelectedMeetingDay(getCalendarDateKey(startAt));
+      setShowSupportEventCreate(false);
+      setSupportEventForm(defaultSupportEventForm);
+    } catch (error) {
+      setSupportEventError(error instanceof Error ? error.message : "Event creation failed.");
+    } finally {
+      setSupportEventSaving(false);
+    }
   }
 
   const reminderQueue = useMemo<DashboardReminder[]>(() => {
@@ -1196,20 +1564,6 @@ export default function DashboardPage() {
             <h1 className="dashboard-title">Asset Operations</h1>
             <p className="dashboard-subtitle">Hardware performance and operations overview.</p>
           </div>
-          <div className="search-field dashboard-search dashboard-top-card-search">
-            <span className="search-icon">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" />
-              </svg>
-            </span>
-            <input
-              className="input-base"
-              placeholder="Search assets"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
         </div>
         <div className="dashboard-top-card-metrics">
           <div className="dashboard-top-card-metric">
@@ -1236,33 +1590,8 @@ export default function DashboardPage() {
               <div>
                 <h3 className="type-section-title" style={{ marginBottom: 6 }}>Monitoring Calendar</h3>
                 <p className="type-section-copy" style={{ margin: 0 }}>
-                  Live Monitoring timeline for tickets, meetings, borrowing requests, and internet outages.
+                  Live Monitoring timeline for tickets, meetings, borrowing requests, internet outages, and IT support assignments.
                 </p>
-              </div>
-              <Link href="/monitoring" className="btn-secondary">
-                Open Monitoring
-              </Link>
-            </div>
-
-            <div className="dashboard-calendar-stat-grid">
-              <div className="dashboard-calendar-stat-card">
-                <span className="dashboard-calendar-stat-label">This Month</span>
-                <strong className="dashboard-calendar-stat-value">{monthCalendarEvents.length}</strong>
-                <span className="dashboard-calendar-stat-meta">
-                  {monthCalendarEvents.length === 1 ? "record on the calendar" : "records on the calendar"}
-                </span>
-              </div>
-              <div className="dashboard-calendar-stat-card">
-                <span className="dashboard-calendar-stat-label">Selected Day</span>
-                <strong className="dashboard-calendar-stat-value">{selectedDayEvents.length}</strong>
-                <span className="dashboard-calendar-stat-meta">
-                  {selectedDayEvents.length === 1 ? "record on this day" : "records on this day"}
-                </span>
-              </div>
-              <div className="dashboard-calendar-stat-card">
-                <span className="dashboard-calendar-stat-label">Linked Assets</span>
-                <strong className="dashboard-calendar-stat-value">{monthRelatedAssets}</strong>
-                <span className="dashboard-calendar-stat-meta">linked asset entries this month</span>
               </div>
             </div>
 
@@ -1292,17 +1621,22 @@ export default function DashboardPage() {
                       </svg>
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      const today = new Date();
-                      setCalendarMonth(getCalendarMonthStart(today));
-                      setSelectedMeetingDay(getCalendarDateKey(today));
-                    }}
-                  >
-                    Today
-                  </button>
+                  <div className="dashboard-calendar-head-actions">
+                    <button type="button" className="btn-primary" onClick={openSupportEventCreate}>
+                      Add Event
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        const today = new Date();
+                        setCalendarMonth(getCalendarMonthStart(today));
+                        setSelectedMeetingDay(getCalendarDateKey(today));
+                      }}
+                    >
+                      Today
+                    </button>
+                  </div>
                 </div>
 
                 <div className="dashboard-calendar-grid-wrap">
@@ -1414,46 +1748,61 @@ export default function DashboardPage() {
               </button>
             )}
           </div>
-          <div className="panel dashboard-panel dashboard-department-panel" style={{ padding: 16 }}>
-            <h3 className="type-section-title" style={{ marginBottom: 6 }}>Assets per Department</h3>
-            <p style={{ marginTop: 0, marginBottom: 10, fontSize: "var(--type-label)", color: "var(--muted)" }}>
-              Includes only officially turned-over assets with signed turnover forms attached.
-            </p>
-            <div className="department-card-grid department-card-scroll">
-              {assetsPerDepartment.map(([department, count]) => (
+          <div className="panel dashboard-panel dashboard-today-panel" style={{ padding: 16 }}>
+            <div className="dashboard-today-head">
+              <div className="dashboard-today-filter" ref={reminderWindowRef}>
                 <button
-                  key={department}
                   type="button"
-                  className={`department-card${
-                    departmentDrilldown === department ? " active" : ""
-                  }`}
-                  onClick={() => {
-                    setActiveTab("master");
-                    setSearch("");
-                    setDepartmentDrilldown(department);
-                  }}
+                  className="dashboard-reminder-badge dashboard-today-filter-trigger"
+                  aria-haspopup="menu"
+                  aria-expanded={isReminderWindowOpen}
+                  onClick={() => setIsReminderWindowOpen((open) => !open)}
                 >
-                  <span className="department-card-label">Qualified Assets</span>
-                  <div className="department-card-row">
-                    <span className="department-card-name">{department}</span>
-                    <strong className="department-card-count">{count}</strong>
+                  <span>{reminderWindowMeta.badge}</span>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                {isReminderWindowOpen ? (
+                  <div className="dashboard-today-filter-menu" role="menu" aria-label="Reminder range">
+                    {[
+                      { key: "today", label: "Today" },
+                      { key: "tomorrow", label: "Tomorrow" },
+                      { key: "nextWeek", label: "Next Week" },
+                    ].map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={reminderWindow === option.key}
+                        className={`dashboard-today-filter-option${reminderWindow === option.key ? " is-active" : ""}`}
+                        onClick={() => {
+                          setReminderWindow(option.key as DashboardReminderWindow);
+                          setIsReminderWindowOpen(false);
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
                   </div>
-                </button>
-              ))}
-              {!assetsPerDepartment.length ? (
-                <div style={{ fontSize: "var(--type-body-sm)", color: "var(--muted)" }}>
-                  No departments meet the turnover + signed-form requirement yet.
-                </div>
+                ) : null}
+              </div>
+              <h3 className="type-section-title" style={{ margin: 0 }}>{reminderWindowMeta.title}</h3>
+              <p className="dashboard-today-copy">
+                {reminderWindowMeta.copy}
+              </p>
+            </div>
+            <div className="dashboard-today-list">
+              {calendarFeed === undefined ? (
+                <div className="dashboard-calendar-empty">Loading reminders...</div>
               ) : null}
-              {departmentDrilldown ? (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => setDepartmentDrilldown("")}
-                  style={{ marginTop: 4 }}
-                >
-                  Clear Department Drilldown
-                </button>
+              {reminderEvents.map((event) => (
+                <DashboardCalendarAgendaCard key={event._id} event={event} compactTimeLabel />
+              ))}
+              {calendarFeed !== undefined && !reminderEvents.length ? (
+                <div className="dashboard-calendar-empty">
+                  {reminderWindowMeta.empty}
+                </div>
               ) : null}
             </div>
           </div>
@@ -1501,25 +1850,7 @@ export default function DashboardPage() {
 
               <div className="dashboard-calendar-agenda-list">
                 {selectedDayEvents.map((event) => (
-                  <Link key={event._id} href={`/monitoring/${event._id}`} className="dashboard-calendar-agenda-card">
-                    <div className="dashboard-calendar-agenda-card-top">
-                      <span className={`dashboard-calendar-status-pill ${getDashboardCalendarEventClass(event)}`}>
-                        {getDashboardCalendarEventKindLabel(event)}
-                      </span>
-                      <span className="dashboard-calendar-agenda-ticket">{event.ticketNumber}</span>
-                    </div>
-                    <strong className="dashboard-calendar-agenda-card-title">{getDashboardCalendarEventTitle(event)}</strong>
-                    <div className="dashboard-calendar-agenda-meta">{formatCalendarEventTime(event.eventStartAt, event.eventEndAt)}</div>
-                    <div className="dashboard-calendar-agenda-meta">{event.contextLine || event.category}</div>
-                    <div className="dashboard-calendar-agenda-footer">
-                      <span>{[event.requesterName, event.status].filter(Boolean).join(" · ")}</span>
-                      <span>
-                        {event.relatedAssetsCount
-                          ? `${event.relatedAssetsCount} linked asset${event.relatedAssetsCount === 1 ? "" : "s"}`
-                          : "No linked assets"}
-                      </span>
-                    </div>
-                  </Link>
+                  <DashboardCalendarAgendaCard key={event._id} event={event} />
                 ))}
                 {calendarFeed === undefined ? (
                   <div className="dashboard-calendar-empty">Loading monitoring records...</div>
@@ -1529,6 +1860,153 @@ export default function DashboardPage() {
                     No monitoring records are scheduled for this day yet.
                   </div>
                 ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showSupportEventCreate ? (
+        <div className="dashboard-calendar-modal" role="dialog" aria-modal="true" aria-label="Add IT support event">
+          <button
+            type="button"
+            className="dashboard-calendar-modal-backdrop"
+            aria-label="Close add event form"
+            onClick={() => setShowSupportEventCreate(false)}
+          />
+          <div className="dashboard-calendar-modal-shell dashboard-support-form-shell">
+            <div className="dashboard-calendar-modal-card dashboard-support-form-card">
+              <div className="dashboard-calendar-modal-head">
+                <div className="dashboard-calendar-agenda-header">
+                  <div>
+                    <div className="dashboard-calendar-agenda-eyebrow">Dashboard Event</div>
+                    <h4 className="dashboard-calendar-agenda-title">Add IT Support Event</h4>
+                    <p className="dashboard-calendar-agenda-copy" style={{ margin: 0 }}>
+                      Add a reminder for field support, accompanied work, or any scheduled IT assignment.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="dashboard-calendar-modal-close"
+                  aria-label="Close add event form"
+                  onClick={() => setShowSupportEventCreate(false)}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M4 4L12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    <path d="M12 4L4 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="reservation-form-grid dashboard-support-form-grid">
+                <div className="reservation-form-field" style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Event Title</div>
+                  <input
+                    className="input-base reservation-input"
+                    value={supportEventForm.title}
+                    onChange={(e) => setSupportEventForm((current) => ({ ...current, title: e.target.value }))}
+                    placeholder="Field support for technical staff"
+                    aria-label="Support event title"
+                  />
+                </div>
+
+                <div className="reservation-form-field">
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Requested By</div>
+                  <input
+                    className="input-base reservation-input"
+                    value={supportEventForm.requestedBy}
+                    onChange={(e) => setSupportEventForm((current) => ({ ...current, requestedBy: e.target.value }))}
+                    placeholder="Team or requester"
+                    aria-label="Requested by"
+                  />
+                </div>
+
+                <div className="reservation-form-field">
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Location</div>
+                  <input
+                    className="input-base reservation-input"
+                    value={supportEventForm.location}
+                    onChange={(e) => setSupportEventForm((current) => ({ ...current, location: e.target.value }))}
+                    placeholder="Site, room, or platform"
+                    aria-label="Support event location"
+                  />
+                </div>
+
+                <div className="reservation-form-field">
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Start</div>
+                  <input
+                    className="input-base reservation-input"
+                    type="datetime-local"
+                    value={supportEventForm.startAt}
+                    onChange={(e) => setSupportEventForm((current) => ({ ...current, startAt: e.target.value }))}
+                    aria-label="Support event start"
+                  />
+                </div>
+
+                <div className="reservation-form-field">
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>End</div>
+                  <input
+                    className="input-base reservation-input"
+                    type="datetime-local"
+                    value={supportEventForm.endAt}
+                    onChange={(e) => setSupportEventForm((current) => ({ ...current, endAt: e.target.value }))}
+                    aria-label="Support event end"
+                  />
+                </div>
+
+                <div className="reservation-form-field" style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Assigned IT Staff</div>
+                  <DashboardStaffDropdown
+                    value={supportEventForm.assignedStaff}
+                    options={IT_SUPPORT_STAFF_OPTIONS}
+                    onChange={(value) => setSupportEventForm((current) => ({ ...current, assignedStaff: value }))}
+                  />
+                  <div className="dashboard-support-form-help">Select one or more IT staff for this support event.</div>
+                </div>
+
+                <div className="reservation-form-field" style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Needed Things</div>
+                  <textarea
+                    className="input-base reservation-input reservation-textarea dashboard-support-form-textarea"
+                    value={supportEventForm.neededItems}
+                    onChange={(e) => setSupportEventForm((current) => ({ ...current, neededItems: e.target.value }))}
+                    placeholder="Laptops, tools, network setup, projector, or other support needs"
+                    aria-label="Needed things"
+                  />
+                </div>
+
+                <div className="reservation-form-field" style={{ gridColumn: "1 / -1" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Notes</div>
+                  <textarea
+                    className="input-base reservation-input reservation-textarea dashboard-support-form-textarea"
+                    value={supportEventForm.notes}
+                    onChange={(e) => setSupportEventForm((current) => ({ ...current, notes: e.target.value }))}
+                    placeholder="Extra coordination details or reminders"
+                    aria-label="Support event notes"
+                  />
+                </div>
+              </div>
+
+              {supportEventError ? <div className="reservation-error">{supportEventError}</div> : null}
+
+              <div className="reservation-form-actions">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => setShowSupportEventCreate(false)}
+                  disabled={supportEventSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={() => void handleCreateSupportEvent()}
+                  disabled={supportEventSaving}
+                >
+                  {supportEventSaving ? "Saving..." : "Save Event"}
+                </button>
               </div>
             </div>
           </div>
@@ -1594,7 +2072,6 @@ export default function DashboardPage() {
                       onClick={() => {
                         setActiveTab("master");
                         setSearch(event.assetTag);
-                        setDepartmentDrilldown("");
                       }}
                     >
                       View
@@ -1605,7 +2082,6 @@ export default function DashboardPage() {
                       onClick={() => {
                         setActiveTab("master");
                         setSearch(event.assetTag);
-                        setDepartmentDrilldown("");
                       }}
                     >
                       Locate
@@ -1671,7 +2147,6 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => {
                   setActiveTab(tab.key);
-                  setDepartmentDrilldown("");
                 }}
                 className={`dashboard-tab-btn${active ? " active" : ""}`}
               >
@@ -1680,17 +2155,12 @@ export default function DashboardPage() {
             );
           })}
         </div>
-        {departmentDrilldown ? (
-          <div className="dashboard-showcase-inline-note">
-            Department drilldown: <strong>{departmentDrilldown}</strong>
-          </div>
-        ) : null}
         {reservationError && !reservationTargetId ? (
           <div className="reservation-error reservation-error-inline">{reservationError}</div>
         ) : null}
 
         {activeTab === "master" ? (
-          renderTable(masterRowsWithDepartmentDrilldown)
+          renderTable(tabRows)
         ) : activeTab === "workstation" ? (
           <div style={{ display: "grid", gap: 24 }}>
             {workstationSections.map((section) => (
