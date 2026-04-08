@@ -1,17 +1,11 @@
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-
-const STATUS_OPTIONS = [
-  "Borrowed",
-  "Assigned",
-  "For Repair",
-  "Retired",
-  "Available",
-  "Working",
-  "NEW",
-  "Pre-owned",
-] as const;
+import {
+  normalizeHardwareStatusValue,
+  type HardwareStatus,
+} from "../lib/hardwareStatuses";
+import { isHardwareBorrowCondition } from "../lib/hardwareBorrowConditions";
 
 const RESERVATION_STATUS_OPTIONS = ["Reserved", "Claimed", "Cancelled", "Expired"] as const;
 
@@ -33,12 +27,21 @@ function normalizeOptional(value?: string) {
   return next ? next : undefined;
 }
 
+function ensureBorrowCondition(value: string, label: string) {
+  const next = normalizeRequired(value, label);
+  if (!isHardwareBorrowCondition(next)) {
+    throw new Error(`${label} is invalid.`);
+  }
+  return next;
+}
+
 function resolveTurnoverTo(personAssigned?: string, fallbackTurnoverTo?: string) {
   return personAssigned ?? fallbackTurnoverTo ?? "Unassigned";
 }
 
 function ensureStatus(value: string) {
-  if ((STATUS_OPTIONS as readonly string[]).includes(value)) return;
+  const normalized = normalizeHardwareStatusValue(value);
+  if (normalized) return normalized;
   throw new Error("Invalid status.");
 }
 
@@ -64,6 +67,19 @@ function isDroneRelatedAssetType(assetType?: string) {
     normalized === "drone charger" ||
     normalized === "drone controller"
   );
+}
+
+function normalizeHardwareInventoryRow<T extends { status: string }>(row: T): T {
+  const normalizedStatus = normalizeHardwareStatusValue(row.status);
+  if (!normalizedStatus || normalizedStatus === row.status) return row;
+  return { ...row, status: normalizedStatus };
+}
+
+function normalizeHardwareActivityRow<T extends { status?: string }>(row: T): T {
+  if (!row.status) return row;
+  const normalizedStatus = normalizeHardwareStatusValue(row.status);
+  if (!normalizedStatus || normalizedStatus === row.status) return row;
+  return { ...row, status: normalizedStatus };
 }
 
 function normalizeWorkstationComponents(
@@ -126,6 +142,86 @@ async function logHardwareActivity(
   );
 }
 
+function assertReservableAsset(existing: {
+  status: string;
+  locationPersonAssigned?: string;
+  location?: string;
+  reservationStatus?: string;
+}) {
+  const existingStatus = normalizeHardwareStatusValue(existing.status) ?? existing.status;
+  if ((existing.locationPersonAssigned ?? existing.location ?? "") !== "MAIN STORAGE") {
+    throw new Error("Only MAIN STORAGE assets can be reserved.");
+  }
+  if (!(RESERVABLE_STATUS_OPTIONS as readonly string[]).includes(existingStatus)) {
+    throw new Error("Only available storage assets can be reserved.");
+  }
+  if (isActiveReservation(existing)) {
+    throw new Error("This asset is already reserved.");
+  }
+  return existingStatus;
+}
+
+async function reserveInventoryAsset(
+  ctx: unknown,
+  args: {
+    inventoryId: Id<"hardwareInventory">;
+    borrowerName: string;
+    department: string;
+    requestedDate: string;
+    expectedPickupDate?: string;
+    purpose?: string;
+  },
+) {
+  const db = (ctx as {
+    db: {
+      get: (id: Id<"hardwareInventory">) => Promise<Record<string, unknown> | null>;
+      patch: (id: Id<"hardwareInventory">, value: unknown) => Promise<unknown>;
+    };
+  }).db;
+
+  const existing = await db.get(args.inventoryId);
+  if (!existing) throw new Error("Hardware asset not found.");
+
+  const borrowerName = normalizeRequired(args.borrowerName, "Borrower Name");
+  const department = normalizeRequired(args.department, "Department");
+  const requestedDate = normalizeRequired(args.requestedDate, "Requested Date");
+  const expectedPickupDate = normalizeOptional(args.expectedPickupDate);
+  const purpose = normalizeOptional(args.purpose);
+  const existingStatus = assertReservableAsset({
+    status: String(existing.status ?? ""),
+    locationPersonAssigned: existing.locationPersonAssigned as string | undefined,
+    location: existing.location as string | undefined,
+    reservationStatus: existing.reservationStatus as string | undefined,
+  });
+
+  ensureReservationStatus("Reserved");
+
+  await db.patch(
+    args.inventoryId,
+    {
+      reservationBorrower: borrowerName,
+      reservationDepartment: department,
+      reservationRequestedDate: requestedDate,
+      reservationPickupDate: expectedPickupDate,
+      reservationSlipNote: purpose,
+      reservationLoggedAt: Date.now(),
+      reservationStatus: "Reserved",
+      updatedAt: Date.now(),
+    } as never,
+  );
+
+  await logHardwareActivity(ctx, {
+    inventoryId: args.inventoryId,
+    assetTag: String(existing.assetTag ?? ""),
+    assetNameDescription: existing.assetNameDescription as string | undefined,
+    eventType: "reservation_created",
+    message: "Main storage reservation created.",
+    relatedPerson: borrowerName,
+    location: (existing.locationPersonAssigned as string | undefined) ?? (existing.location as string | undefined),
+    status: existingStatus,
+  });
+}
+
 function getStatusEventMeta(status: string) {
   switch (status) {
     case "Borrowed":
@@ -173,6 +269,7 @@ function matchesSearch(row: { [key: string]: string | undefined }, search: strin
 export const list = query({
   args: {
     search: v.optional(v.string()),
+    assetType: v.optional(v.string()),
     status: v.optional(v.string()),
     location: v.optional(v.string()),
     sortKey: v.optional(v.string()),
@@ -181,9 +278,11 @@ export const list = query({
     pageSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const rows = await ctx.db.query("hardwareInventory").collect();
+    const rows = (await ctx.db.query("hardwareInventory").collect()).map(normalizeHardwareInventoryRow);
     const search = args.search?.trim().toLowerCase() ?? "";
+    const assetType = args.assetType?.trim().toLowerCase();
     const status = args.status?.trim();
+    const normalizedStatusFilter = status ? ensureStatus(status) : undefined;
     const location = args.location?.trim();
     const page = args.page && args.page > 0 ? args.page : 1;
     const pageSize =
@@ -192,7 +291,10 @@ export const list = query({
     const sortDir = args.sortDir === "asc" ? "asc" : "desc";
 
     const filtered = rows
-      .filter((row) => (status ? row.status === status : true))
+      .filter((row) =>
+        assetType ? String(row.assetType ?? "").trim().toLowerCase() === assetType : true,
+      )
+      .filter((row) => (normalizedStatusFilter ? row.status === normalizedStatusFilter : true))
       .filter((row) =>
         location
           ? String(row.locationPersonAssigned ?? "")
@@ -286,7 +388,7 @@ export const getImageUrl = query({
 export const listAll = query({
   args: {},
   handler: async (ctx) => {
-    const rows = await ctx.db.query("hardwareInventory").collect();
+    const rows = (await ctx.db.query("hardwareInventory").collect()).map(normalizeHardwareInventoryRow);
     return rows.sort((a, b) => b.updatedAt - a.updatedAt);
   },
 });
@@ -296,7 +398,8 @@ export const getById = query({
     inventoryId: v.id("hardwareInventory"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.inventoryId);
+    const row = await ctx.db.get(args.inventoryId);
+    return row ? normalizeHardwareInventoryRow(row) : row;
   },
 });
 
@@ -307,7 +410,7 @@ export const listRecentActivity = query({
   },
   handler: async (ctx, args) => {
     const limit = args.limit && args.limit > 0 ? args.limit : 8;
-    const rows = await ctx.db.query("hardwareActivityEvents").collect();
+    const rows = (await ctx.db.query("hardwareActivityEvents").collect()).map(normalizeHardwareActivityRow);
     const filtered = args.inventoryId
       ? rows.filter((row) => row.inventoryId === args.inventoryId)
       : rows;
@@ -335,6 +438,7 @@ export const migrateLegacy = mutation({
         !row.department ||
         !row.turnoverTo ||
         !row.warranty ||
+        (!!normalizeHardwareStatusValue(row.status) && normalizeHardwareStatusValue(row.status) !== row.status) ||
         (!!legacyDesktopMonitorSlot && !currentDesktopMonitorSerialNumber);
 
       if (!needsMigration) continue;
@@ -364,7 +468,11 @@ export const migrateLegacy = mutation({
       const personAssigned = row.assignedTo ?? legacy.assignedTo;
       const department = row.department ?? "General";
       const turnoverTo = row.turnoverTo ?? legacy.assignedTo ?? "Unassigned";
-      const borrower = row.borrower ?? (row.status === "Borrowed" ? turnoverTo : undefined);
+      const borrower =
+        row.borrower ??
+        ((normalizeHardwareStatusValue(row.status) ?? row.status) === "Borrowed"
+          ? turnoverTo
+          : undefined);
 
       const legacyDate = legacy.dateAcquired
         ? new Date(legacy.dateAcquired).toISOString().slice(0, 10)
@@ -376,23 +484,10 @@ export const migrateLegacy = mutation({
       const purchaseDate = row.purchaseDate ?? legacyDate;
       const warranty = row.warranty ?? "Unknown";
 
-      const normalizedStatus = (() => {
-        switch (legacy.status) {
-          case "In Stock":
-          case "In Storage":
-            return "Available";
-          case "Borrowed":
-            return "Borrowed";
-          case "Assigned":
-            return "Assigned";
-          case "For Repair":
-            return "For Repair";
-          case "Retired":
-            return "Retired";
-          default:
-            return row.status;
-        }
-      })();
+      const normalizedStatus =
+        normalizeHardwareStatusValue(legacy.status) ??
+        normalizeHardwareStatusValue(row.status) ??
+        row.status;
 
       await ctx.db.patch(row._id, {
         assetType,
@@ -480,7 +575,7 @@ export const create = mutation({
       "Location",
     );
     const department = normalizeRequired(args.department, "Department");
-    const status = normalizeRequired(args.status, "Status");
+    const status = ensureStatus(normalizeRequired(args.status, "Status"));
     const assignedDate = normalizeOptional(args.assignedDate);
     const turnoverDate = normalizeOptional(args.turnoverDate);
     const purchaseDate = normalizeOptional(args.purchaseDate);
@@ -509,13 +604,10 @@ export const create = mutation({
     const desktopKeyboardSpecs = normalizeOptional(args.desktopKeyboardSpecs);
     const workstationComponents = normalizeWorkstationComponents(args.workstationComponents);
     const turnoverTo = resolveTurnoverTo(personAssigned);
-    const effectiveStatus = turnoverFormStorageId ? "Assigned" : status;
+    const effectiveStatus: HardwareStatus = turnoverFormStorageId ? "Assigned" : status;
     const isDesktopAsset = assetType === "Desktop/PC";
     const effectiveAssignedDate = isDesktopAsset ? undefined : assignedDate;
     const effectiveTurnoverDate = isDesktopAsset ? turnoverDate ?? assignedDate : undefined;
-
-    ensureStatus(status);
-    ensureStatus(effectiveStatus);
 
     if (effectiveStatus === "Borrowed") {
       if (!borrower) {
@@ -785,7 +877,7 @@ export const update = mutation({
       "Location",
     );
     const department = normalizeRequired(args.department, "Department");
-    const status = normalizeRequired(args.status, "Status");
+    const status = ensureStatus(normalizeRequired(args.status, "Status"));
     const fallbackTurnoverTo = normalizeOptional(args.turnoverTo);
     const borrower = normalizeOptional(args.borrower);
     const personAssigned = normalizeOptional(args.personAssigned);
@@ -803,12 +895,12 @@ export const update = mutation({
     const clearReceivingForm = args.clearReceivingForm === true;
     const clearTurnoverForm = args.clearTurnoverForm === true;
     const clearDroneFlightReport = args.clearDroneFlightReport === true;
-    const effectiveStatus = turnoverFormStorageId !== undefined ? "Assigned" : status;
+    const effectiveStatus: HardwareStatus = turnoverFormStorageId !== undefined ? "Assigned" : status;
     const isDesktopAsset = assetType === "Desktop/PC";
     const isDroneAsset = isDroneAssetType(assetType);
     const effectiveAssignedDate = isDesktopAsset ? undefined : assignedDate;
     const effectiveTurnoverDate = isDesktopAsset ? turnoverDate ?? assignedDate : undefined;
-    const previousStatus = existing.status;
+    const previousStatus = normalizeHardwareStatusValue(existing.status) ?? existing.status;
     const previousReceivingFormStorageId = (existing as Record<string, unknown>)
       .receivingFormStorageId as typeof args.receivingFormStorageId | undefined;
     const previousTurnoverFormStorageId = existing.turnoverFormStorageId;
@@ -816,9 +908,6 @@ export const update = mutation({
       .droneFlightReportStorageId as typeof args.droneFlightReportStorageId | undefined;
     const previousDroneMissingPartsNote = (existing as Record<string, unknown>)
       .droneMissingPartsNote as string | undefined;
-
-    ensureStatus(status);
-    ensureStatus(effectiveStatus);
 
     if (effectiveStatus === "Borrowed") {
       if (!borrower) {
@@ -1056,53 +1145,41 @@ export const reserveAsset = mutation({
     department: v.string(),
     requestedDate: v.string(),
     expectedPickupDate: v.optional(v.string()),
-    slipNote: v.optional(v.string()),
+    purpose: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db.get(args.inventoryId);
-    if (!existing) throw new Error("Hardware asset not found.");
+    await reserveInventoryAsset(ctx, args);
+  },
+});
 
-    const borrowerName = normalizeRequired(args.borrowerName, "Borrower Name");
-    const department = normalizeRequired(args.department, "Department");
-    const requestedDate = normalizeRequired(args.requestedDate, "Requested Date");
-    const expectedPickupDate = normalizeOptional(args.expectedPickupDate);
-    const slipNote = normalizeOptional(args.slipNote);
-
-    if ((existing.locationPersonAssigned ?? existing.location ?? "") !== "MAIN STORAGE") {
-      throw new Error("Only MAIN STORAGE assets can be reserved.");
+export const reserveAssets = mutation({
+  args: {
+    inventoryIds: v.array(v.id("hardwareInventory")),
+    borrowerName: v.string(),
+    department: v.string(),
+    requestedDate: v.string(),
+    expectedPickupDate: v.optional(v.string()),
+    purpose: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const uniqueInventoryIds = [...new Set(args.inventoryIds.map((id) => String(id)))];
+    if (!uniqueInventoryIds.length) {
+      throw new Error("Select at least one asset to reserve.");
     }
-    if (!(RESERVABLE_STATUS_OPTIONS as readonly string[]).includes(existing.status)) {
-      throw new Error("Only available storage assets can be reserved.");
-    }
-    if (isActiveReservation(existing)) {
-      throw new Error("This asset is already reserved.");
+    if (uniqueInventoryIds.length !== args.inventoryIds.length) {
+      throw new Error("Each asset can only be selected once.");
     }
 
-    ensureReservationStatus("Reserved");
-
-    await ctx.db.patch(
-      args.inventoryId,
-      {
-        reservationBorrower: borrowerName,
-        reservationDepartment: department,
-        reservationRequestedDate: requestedDate,
-        reservationPickupDate: expectedPickupDate,
-        reservationSlipNote: slipNote,
-        reservationStatus: "Reserved",
-        updatedAt: Date.now(),
-      } as never,
-    );
-
-    await logHardwareActivity(ctx, {
-      inventoryId: args.inventoryId,
-      assetTag: existing.assetTag,
-      assetNameDescription: existing.assetNameDescription,
-      eventType: "reservation_created",
-      message: "Main storage reservation created.",
-      relatedPerson: borrowerName,
-      location: existing.locationPersonAssigned ?? existing.location,
-      status: existing.status,
-    });
+    for (const inventoryId of args.inventoryIds) {
+      await reserveInventoryAsset(ctx, {
+        inventoryId,
+        borrowerName: args.borrowerName,
+        department: args.department,
+        requestedDate: args.requestedDate,
+        expectedPickupDate: args.expectedPickupDate,
+        purpose: args.purpose,
+      });
+    }
   },
 });
 
@@ -1122,6 +1199,12 @@ export const cancelReservation = mutation({
     await ctx.db.patch(
       args.inventoryId,
       {
+        reservationBorrower: undefined,
+        reservationDepartment: undefined,
+        reservationRequestedDate: undefined,
+        reservationPickupDate: undefined,
+        reservationSlipNote: undefined,
+        reservationLoggedAt: undefined,
         reservationStatus: "Cancelled",
         updatedAt: Date.now(),
       } as never,
@@ -1144,6 +1227,7 @@ export const cancelReservation = mutation({
 export const claimReservation = mutation({
   args: {
     inventoryId: v.id("hardwareInventory"),
+    releaseCondition: v.string(),
     missingPartsNote: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -1160,6 +1244,7 @@ export const claimReservation = mutation({
     const reservationDepartment = normalizeOptional(
       (existing as Record<string, unknown>).reservationDepartment as string | undefined,
     );
+    const releaseCondition = ensureBorrowCondition(args.releaseCondition, "Release condition");
     const missingPartsNote = normalizeOptional(args.missingPartsNote);
     const previousDroneFlightReportStorageId = (existing as Record<string, unknown>)
       .droneFlightReportStorageId as Id<"_storage"> | undefined;
@@ -1171,12 +1256,18 @@ export const claimReservation = mutation({
 
     ensureReservationStatus("Claimed");
 
+    const now = Date.now();
     const patchData: {
       status: string;
       borrower: string;
       department: string | undefined;
       turnoverTo: string;
       reservationStatus: "Claimed";
+      borrowedAt: number;
+      borrowReleaseCondition: string;
+      borrowReleaseConditionCheckedAt: number;
+      borrowReturnCondition?: undefined;
+      borrowReturnConditionCheckedAt?: undefined;
       updatedAt: number;
       droneFlightReportStorageId?: undefined;
       droneMissingPartsNote?: string | undefined;
@@ -1186,7 +1277,12 @@ export const claimReservation = mutation({
       department: reservationDepartment ?? existing.department,
       turnoverTo: nextTurnoverTo,
       reservationStatus: "Claimed",
-      updatedAt: Date.now(),
+      borrowedAt: now,
+      borrowReleaseCondition: releaseCondition,
+      borrowReleaseConditionCheckedAt: now,
+      borrowReturnCondition: undefined,
+      borrowReturnConditionCheckedAt: undefined,
+      updatedAt: now,
     };
     if (shouldResetDroneFlightReport) {
       patchData.droneFlightReportStorageId = undefined;
@@ -1204,7 +1300,7 @@ export const claimReservation = mutation({
       assetTag: existing.assetTag,
       assetNameDescription: existing.assetNameDescription,
       eventType: "reservation_claimed",
-      message: "Reservation claimed and converted to borrowed.",
+      message: `Reservation claimed and converted to borrowed. Release condition: ${releaseCondition}.`,
       relatedPerson: borrowerName,
       location: existing.locationPersonAssigned ?? existing.location,
       status: "Borrowed",
@@ -1217,6 +1313,7 @@ export const returnDronePackage = mutation({
     inventoryIds: v.array(v.id("hardwareInventory")),
     reportTargetInventoryId: v.id("hardwareInventory"),
     droneFlightReportStorageId: v.id("_storage"),
+    returnCondition: v.string(),
   },
   handler: async (ctx, args) => {
     if (!args.inventoryIds.length) {
@@ -1227,6 +1324,8 @@ export const returnDronePackage = mutation({
     if (!uniqueInventoryIds.includes(args.reportTargetInventoryId)) {
       throw new Error("Report target asset must be included in the return package.");
     }
+
+    const returnCondition = ensureBorrowCondition(args.returnCondition, "Returned condition");
 
     const rows = await Promise.all(uniqueInventoryIds.map((inventoryId) => ctx.db.get(inventoryId)));
     const packageRows = rows.filter(Boolean);
@@ -1262,6 +1361,8 @@ export const returnDronePackage = mutation({
         location: string;
         locationPersonAssigned: string;
         borrower: undefined;
+        borrowReturnCondition: string;
+        borrowReturnConditionCheckedAt: number;
         updatedAt: number;
         droneFlightReportStorageId?: Id<"_storage"> | undefined;
         droneMissingPartsNote?: undefined;
@@ -1270,6 +1371,8 @@ export const returnDronePackage = mutation({
         location: "MAIN STORAGE",
         locationPersonAssigned: "MAIN STORAGE",
         borrower: undefined,
+        borrowReturnCondition: returnCondition,
+        borrowReturnConditionCheckedAt: now,
         droneMissingPartsNote: undefined,
         updatedAt: now,
       };
@@ -1294,7 +1397,7 @@ export const returnDronePackage = mutation({
         assetTag: row!.assetTag,
         assetNameDescription: row!.assetNameDescription,
         eventType: "asset_returned",
-        message: "Drone asset returned to main storage.",
+        message: `Drone asset returned to main storage. Returned condition: ${returnCondition}.`,
         relatedPerson: row!.borrower ?? row!.turnoverTo ?? undefined,
         location: "MAIN STORAGE",
         status: "Available",
@@ -1315,6 +1418,52 @@ export const returnDronePackage = mutation({
     }
 
     return { returned: packageRows.length };
+  },
+});
+
+export const returnBorrowedAsset = mutation({
+  args: {
+    inventoryId: v.id("hardwareInventory"),
+    returnCondition: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.inventoryId);
+    if (!existing) {
+      throw new Error("Hardware asset not found.");
+    }
+    if (existing.status !== "Borrowed") {
+      throw new Error("Asset is not currently borrowed.");
+    }
+    if (isDroneRelatedAssetType(existing.assetType)) {
+      throw new Error("Drone assets must be returned through the drone return workflow with a flight report.");
+    }
+
+    const returnCondition = ensureBorrowCondition(args.returnCondition, "Returned condition");
+    const now = Date.now();
+
+    await ctx.db.patch(
+      args.inventoryId,
+      {
+        status: "Available",
+        location: "MAIN STORAGE",
+        locationPersonAssigned: "MAIN STORAGE",
+        borrower: undefined,
+        borrowReturnCondition: returnCondition,
+        borrowReturnConditionCheckedAt: now,
+        updatedAt: now,
+      } as never,
+    );
+
+    await logHardwareActivity(ctx, {
+      inventoryId: args.inventoryId,
+      assetTag: existing.assetTag,
+      assetNameDescription: existing.assetNameDescription,
+      eventType: "asset_returned",
+      message: `Asset returned to main storage. Returned condition: ${returnCondition}.`,
+      relatedPerson: existing.borrower ?? existing.turnoverTo ?? undefined,
+      location: "MAIN STORAGE",
+      status: "Available",
+    });
   },
 });
 

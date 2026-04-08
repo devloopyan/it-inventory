@@ -5,22 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
+import { HARDWARE_BORROW_CONDITION_OPTIONS } from "@/lib/hardwareBorrowConditions";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
 
 type TabKey = "workstation" | "master" | "storage" | "borrowed" | "available" | "reserved";
 type ReservationStatus = "Reserved" | "Claimed" | "Cancelled" | "Expired";
 type ActivityTone = "blue" | "green" | "amber" | "red" | "slate";
-type DashboardReminderAction =
-  | { kind: "link"; label: string; href: string }
-  | { kind: "tab"; label: string; tab: TabKey };
-type DashboardReminder = {
-  badge: string;
-  title: string;
-  copy: string;
-  summary: string;
-  tone: string;
-  action: DashboardReminderAction;
-};
 type HardwareActivityRecord = {
   _id: string;
   inventoryId?: string;
@@ -69,8 +59,6 @@ type DashboardSupportEventFormState = {
   notes: string;
 };
 
-type DashboardReminderWindow = "today" | "tomorrow" | "nextWeek";
-
 const defaultSupportEventForm: DashboardSupportEventFormState = {
   title: "",
   requestedBy: "",
@@ -98,6 +86,8 @@ const tabs: { key: TabKey; label: string }[] = [
   { key: "reserved", label: "Reserved" },
   { key: "available", label: "Available" },
 ];
+
+const DEFAULT_BORROW_CONDITION = HARDWARE_BORROW_CONDITION_OPTIONS[0];
 
 const statusIconColor: Record<HardwareStatus, string> = {
   Borrowed: "#f97316",
@@ -143,10 +133,19 @@ function isWorkstationRecord(row: {
   assetType?: string;
   registerMode?: string;
   workstationType?: string;
+  turnoverTo?: string;
+  turnoverFormStorageId?: string;
 }) {
   if (row.registerMode === "workstation") return true;
   if (row.workstationType === "Laptop" || row.workstationType === "Desktop/PC") return true;
-  if (row.assetType === "Laptop" || row.assetType === "Desktop/PC") return true;
+  if (row.assetType === "Laptop" || row.assetType === "Desktop/PC") {
+    const turnoverTo = row.turnoverTo?.trim();
+    return Boolean(
+      row.turnoverFormStorageId &&
+        turnoverTo &&
+        turnoverTo.toLowerCase() !== "unassigned",
+    );
+  }
   return false;
 }
 
@@ -224,6 +223,32 @@ function getCalendarDateKey(value: Date | number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+function getDefaultReservationRequestedDate() {
+  return getCalendarDateKey(new Date());
+}
+
+function formatReservationAssetLabel(row: {
+  assetTag: string;
+  assetNameDescription?: string;
+  assetType?: string;
+}) {
+  const detail = row.assetNameDescription?.trim() || row.assetType?.trim() || "Asset";
+  return `${row.assetTag} · ${detail}`;
+}
+
+function formatReservationAssetSummary(row: {
+  assetType?: string;
+  specifications?: string;
+  assetNameDescription?: string;
+}) {
+  const summary =
+    [row.assetType?.trim(), row.specifications?.trim()].filter(Boolean).join(" | ") ||
+    row.assetNameDescription?.trim() ||
+    "Main storage asset";
+  const condensed = summary.replace(/\s+/g, " ").trim();
+  return condensed.length > 108 ? `${condensed.slice(0, 105).trimEnd()}...` : condensed;
+}
+
 function parseCalendarDateKey(key: string) {
   const [year, month, day] = key.split("-").map(Number);
   return new Date(year, month - 1, day);
@@ -291,45 +316,6 @@ function getNextWeekStart(date: Date) {
   return addCalendarDays(getStartOfCalendarDay(date), daysUntilNextMonday);
 }
 
-function formatCalendarRangeLabel(start: Date, end: Date) {
-  const startLabel = start.toLocaleString("en-US", { month: "long", day: "numeric" });
-  const endLabel = end.toLocaleString("en-US", { month: "long", day: "numeric" });
-  return `${startLabel} to ${endLabel}`;
-}
-
-function buildReminderWindowMeta(mode: DashboardReminderWindow, baseDate: Date) {
-  if (mode === "tomorrow") {
-    const tomorrow = addCalendarDays(getStartOfCalendarDay(baseDate), 1);
-    return {
-      badge: "TOMORROW",
-      title: "Tomorrow's Reminders",
-      copy: `Meetings, field support, and other monitoring work scheduled for ${formatCalendarDateLabel(tomorrow)}.`,
-      empty: "No reminders scheduled for tomorrow yet.",
-      dateKeys: [getCalendarDateKey(tomorrow)],
-    };
-  }
-
-  if (mode === "nextWeek") {
-    const start = getNextWeekStart(baseDate);
-    const end = addCalendarDays(start, 6);
-    return {
-      badge: "NEXT WEEK",
-      title: "Next Week's Reminders",
-      copy: `Meetings, field support, and other monitoring work scheduled for ${formatCalendarRangeLabel(start, end)}.`,
-      empty: "No reminders scheduled for next week yet.",
-      dateKeys: Array.from({ length: 7 }, (_, index) => getCalendarDateKey(addCalendarDays(start, index))),
-    };
-  }
-
-  const today = getStartOfCalendarDay(baseDate);
-  return {
-    badge: "TODAY",
-    title: "Today's Reminders",
-    copy: `Meetings, field support, and other monitoring work scheduled for ${formatCalendarDateLabel(today)}.`,
-    empty: "No reminders scheduled for today yet.",
-    dateKeys: [getCalendarDateKey(today)],
-  };
-}
 
 function getDefaultSupportEventStart(dayKey: string) {
   const date = parseCalendarDateKey(dayKey);
@@ -691,8 +677,6 @@ export default function DashboardPage() {
   const [calendarMonth, setCalendarMonth] = useState(() => getCalendarMonthStart(new Date()));
   const [selectedMeetingDay, setSelectedMeetingDay] = useState(() => getCalendarDateKey(new Date()));
   const [isCalendarDetailOpen, setIsCalendarDetailOpen] = useState(false);
-  const [reminderWindow, setReminderWindow] = useState<DashboardReminderWindow>("today");
-  const [isReminderWindowOpen, setIsReminderWindowOpen] = useState(false);
   const [showSupportEventCreate, setShowSupportEventCreate] = useState(false);
   const [supportEventForm, setSupportEventForm] = useState<DashboardSupportEventFormState>(() => ({
     ...defaultSupportEventForm,
@@ -702,7 +686,6 @@ export default function DashboardPage() {
   const [supportEventError, setSupportEventError] = useState("");
   const meetingCalendarRange = getCalendarGridRange(calendarMonth);
   const allRows = useQuery(api.hardwareInventory.listAll, {});
-  const monitoringOverview = useQuery(api.monitoring.getOverview, {});
   const monitoringCalendarFeed = useQuery(api.monitoring.getMeetingCalendar, {
     rangeStart: meetingCalendarRange.gridStart.getTime(),
     rangeEnd: meetingCalendarRange.gridEnd.getTime(),
@@ -717,36 +700,46 @@ export default function DashboardPage() {
   ) as unknown as HardwareActivityRecord[] | undefined;
   const migrateLegacy = useMutation(api.hardwareInventory.migrateLegacy);
   const createSupportEvent = useMutation(api.dashboardCalendar.createSupportEvent);
-  const reserveAsset = useMutation(
-    (api.hardwareInventory as Record<string, unknown>)["reserveAsset"] as never,
+  const reserveAssets = useMutation(
+    (api.hardwareInventory as Record<string, unknown>)["reserveAssets"] as never,
   ) as unknown as (args: {
-    inventoryId: never;
+    inventoryIds: never[];
     borrowerName: string;
     department: string;
     requestedDate: string;
     expectedPickupDate?: string;
-    slipNote?: string;
+    purpose?: string;
   }) => Promise<unknown>;
   const claimReservation = useMutation(
     (api.hardwareInventory as Record<string, unknown>)["claimReservation"] as never,
-  ) as unknown as (args: { inventoryId: never }) => Promise<unknown>;
+  ) as unknown as (args: { inventoryId: never; releaseCondition: string }) => Promise<unknown>;
   const cancelReservation = useMutation(
     (api.hardwareInventory as Record<string, unknown>)["cancelReservation"] as never,
   ) as unknown as (args: { inventoryId: never }) => Promise<unknown>;
+  const returnBorrowedAsset = useMutation(
+    (api.hardwareInventory as Record<string, unknown>)["returnBorrowedAsset"] as never,
+  ) as unknown as (args: { inventoryId: never; returnCondition: string }) => Promise<unknown>;
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("workstation");
   const [activityExpanded, setActivityExpanded] = useState(false);
-  const [reservationTargetId, setReservationTargetId] = useState<string>("");
+  const [reservationPickerId, setReservationPickerId] = useState("");
+  const [reservationTargetIds, setReservationTargetIds] = useState<string[]>([]);
   const [reservationBorrower, setReservationBorrower] = useState("");
   const [reservationDepartment, setReservationDepartment] = useState("");
-  const [reservationRequestedDate, setReservationRequestedDate] = useState("");
+  const [reservationRequestedDate, setReservationRequestedDate] = useState(() => getDefaultReservationRequestedDate());
   const [reservationPickupDate, setReservationPickupDate] = useState("");
-  const [reservationSlipNote, setReservationSlipNote] = useState("");
+  const [reservationPurpose, setReservationPurpose] = useState("");
   const [reservationError, setReservationError] = useState("");
   const [reservationBusyId, setReservationBusyId] = useState("");
+  const [reservationFormBusy, setReservationFormBusy] = useState(false);
+  const [claimConditionInventoryId, setClaimConditionInventoryId] = useState("");
+  const [claimConditionValue, setClaimConditionValue] = useState<string>(DEFAULT_BORROW_CONDITION);
+  const [claimConditionError, setClaimConditionError] = useState("");
+  const [returnConditionInventoryId, setReturnConditionInventoryId] = useState("");
+  const [returnConditionValue, setReturnConditionValue] = useState<string>(DEFAULT_BORROW_CONDITION);
+  const [returnConditionError, setReturnConditionError] = useState("");
   const migrationRan = useRef(false);
   const workspaceSectionRef = useRef<HTMLElement | null>(null);
-  const reminderWindowRef = useRef<HTMLDivElement | null>(null);
   const calendarFeed = useMemo(() => {
     if (monitoringCalendarFeed === undefined || supportCalendarFeed === undefined) return undefined;
     return [
@@ -791,52 +784,36 @@ export default function DashboardPage() {
     void migrateLegacy();
   }, [allRows, migrateLegacy]);
 
-  useEffect(() => {
-    if (!isReminderWindowOpen) return;
-
-    function handlePointerDown(event: MouseEvent) {
-      if (reminderWindowRef.current?.contains(event.target as Node)) return;
-      setIsReminderWindowOpen(false);
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [isReminderWindowOpen]);
-
-  useEffect(() => {
-    if (!reservationTargetId || activeTab !== "available") return;
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        resetReservationForm();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [activeTab, reservationTargetId]);
-
   function resetReservationForm() {
-    setReservationTargetId("");
+    setReservationPickerId("");
+    setReservationTargetIds([]);
     setReservationBorrower("");
     setReservationDepartment("");
-    setReservationRequestedDate("");
+    setReservationRequestedDate(getDefaultReservationRequestedDate());
     setReservationPickupDate("");
-    setReservationSlipNote("");
+    setReservationPurpose("");
     setReservationError("");
     setReservationBusyId("");
+    setReservationFormBusy(false);
+  }
+
+  function addReservationTarget(inventoryId: string) {
+    if (!inventoryId) return;
+    setReservationTargetIds((current) =>
+      current.includes(inventoryId) ? current : [...current, inventoryId],
+    );
+    setReservationPickerId("");
+    setReservationError("");
+  }
+
+  function removeReservationTarget(inventoryId: string) {
+    setReservationTargetIds((current) => current.filter((id) => id !== inventoryId));
+    setReservationError("");
   }
 
   async function handleReserveSubmit() {
-    if (!reservationTargetId) {
-      setReservationError("Select an asset to reserve.");
+    if (!reservationTargetIds.length) {
+      setReservationError("Select at least one asset to reserve.");
       return;
     }
     if (!reservationBorrower.trim()) {
@@ -853,31 +830,48 @@ export default function DashboardPage() {
     }
 
     try {
-      setReservationBusyId(reservationTargetId);
+      setReservationFormBusy(true);
       setReservationError("");
-      await reserveAsset({
-        inventoryId: reservationTargetId as never,
+      await reserveAssets({
+        inventoryIds: reservationTargetIds as never[],
         borrowerName: reservationBorrower,
         department: reservationDepartment,
         requestedDate: reservationRequestedDate,
         expectedPickupDate: reservationPickupDate || undefined,
-        slipNote: reservationSlipNote || undefined,
+        purpose: reservationPurpose || undefined,
       });
       setActiveTab("reserved");
       resetReservationForm();
     } catch (error) {
       setReservationError(error instanceof Error ? error.message : "Reservation failed.");
-      setReservationBusyId("");
+      setReservationFormBusy(false);
     }
   }
 
-  async function handleClaimReservation(inventoryId: string) {
+  function openClaimConditionDialog(inventoryId: string) {
+    setClaimConditionInventoryId(inventoryId);
+    setClaimConditionValue(DEFAULT_BORROW_CONDITION);
+    setClaimConditionError("");
+  }
+
+  function closeClaimConditionDialog() {
+    setClaimConditionInventoryId("");
+    setClaimConditionValue(DEFAULT_BORROW_CONDITION);
+    setClaimConditionError("");
+  }
+
+  async function handleClaimReservation() {
+    if (!claimConditionInventoryId) return;
     try {
-      setReservationBusyId(inventoryId);
-      setReservationError("");
-      await claimReservation({ inventoryId: inventoryId as never });
+      setReservationBusyId(claimConditionInventoryId);
+      setClaimConditionError("");
+      await claimReservation({
+        inventoryId: claimConditionInventoryId as never,
+        releaseCondition: claimConditionValue,
+      });
+      closeClaimConditionDialog();
     } catch (error) {
-      setReservationError(error instanceof Error ? error.message : "Claim failed.");
+      setClaimConditionError(error instanceof Error ? error.message : "Claim failed.");
     } finally {
       setReservationBusyId("");
     }
@@ -888,11 +882,38 @@ export default function DashboardPage() {
       setReservationBusyId(inventoryId);
       setReservationError("");
       await cancelReservation({ inventoryId: inventoryId as never });
-      if (reservationTargetId === inventoryId) {
-        resetReservationForm();
-      }
+      setReservationTargetIds((current) => current.filter((id) => id !== inventoryId));
     } catch (error) {
       setReservationError(error instanceof Error ? error.message : "Cancel failed.");
+    } finally {
+      setReservationBusyId("");
+    }
+  }
+
+  function openReturnConditionDialog(inventoryId: string) {
+    setReturnConditionInventoryId(inventoryId);
+    setReturnConditionValue(DEFAULT_BORROW_CONDITION);
+    setReturnConditionError("");
+  }
+
+  function closeReturnConditionDialog() {
+    setReturnConditionInventoryId("");
+    setReturnConditionValue(DEFAULT_BORROW_CONDITION);
+    setReturnConditionError("");
+  }
+
+  async function handleReturnBorrowedAsset() {
+    if (!returnConditionInventoryId) return;
+    try {
+      setReservationBusyId(returnConditionInventoryId);
+      setReturnConditionError("");
+      await returnBorrowedAsset({
+        inventoryId: returnConditionInventoryId as never,
+        returnCondition: returnConditionValue,
+      });
+      closeReturnConditionDialog();
+    } catch (error) {
+      setReturnConditionError(error instanceof Error ? error.message : "Return failed.");
     } finally {
       setReservationBusyId("");
     }
@@ -1025,23 +1046,14 @@ export default function DashboardPage() {
       ),
     [allRows, availableStatuses],
   );
-  const reservableMainStorageGeneralRows = useMemo(
-    () => reservableMainStorageRows.filter((row) => !isDroneKitRecord(row)),
-    [reservableMainStorageRows],
-  );
-  const reservableMainStorageDroneRows = useMemo(
-    () => reservableMainStorageRows.filter((row) => isDroneKitRecord(row)),
-    [reservableMainStorageRows],
-  );
-  const selectedReservationRow = useMemo(
+  const selectedReservationRows = useMemo(
     () =>
-      (
-        reservableMainStorageRows.find((row) => String(row._id) === reservationTargetId) ??
-        allRows?.find((row) => String(row._id) === reservationTargetId)
-      ),
-    [allRows, reservationTargetId, reservableMainStorageRows],
+      reservationTargetIds
+        .map((inventoryId) => allRows?.find((row) => String(row._id) === inventoryId))
+        .filter((row): row is NonNullable<typeof allRows>[number] => Boolean(row)),
+    [allRows, reservationTargetIds],
   );
-  const selectedReservationIsDrone = isDroneKitRecord(selectedReservationRow ?? {});
+  const selectedReservationHasDrone = selectedReservationRows.some((row) => isDroneKitRecord(row));
   const adjustedAvailableCount = useMemo(
     () =>
       (allRows ?? []).filter(
@@ -1050,7 +1062,6 @@ export default function DashboardPage() {
       ).length,
     [allRows],
   );
-  const reservedCount = reservedMainStorageRows.length;
   const searchedReservableEquipmentRows = useMemo(
     () =>
       searched.filter(
@@ -1093,6 +1104,22 @@ export default function DashboardPage() {
       ),
     [searched],
   );
+  const availableMainStorageLaptopRows = useMemo(
+    () =>
+      (allRows ?? [])
+        .filter(
+          (row) =>
+            row.locationPersonAssigned === "MAIN STORAGE" &&
+            row.assetType === "Laptop" &&
+            row.status === "Available",
+        )
+        .sort((left, right) => left.assetTag.localeCompare(right.assetTag)),
+    [allRows],
+  );
+  const availableMainStorageLaptopPreview = useMemo(
+    () => availableMainStorageLaptopRows.slice(0, 5),
+    [availableMainStorageLaptopRows],
+  );
   const visibleActivityFeed = useMemo(
     () => (activityExpanded ? activityFeed ?? [] : (activityFeed ?? []).slice(0, 3)),
     [activityFeed, activityExpanded],
@@ -1107,10 +1134,20 @@ export default function DashboardPage() {
     available: "Reserve IT equipment and drone kits from one workspace without switching sections.",
     reserved: "Manage queued equipment and drone reservations waiting for pickup, claim, or cancellation.",
   };
+  const borrowingCardReadyCount = reservableMainStorageRows.length;
+  const borrowingCardSaveBusy = reservationFormBusy;
+  const claimConditionTargetRow = useMemo(
+    () => allRows?.find((row) => String(row._id) === claimConditionInventoryId),
+    [allRows, claimConditionInventoryId],
+  );
+  const returnConditionTargetRow = useMemo(
+    () => allRows?.find((row) => String(row._id) === returnConditionInventoryId),
+    [allRows, returnConditionInventoryId],
+  );
 
   const renderTable = (
     rows: typeof tabRows,
-    actionMode: "none" | "reserve" | "reserved" = "none",
+    actionMode: "none" | "reserve" | "reserved" | "borrowed" = "none",
   ) => (
     <div className="saas-table-wrap">
       <table className="saas-table">
@@ -1129,6 +1166,8 @@ export default function DashboardPage() {
               const reserved = isReservedRecord(reservationRow);
               const reservationBorrower = getReservationBorrower(reservationRow);
               const reservationDepartment = getReservationDepartment(reservationRow);
+              const borrowReleaseCondition = reservationRow.borrowReleaseCondition as string | undefined;
+              const borrowReturnCondition = reservationRow.borrowReturnCondition as string | undefined;
               const reservationAssignee = [reservationBorrower, reservationDepartment]
                 .filter(Boolean)
                 .join(" | ");
@@ -1145,6 +1184,16 @@ export default function DashboardPage() {
                           Reserved for {reservationAssignee || "Pending borrower"}
                         </div>
                       ) : null}
+                      {row.status === "Borrowed" && borrowReleaseCondition ? (
+                        <div style={{ fontSize: 12, color: "#b45309", fontWeight: 600 }}>
+                          Release condition: {borrowReleaseCondition}
+                        </div>
+                      ) : null}
+                      {row.status !== "Borrowed" && borrowReturnCondition ? (
+                        <div style={{ fontSize: 12, color: "#166534", fontWeight: 600 }}>
+                          Last returned condition: {borrowReturnCondition}
+                        </div>
+                      ) : null}
                     </div>
                   </td>
                   <td>{row.locationPersonAssigned ?? "-"}</td>
@@ -1155,15 +1204,14 @@ export default function DashboardPage() {
                       <div className="dashboard-showcase-table-actions">
                         <button
                           className={`btn-secondary reservation-available-btn${
-                            reservationTargetId === String(row._id) ? " is-selected" : ""
+                            reservationTargetIds.includes(String(row._id)) ? " is-selected" : ""
                           }`}
                           type="button"
                           onClick={() => {
-                            setReservationTargetId(String(row._id));
-                            setReservationError("");
+                            addReservationTarget(String(row._id));
                           }}
                         >
-                          Reserve
+                          {reservationTargetIds.includes(String(row._id)) ? "Added" : "Add"}
                         </button>
                       </div>
                     </td>
@@ -1175,7 +1223,7 @@ export default function DashboardPage() {
                           className="btn-primary"
                           type="button"
                           disabled={reservationBusyId === row._id}
-                          onClick={() => void handleClaimReservation(String(row._id))}
+                          onClick={() => openClaimConditionDialog(String(row._id))}
                         >
                           Claim
                         </button>
@@ -1186,6 +1234,20 @@ export default function DashboardPage() {
                           onClick={() => void handleCancelReservation(String(row._id))}
                         >
                           Cancel
+                        </button>
+                      </div>
+                    </td>
+                  ) : null}
+                  {actionMode === "borrowed" ? (
+                    <td>
+                      <div className="dashboard-showcase-table-actions">
+                        <button
+                          className="btn-secondary"
+                          type="button"
+                          disabled={reservationBusyId === row._id}
+                          onClick={() => openReturnConditionDialog(String(row._id))}
+                        >
+                          Return
                         </button>
                       </div>
                     </td>
@@ -1207,7 +1269,7 @@ export default function DashboardPage() {
   const renderGroupedTables = (
     groups: Map<string, typeof tabRows>,
     emptyState: React.ReactNode = renderTable([]),
-    actionMode: "none" | "reserve" | "reserved" = "none",
+    actionMode: "none" | "reserve" | "reserved" | "borrowed" = "none",
   ) => (
     <div className="dashboard-group-list" style={{ display: "grid", gap: 16 }}>
       {[...groups.entries()].map(([group, rows]) => (
@@ -1219,125 +1281,6 @@ export default function DashboardPage() {
       {!groups.size ? emptyState : null}
     </div>
   );
-
-  const renderReservationForm = () => {
-    if (!reservationTargetId || !selectedReservationRow || activeTab !== "available") return null;
-
-    return (
-      <div className="reservation-form-overlay" role="presentation">
-        <div className="reservation-form-backdrop" onClick={resetReservationForm} />
-        <div className="reservation-form-shell">
-          <section
-            className="reservation-form-wrap"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="reservation-form-title"
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                gap: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div id="reservation-form-title" className="reservation-form-title">
-                  Reserve {selectedReservationRow.assetTag}
-                </div>
-                <div className="reservation-form-note">
-                  When claimed, the asset status will change to Borrowed.
-                  {selectedReservationIsDrone ? " A flight report is required upon return." : ""}
-                </div>
-                <div style={{ marginTop: 8, fontSize: 13, color: "var(--muted-strong)" }}>
-                  {selectedReservationRow.assetNameDescription ?? "-"}
-                </div>
-              </div>
-              <button className="btn-secondary" type="button" onClick={resetReservationForm}>
-                Close
-              </button>
-            </div>
-            <div className="reservation-form-grid">
-              <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Borrower Name</div>
-                <input
-                  className="input-base reservation-input"
-                  value={reservationBorrower}
-                  onChange={(e) => setReservationBorrower(e.target.value)}
-                  placeholder="Enter borrower name"
-                  aria-label="Borrower name"
-                />
-              </div>
-              <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Department</div>
-                <select
-                  className="input-base reservation-input"
-                  value={reservationDepartment}
-                  onChange={(e) => setReservationDepartment(e.target.value)}
-                  aria-label="Reservation department"
-                >
-                  <option value="">Select department</option>
-                  {HARDWARE_DEPARTMENTS.map((department) => (
-                    <option key={department} value={department}>
-                      {department}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="reservation-form-grid">
-              <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Requested Date</div>
-                <input
-                  className="input-base reservation-input"
-                  type="date"
-                  value={reservationRequestedDate}
-                  onChange={(e) => setReservationRequestedDate(e.target.value)}
-                  aria-label="Requested date"
-                />
-              </div>
-              <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                  Expected Pickup Date
-                </div>
-                <input
-                  className="input-base reservation-input"
-                  type="date"
-                  value={reservationPickupDate}
-                  onChange={(e) => setReservationPickupDate(e.target.value)}
-                  aria-label="Expected pickup date"
-                />
-              </div>
-            </div>
-            <div className="reservation-form-field">
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Borrower Slip Note</div>
-              <textarea
-                className="input-base reservation-input reservation-textarea"
-                value={reservationSlipNote}
-                onChange={(e) => setReservationSlipNote(e.target.value)}
-                placeholder="Enter borrower slip reference or note"
-              />
-            </div>
-            {reservationError ? <div className="reservation-error">{reservationError}</div> : null}
-            <div className="reservation-form-actions">
-              <button className="btn-secondary" type="button" onClick={resetReservationForm}>
-                Cancel
-              </button>
-              <button
-                className="btn-primary"
-                type="button"
-                onClick={() => void handleReserveSubmit()}
-                disabled={reservationBusyId === reservationTargetId}
-              >
-                {reservationBusyId === reservationTargetId ? "Saving..." : "Save Reservation"}
-              </button>
-            </div>
-          </section>
-        </div>
-      </div>
-    );
-  };
 
   const calendarDays = useMemo(() => {
     const days: Date[] = [];
@@ -1370,21 +1313,6 @@ export default function DashboardPage() {
     () => eventsByDay.get(selectedMeetingDay) ?? [],
     [eventsByDay, selectedMeetingDay],
   );
-  const reminderWindowMeta = useMemo(() => buildReminderWindowMeta(reminderWindow, new Date()), [reminderWindow]);
-  const reminderEvents = useMemo(() => {
-    const seen = new Set<string>();
-    const entries: DashboardCalendarEvent[] = [];
-
-    for (const dayKey of reminderWindowMeta.dateKeys) {
-      for (const event of eventsByDay.get(dayKey) ?? []) {
-        if (seen.has(event._id)) continue;
-        seen.add(event._id);
-        entries.push(event);
-      }
-    }
-
-    return entries.sort((left, right) => left.eventStartAt - right.eventStartAt);
-  }, [eventsByDay, reminderWindowMeta]);
   const selectedDayRelatedAssets = useMemo(
     () => selectedDayEvents.reduce((total, item) => total + item.relatedAssetsCount, 0),
     [selectedDayEvents],
@@ -1438,123 +1366,6 @@ export default function DashboardPage() {
       setSupportEventSaving(false);
     }
   }
-
-  const reminderQueue = useMemo<DashboardReminder[]>(() => {
-    const activeInternetOutages = monitoringOverview?.activeInternetOutages ?? 0;
-    const pendingApprovals = monitoringOverview?.pendingApprovals ?? 0;
-    const openTickets = monitoringOverview?.openTickets ?? 0;
-    const borrowedAssets = counts.byStatus.Borrowed;
-    const repairAssets = counts.byStatus["For Repair"];
-    const queuedReservations = reservedCount;
-    const reminders: DashboardReminder[] = [];
-
-    if (activeInternetOutages > 0) {
-      reminders.push({
-        badge: "INTERNET",
-        title:
-          activeInternetOutages === 1
-            ? "1 active internet outage needs an update."
-            : `${activeInternetOutages} active internet outages need updates.`,
-        copy: "Update the outage status, restored time, and cause/action taken so uptime reporting stays accurate.",
-        summary:
-          activeInternetOutages === 1
-            ? "1 outage still unresolved"
-            : `${activeInternetOutages} outages still unresolved`,
-        tone: "#dc2626",
-        action: { kind: "link", label: "Review outages", href: "/monitoring" },
-      });
-    }
-
-    if (pendingApprovals > 0) {
-      reminders.push({
-        badge: "APPROVAL",
-        title:
-          pendingApprovals === 1
-            ? "1 pending approval needs review."
-            : `${pendingApprovals} pending approvals need review.`,
-        copy: "Service requests are waiting for IT Team Leader or OSMD Manager action in Monitoring.",
-        summary:
-          pendingApprovals === 1
-            ? "1 approval is waiting"
-            : `${pendingApprovals} approvals are waiting`,
-        tone: "#f59e0b",
-        action: { kind: "link", label: "Review approvals", href: "/monitoring" },
-      });
-    }
-
-    if (repairAssets > 0) {
-      reminders.push({
-        badge: "ASSET",
-        title:
-          repairAssets === 1
-            ? "1 asset marked for repair needs follow-up."
-            : `${repairAssets} assets marked for repair need follow-up.`,
-        copy: "Check repair progress and update each asset once the unit is returned, replaced, or retired.",
-        summary: repairAssets === 1 ? "1 repair item is open" : `${repairAssets} repair items are open`,
-        tone: "#ef4444",
-        action: { kind: "link", label: "Review assets", href: "/assets" },
-      });
-    }
-
-    if (borrowedAssets > 0) {
-      reminders.push({
-        badge: "BORROWED",
-        title:
-          borrowedAssets === 1
-            ? "1 borrowed asset is still out."
-            : `${borrowedAssets} borrowed assets are still out.`,
-        copy: "Verify borrower details are still current and mark anything already returned back into inventory.",
-        summary:
-          borrowedAssets === 1
-            ? "1 borrowed asset needs checking"
-            : `${borrowedAssets} borrowed assets need checking`,
-        tone: "#f97316",
-        action: { kind: "tab", label: "Show borrowed assets", tab: "borrowed" },
-      });
-    }
-
-    if (queuedReservations > 0) {
-      reminders.push({
-        badge: "QUEUE",
-        title:
-          queuedReservations === 1
-            ? "1 reservation is waiting in main storage."
-            : `${queuedReservations} reservations are waiting in main storage.`,
-        copy: "Claim or cancel queued reservations so storage availability stays accurate for the next request.",
-        summary:
-          queuedReservations === 1
-            ? "1 reservation is queued"
-            : `${queuedReservations} reservations are queued`,
-        tone: "#2563eb",
-        action: { kind: "tab", label: "Show reservation queue", tab: "reserved" },
-      });
-    }
-
-    if (openTickets > 0) {
-      reminders.push({
-        badge: "TICKET",
-        title: openTickets === 1 ? "1 open ticket still needs follow-up." : `${openTickets} open tickets still need follow-up.`,
-        copy: "Review unresolved incidents and service requests so the queue stays current for the IT team.",
-        summary: openTickets === 1 ? "1 ticket remains open" : `${openTickets} tickets remain open`,
-        tone: "#2563eb",
-        action: { kind: "link", label: "Open ticket queue", href: "/monitoring" },
-      });
-    }
-
-    return reminders;
-  }, [counts.byStatus, monitoringOverview, reservedCount]);
-  const primaryReminder =
-    reminderQueue[0] ??
-    ({
-      badge: "ALL CLEAR",
-      title: "No urgent reminders right now.",
-      copy: "Ticket monitoring and asset follow-ups look clear. You can still review the workspace below anytime.",
-      summary: "Everything is currently up to date",
-      tone: "#16a34a",
-      action: { kind: "tab", label: "Open workspace", tab: "available" },
-    } satisfies DashboardReminder);
-  const primaryReminderAction = primaryReminder.action;
-  const secondaryReminders = reminderQueue.slice(1, 3);
 
   return (
     <div className="dashboard-page">
@@ -1695,116 +1506,190 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="dashboard-side-stack">
-          <div className="dashboard-reminder-card">
-            <span className="dashboard-reminder-badge">{primaryReminder.badge}</span>
-            <div className="dashboard-reminder-title">{primaryReminder.title}</div>
-            <div className="dashboard-reminder-copy">{primaryReminder.copy}</div>
-            {secondaryReminders.length ? (
-              <div
-                style={{
-                  display: "grid",
-                  gap: 8,
-                  paddingTop: 8,
-                  borderTop: "1px dashed var(--border)",
-                }}
-              >
-                {secondaryReminders.map((item) => (
-                  <div
-                    key={`${item.badge}-${item.summary}`}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      fontSize: "var(--type-label)",
-                      color: "var(--muted)",
+          <div className="dashboard-reminder-card dashboard-borrowing-card">
+            <div className="dashboard-borrowing-head">
+              <span className="dashboard-reminder-badge">BORROWING FORM</span>
+            </div>
+            <div className="dashboard-borrowing-fields">
+              <div className="reservation-form-field dashboard-borrowing-field-span">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Assets from Main Storage</div>
+                <div className="dashboard-borrowing-picker-row">
+                  <select
+                    className="input-base reservation-input"
+                    value={reservationPickerId}
+                    onChange={(event) => {
+                      setReservationPickerId(event.target.value);
+                      setReservationError("");
                     }}
+                    aria-label="Assets from main storage"
                   >
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 999,
-                        background: item.tone,
-                        flexShrink: 0,
-                      }}
-                    />
-                    <span>{item.summary}</span>
-                  </div>
-                ))}
+                    <option value="">Select asset to add</option>
+                    {reservableMainStorageRows
+                      .filter((row) => !reservationTargetIds.includes(String(row._id)))
+                      .map((row) => (
+                        <option key={String(row._id)} value={String(row._id)}>
+                          {formatReservationAssetLabel(row)}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => addReservationTarget(reservationPickerId)}
+                    disabled={!reservationPickerId}
+                  >
+                    Add Asset
+                  </button>
+                </div>
               </div>
-            ) : null}
-            {primaryReminderAction.kind === "link" ? (
-              <Link className="dashboard-reminder-btn" href={primaryReminderAction.href}>
-                {primaryReminderAction.label}
-              </Link>
-            ) : (
-              <button
-                type="button"
-                className="dashboard-reminder-btn"
-                onClick={() => focusWorkspaceTab(primaryReminderAction.tab)}
-              >
-                {primaryReminderAction.label}
-              </button>
-            )}
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Borrower Name</div>
+                <input
+                  className="input-base reservation-input"
+                  value={reservationBorrower}
+                  onChange={(event) => setReservationBorrower(event.target.value)}
+                  placeholder="Enter borrower name"
+                  aria-label="Borrower name"
+                />
+              </div>
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Department</div>
+                <select
+                  className="input-base reservation-input"
+                  value={reservationDepartment}
+                  onChange={(event) => setReservationDepartment(event.target.value)}
+                  aria-label="Reservation department"
+                >
+                  <option value="">Select department</option>
+                  {HARDWARE_DEPARTMENTS.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Requested Date</div>
+                <input
+                  className="input-base reservation-input"
+                  type="date"
+                  value={reservationRequestedDate}
+                  onChange={(event) => setReservationRequestedDate(event.target.value)}
+                  aria-label="Requested date"
+                />
+              </div>
+              <div className="reservation-form-field">
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Expected Pickup Date</div>
+                <input
+                  className="input-base reservation-input"
+                  type="date"
+                  value={reservationPickupDate}
+                  onChange={(event) => setReservationPickupDate(event.target.value)}
+                  aria-label="Expected pickup date"
+                />
+              </div>
+            </div>
+            <div className="reservation-form-field">
+              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Purpose</div>
+              <input
+                className="input-base reservation-input"
+                value={reservationPurpose}
+                onChange={(event) => setReservationPurpose(event.target.value)}
+                placeholder="Enter borrowing purpose"
+                aria-label="Purpose"
+              />
+            </div>
+            <div className="dashboard-borrowing-selected">
+              <span className="dashboard-borrowing-selected-label">Selected Assets</span>
+              {selectedReservationRows.length ? (
+                <div
+                  className={`dashboard-borrowing-selected-list${
+                    selectedReservationRows.length > 1 ? " is-scrollable" : ""
+                  }`}
+                >
+                  {selectedReservationRows.map((row) => (
+                    <div key={String(row._id)} className="dashboard-borrowing-selected-item">
+                      <div className="dashboard-borrowing-selected-item-copy">
+                        <strong className="dashboard-borrowing-selected-item-title">{formatReservationAssetLabel(row)}</strong>
+                        <div className="dashboard-borrowing-selected-copy">
+                          {formatReservationAssetSummary(row)}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => removeReservationTarget(String(row._id))}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <strong>No assets selected yet</strong>
+                  {!borrowingCardReadyCount ? (
+                    <div className="dashboard-borrowing-selected-copy">
+                      No main storage assets are currently ready for borrowing.
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+            {reservationError ? <div className="reservation-error">{reservationError}</div> : null}
+            <div className="dashboard-borrowing-actions">
+              <div className="reservation-form-actions dashboard-borrowing-form-actions">
+                <button className="btn-secondary" type="button" onClick={resetReservationForm}>
+                  Clear
+                </button>
+                <button
+                  className="dashboard-reminder-btn"
+                  type="button"
+                  onClick={() => void handleReserveSubmit()}
+                  disabled={borrowingCardSaveBusy || !reservationTargetIds.length}
+                >
+                  {borrowingCardSaveBusy ? "Saving..." : "Log Borrower"}
+                </button>
+              </div>
+            </div>
           </div>
           <div className="panel dashboard-panel dashboard-today-panel" style={{ padding: 16 }}>
             <div className="dashboard-today-head">
-              <div className="dashboard-today-filter" ref={reminderWindowRef}>
-                <button
-                  type="button"
-                  className="dashboard-reminder-badge dashboard-today-filter-trigger"
-                  aria-haspopup="menu"
-                  aria-expanded={isReminderWindowOpen}
-                  onClick={() => setIsReminderWindowOpen((open) => !open)}
-                >
-                  <span>{reminderWindowMeta.badge}</span>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+              <div className="dashboard-today-topline">
+                <span className="dashboard-reminder-badge">MAIN STORAGE</span>
+                <button type="button" className="btn-secondary" onClick={() => focusWorkspaceTab("available")}>
+                  Open Available Assets
                 </button>
-                {isReminderWindowOpen ? (
-                  <div className="dashboard-today-filter-menu" role="menu" aria-label="Reminder range">
-                    {[
-                      { key: "today", label: "Today" },
-                      { key: "tomorrow", label: "Tomorrow" },
-                      { key: "nextWeek", label: "Next Week" },
-                    ].map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={reminderWindow === option.key}
-                        className={`dashboard-today-filter-option${reminderWindow === option.key ? " is-active" : ""}`}
-                        onClick={() => {
-                          setReminderWindow(option.key as DashboardReminderWindow);
-                          setIsReminderWindowOpen(false);
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
               </div>
-              <h3 className="type-section-title" style={{ margin: 0 }}>{reminderWindowMeta.title}</h3>
-              <p className="dashboard-today-copy">
-                {reminderWindowMeta.copy}
-              </p>
+              <h3 className="type-section-title" style={{ margin: 0 }}>Available Laptops</h3>
             </div>
             <div className="dashboard-today-list">
-              {calendarFeed === undefined ? (
-                <div className="dashboard-calendar-empty">Loading reminders...</div>
+              {allRows === undefined ? (
+                <div className="dashboard-calendar-empty">Loading laptop availability...</div>
               ) : null}
-              {reminderEvents.map((event) => (
-                <DashboardCalendarAgendaCard key={event._id} event={event} compactTimeLabel />
+              {availableMainStorageLaptopPreview.map((row) => (
+                <div key={String(row._id)} className="dashboard-storage-asset-card">
+                  <div className="dashboard-storage-asset-main">
+                    <strong className="dashboard-storage-asset-title">{row.assetTag}</strong>
+                    <span className="dashboard-storage-asset-copy">
+                      {row.assetNameDescription ?? row.assetType ?? "Laptop"}
+                    </span>
+                    <span className="dashboard-storage-asset-copy">{formatReservationAssetSummary(row)}</span>
+                  </div>
+                  <span className="dashboard-storage-asset-status">{row.status}</span>
+                </div>
               ))}
-              {calendarFeed !== undefined && !reminderEvents.length ? (
+              {allRows !== undefined && !availableMainStorageLaptopRows.length ? (
                 <div className="dashboard-calendar-empty">
-                  {reminderWindowMeta.empty}
+                  No laptops are currently available in main storage.
                 </div>
               ) : null}
             </div>
+            {allRows !== undefined && availableMainStorageLaptopRows.length > availableMainStorageLaptopPreview.length ? (
+              <div className="dashboard-storage-asset-footnote">
+                Showing {availableMainStorageLaptopPreview.length} of {availableMainStorageLaptopRows.length} available laptops.
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -2013,6 +1898,196 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
+      {claimConditionInventoryId ? (
+        <div className="dashboard-calendar-modal" role="dialog" aria-modal="true" aria-label="Confirm release condition">
+          <button
+            type="button"
+            className="dashboard-calendar-modal-backdrop"
+            aria-label="Close release condition dialog"
+            onClick={closeClaimConditionDialog}
+          />
+          <div className="dashboard-calendar-modal-shell dashboard-support-form-shell">
+            <div className="dashboard-calendar-modal-card dashboard-support-form-card">
+              <div className="dashboard-calendar-modal-head">
+                <div className="dashboard-calendar-agenda-header">
+                  <div>
+                    <div className="dashboard-calendar-agenda-eyebrow">Borrower Check-Out</div>
+                    <h4 className="dashboard-calendar-agenda-title">Confirm Release Condition</h4>
+                    <p className="dashboard-calendar-agenda-copy" style={{ margin: 0 }}>
+                      Record the equipment condition before handing it over to the borrower.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="dashboard-calendar-modal-close"
+                  aria-label="Close release condition dialog"
+                  onClick={closeClaimConditionDialog}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M4 4L12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    <path d="M12 4L4 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gap: 14 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 4,
+                    padding: 12,
+                    borderRadius: 14,
+                    border: "1px solid var(--border-subtle)",
+                    background: "var(--surface-subtle)",
+                  }}
+                >
+                  <strong>{claimConditionTargetRow?.assetTag ?? "Selected asset"}</strong>
+                  <span style={{ fontSize: 13, color: "var(--muted)" }}>
+                    {claimConditionTargetRow?.assetNameDescription ?? claimConditionTargetRow?.assetType ?? "Asset"}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--muted-strong)" }}>
+                    Borrower: {((claimConditionTargetRow as Record<string, unknown> | undefined)?.reservationBorrower as string | undefined) ?? "-"}
+                  </span>
+                </div>
+
+                <div className="reservation-form-field">
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Release Condition</div>
+                  <select
+                    className="input-base reservation-input"
+                    value={claimConditionValue}
+                    onChange={(event) => setClaimConditionValue(event.target.value)}
+                    aria-label="Release condition"
+                  >
+                    {HARDWARE_BORROW_CONDITION_OPTIONS.map((condition) => (
+                      <option key={condition} value={condition}>
+                        {condition}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {claimConditionError ? <div className="reservation-error">{claimConditionError}</div> : null}
+
+              <div className="reservation-form-actions">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeClaimConditionDialog}
+                  disabled={reservationBusyId === claimConditionInventoryId}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={() => void handleClaimReservation()}
+                  disabled={reservationBusyId === claimConditionInventoryId}
+                >
+                  {reservationBusyId === claimConditionInventoryId ? "Saving..." : "Confirm Claim"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {returnConditionInventoryId ? (
+        <div className="dashboard-calendar-modal" role="dialog" aria-modal="true" aria-label="Confirm returned condition">
+          <button
+            type="button"
+            className="dashboard-calendar-modal-backdrop"
+            aria-label="Close returned condition dialog"
+            onClick={closeReturnConditionDialog}
+          />
+          <div className="dashboard-calendar-modal-shell dashboard-support-form-shell">
+            <div className="dashboard-calendar-modal-card dashboard-support-form-card">
+              <div className="dashboard-calendar-modal-head">
+                <div className="dashboard-calendar-agenda-header">
+                  <div>
+                    <div className="dashboard-calendar-agenda-eyebrow">Borrower Check-In</div>
+                    <h4 className="dashboard-calendar-agenda-title">Confirm Returned Condition</h4>
+                    <p className="dashboard-calendar-agenda-copy" style={{ margin: 0 }}>
+                      Record the equipment condition after it comes back from the borrower.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="dashboard-calendar-modal-close"
+                  aria-label="Close returned condition dialog"
+                  onClick={closeReturnConditionDialog}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M4 4L12 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    <path d="M12 4L4 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gap: 14 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 4,
+                    padding: 12,
+                    borderRadius: 14,
+                    border: "1px solid var(--border-subtle)",
+                    background: "var(--surface-subtle)",
+                  }}
+                >
+                  <strong>{returnConditionTargetRow?.assetTag ?? "Selected asset"}</strong>
+                  <span style={{ fontSize: 13, color: "var(--muted)" }}>
+                    {returnConditionTargetRow?.assetNameDescription ?? returnConditionTargetRow?.assetType ?? "Asset"}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--muted-strong)" }}>
+                    Release condition: {((returnConditionTargetRow as Record<string, unknown> | undefined)?.borrowReleaseCondition as string | undefined) ?? "-"}
+                  </span>
+                </div>
+
+                <div className="reservation-form-field">
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Returned Condition</div>
+                  <select
+                    className="input-base reservation-input"
+                    value={returnConditionValue}
+                    onChange={(event) => setReturnConditionValue(event.target.value)}
+                    aria-label="Returned condition"
+                  >
+                    {HARDWARE_BORROW_CONDITION_OPTIONS.map((condition) => (
+                      <option key={condition} value={condition}>
+                        {condition}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {returnConditionError ? <div className="reservation-error">{returnConditionError}</div> : null}
+
+              <div className="reservation-form-actions">
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={closeReturnConditionDialog}
+                  disabled={reservationBusyId === returnConditionInventoryId}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn-primary"
+                  type="button"
+                  onClick={() => void handleReturnBorrowedAsset()}
+                  disabled={reservationBusyId === returnConditionInventoryId}
+                >
+                  {reservationBusyId === returnConditionInventoryId ? "Returning..." : "Confirm Return"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="dashboard-row dashboard-row-secondary">
         <div className="panel dashboard-panel dashboard-activity-panel" style={{ padding: 16 }}>
           <div
@@ -2155,7 +2230,7 @@ export default function DashboardPage() {
             );
           })}
         </div>
-        {reservationError && !reservationTargetId ? (
+        {reservationError && !reservationTargetIds.length ? (
           <div className="reservation-error reservation-error-inline">{reservationError}</div>
         ) : null}
 
@@ -2284,10 +2359,11 @@ export default function DashboardPage() {
               </section>
             ))}
           </div>
+        ) : activeTab === "borrowed" ? (
+          renderGroupedTables(groupedRows, renderTable([], "borrowed"), "borrowed")
         ) : (
           renderGroupedTables(groupedRows)
         )}
-        {reservationTargetId ? renderReservationForm() : null}
       </section>
     </div>
   );

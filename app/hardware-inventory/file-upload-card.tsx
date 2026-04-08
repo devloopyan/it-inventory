@@ -96,7 +96,7 @@ export default function FileUploadCard({
           </div>
           <div className="file-card-body">
             <div className="file-card-name">{resolvedName}</div>
-            <div className="file-card-meta">{resolvedMeta}</div>
+            {resolvedMeta ? <div className="file-card-meta">{resolvedMeta}</div> : null}
           </div>
         </button>
         {hasAttachment && onRemove ? (

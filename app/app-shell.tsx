@@ -161,12 +161,14 @@ export default function AppShell({ children }: AppShellProps) {
   const pathnameSegments = pathname?.split("/").filter(Boolean) ?? [];
   const accountMenuOpen = Boolean(pathname && accountMenuPath === pathname);
   const breadcrumbs = [
-    { href: "/", label: "Home", isCurrent: pathnameSegments.length === 0 },
-    ...pathnameSegments.map((segment, index) => ({
-      href: `/${pathnameSegments.slice(0, index + 1).join("/")}`,
-      label: formatBreadcrumbLabel(segment, index, pathnameSegments),
-      isCurrent: index === pathnameSegments.length - 1,
-    })),
+    { href: "/dashboard", label: "Dashboard", isCurrent: pathname === "/dashboard" || pathnameSegments.length === 0 },
+    ...pathnameSegments
+      .map((segment, index) => ({
+        href: `/${pathnameSegments.slice(0, index + 1).join("/")}`,
+        label: formatBreadcrumbLabel(segment, index, pathnameSegments),
+        isCurrent: index === pathnameSegments.length - 1,
+      }))
+      .filter((crumb) => crumb.href !== "/dashboard"),
   ];
 
   useEffect(() => {
