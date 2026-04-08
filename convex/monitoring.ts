@@ -758,6 +758,94 @@ export const getOverview = query({
   },
 });
 
+export const getDataSecurityOverview = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const monthStart = officeDateToTimestamp(getOfficeDateParts(now).year, getOfficeDateParts(now).month, 1, 0, 0);
+    const [tickets, approvalHistory] = await Promise.all([
+      ctx.db.query("monitoringTickets").collect().then((rows) => rows.map(normalizeMeetingRequestTicketForRead)),
+      ctx.db.query("monitoringApprovalHistory").collect(),
+    ]);
+
+    const approvalHistoryByTicketId = new Map<string, number>();
+    for (const entry of approvalHistory) {
+      const ticketId = String(entry.ticketId);
+      approvalHistoryByTicketId.set(ticketId, (approvalHistoryByTicketId.get(ticketId) ?? 0) + 1);
+    }
+
+    const sensitiveTickets = tickets.filter((ticket) => ticket.requiresSensitiveAccess);
+    const monthSensitiveTickets = sensitiveTickets.filter(
+      (ticket) => ticket.requestReceivedAt >= monthStart && ticket.requestReceivedAt <= now,
+    );
+
+    const pendingSensitiveApprovals = monthSensitiveTickets.filter(
+      (ticket) =>
+        ticket.approvalStage === "Pending IT Team Leader" || ticket.approvalStage === "Pending OSMD Manager",
+    );
+
+    const ticketsWithAuditTrail = monthSensitiveTickets.filter(
+      (ticket) => (approvalHistoryByTicketId.get(String(ticket._id)) ?? 0) > 0,
+    ).length;
+
+    const approvedSensitiveTickets = monthSensitiveTickets.filter((ticket) => {
+      if (ticket.approvalStage !== "Approved") return false;
+      return Boolean(ticket.osmdManagerApprovalDate ?? ticket.teamLeaderApprovalDate);
+    });
+
+    const totalApprovalTurnaroundMinutes = approvedSensitiveTickets.reduce((total, ticket) => {
+      const approvedAt = ticket.osmdManagerApprovalDate ?? ticket.teamLeaderApprovalDate;
+      if (!approvedAt || approvedAt < ticket.requestReceivedAt) return total;
+      return total + (approvedAt - ticket.requestReceivedAt) / (60 * 1000);
+    }, 0);
+
+    const completedSensitiveThisMonth = sensitiveTickets.filter((ticket) => {
+      const completedAt = ticket.closedAt ?? ticket.fulfilledAt ?? ticket.resolvedAt;
+      return Boolean(completedAt && completedAt >= monthStart && completedAt <= now);
+    });
+
+    const unapprovedCompletionRisk = completedSensitiveThisMonth.filter(
+      (ticket) => ticket.approvalStage !== "Approved",
+    ).length;
+
+    const attentionItems = [...monthSensitiveTickets]
+      .filter(
+        (ticket) =>
+          ticket.approvalStage === "Pending IT Team Leader" ||
+          ticket.approvalStage === "Pending OSMD Manager" ||
+          ticket.approvalStage === "For Revision",
+      )
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, 6)
+      .map((ticket) => ({
+        _id: ticket._id,
+        ticketNumber: ticket.ticketNumber,
+        title: ticket.title,
+        requesterName: ticket.requesterName,
+        category: ticket.category,
+        approvalStage: ticket.approvalStage,
+        updatedAt: ticket.updatedAt,
+      }));
+
+    return {
+      periodStart: monthStart,
+      periodEnd: now,
+      sensitiveAccessRequests: monthSensitiveTickets.length,
+      pendingSensitiveApprovals: pendingSensitiveApprovals.length,
+      averageApprovalTurnaroundMinutes:
+        approvedSensitiveTickets.length > 0
+          ? totalApprovalTurnaroundMinutes / approvedSensitiveTickets.length
+          : undefined,
+      auditTrailCoveragePercent:
+        monthSensitiveTickets.length > 0 ? (ticketsWithAuditTrail / monthSensitiveTickets.length) * 100 : 0,
+      unapprovedCompletionRisk,
+      approvedSensitiveRequests: approvedSensitiveTickets.length,
+      ticketsWithAuditTrail,
+      attentionItems,
+    };
+  },
+});
+
 export const getMeetingCalendar = query({
   args: {
     rangeStart: v.number(),

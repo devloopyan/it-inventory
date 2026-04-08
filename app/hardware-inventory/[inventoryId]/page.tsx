@@ -8,7 +8,12 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { api } from "@/convex/_generated/api";
 import FileUploadCard from "../file-upload-card";
 import ChecklistSelect, { type ChecklistSelectOption } from "../checklist-select";
-import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
+import { HARDWARE_BORROW_CONDITION_OPTIONS } from "@/lib/hardwareBorrowConditions";
+import {
+  HARDWARE_STATUSES,
+  normalizeHardwareStatusValue,
+  type HardwareStatus,
+} from "@/lib/hardwareStatuses";
 import { HARDWARE_ASSET_TYPE_EXAMPLES, HARDWARE_ASSET_TYPES } from "@/lib/hardwareAssetTypes";
 import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
 
@@ -327,6 +332,7 @@ export default function HardwareInventoryDetailPage() {
     inventoryIds: never[];
     reportTargetInventoryId: never;
     droneFlightReportStorageId: never;
+    returnCondition: string;
   }) => Promise<unknown>;
   const imageUrl = useQuery(
     api.hardwareInventory.getImageUrl,
@@ -360,6 +366,7 @@ export default function HardwareInventoryDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isReturningDrone, setIsReturningDrone] = useState(false);
   const [returnDroneError, setReturnDroneError] = useState("");
+  const [returnDroneCondition, setReturnDroneCondition] = useState<string>(HARDWARE_BORROW_CONDITION_OPTIONS[0]);
   const [actionToast, setActionToast] = useState<{ id: number; message: string } | null>(null);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [clearImage, setClearImage] = useState(false);
@@ -429,7 +436,7 @@ export default function HardwareInventoryDetailPage() {
   }
 
   const asset = row;
-  const assetStatus = (asset.status as HardwareStatus) ?? "Available";
+  const assetStatus = normalizeHardwareStatusValue(asset.status) ?? "Available";
   const isDesktopAsset = asset.assetType === "Desktop/PC";
   const isDroneAsset = asset.assetType === "Drone";
   const workstationComponents =
@@ -447,7 +454,7 @@ export default function HardwareInventoryDetailPage() {
       locationPersonAssigned: asset.location ?? asset.locationPersonAssigned ?? "",
       personAssigned: asset.assignedTo ?? "",
       department: asset.department ?? "",
-      status: asset.status as HardwareStatus,
+      status: assetStatus,
       turnoverTo: asset.assignedTo ?? asset.turnoverTo ?? "Unassigned",
       borrower: asset.borrower ?? "",
       assignedDate:
@@ -738,9 +745,11 @@ export default function HardwareInventoryDetailPage() {
         inventoryIds: [inventoryId as never],
         reportTargetInventoryId: inventoryId as never,
         droneFlightReportStorageId: uploadData.storageId as never,
+        returnCondition: returnDroneCondition,
       });
 
       setSelectedReturnDroneFlightReportFile(null);
+      setReturnDroneCondition(HARDWARE_BORROW_CONDITION_OPTIONS[0]);
       setReturnDroneError("");
       if (returnDroneFlightReportInputRef.current) {
         returnDroneFlightReportInputRef.current.value = "";
@@ -1102,6 +1111,23 @@ export default function HardwareInventoryDetailPage() {
                   ) : null}
                   {assetStatus === "Borrowed" ? (
                     <div className="drone-return-form">
+                      <div className="reservation-form-field">
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                          Returned Condition
+                        </div>
+                        <select
+                          className="input-base reservation-input"
+                          value={returnDroneCondition}
+                          onChange={(event) => setReturnDroneCondition(event.target.value)}
+                          aria-label="Returned condition"
+                        >
+                          {HARDWARE_BORROW_CONDITION_OPTIONS.map((condition) => (
+                            <option key={condition} value={condition}>
+                              {condition}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <FileUploadCard
                         label="Flight Report for Return"
                         inputRef={returnDroneFlightReportInputRef}
@@ -1170,6 +1196,14 @@ export default function HardwareInventoryDetailPage() {
             <DetailItem label="Department" value={asset.department} />
             <DetailItem label="Turnover To" value={asset.assignedTo ?? asset.turnoverTo} />
             <DetailItem label="Borrower" value={asset.borrower} />
+            <DetailItem
+              label="Release Condition"
+              value={((asset as Record<string, unknown>).borrowReleaseCondition as string | undefined) ?? "-"}
+            />
+            <DetailItem
+              label="Returned Condition"
+              value={((asset as Record<string, unknown>).borrowReturnCondition as string | undefined) ?? "-"}
+            />
             <DetailItem
               label={isDesktopAsset ? "Turnover Date" : "Assigned Date"}
               value={

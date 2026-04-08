@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject, type UIEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import FileUploadCard from "./file-upload-card";
 import ChecklistSelect, { type ChecklistSelectOption } from "./checklist-select";
-import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
+import {
+  HARDWARE_STATUSES,
+  normalizeHardwareStatusValue,
+  type HardwareStatus,
+} from "@/lib/hardwareStatuses";
 import {
   HARDWARE_ASSET_TYPE_EXAMPLES,
   HARDWARE_ASSET_TYPES,
@@ -22,11 +26,13 @@ const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRI
 const workstationTypes = ["Laptop", "Desktop/PC"] as const;
 const specsTierOptions = ["LOW", "MID", "HIGH-END"] as const;
 const componentTypeOptions = ["Monitor", "Headset", "Keyboard", "Mouse", "Speaker", "AVR", "Other"] as const;
+const INITIAL_VISIBLE_TABLE_ROWS = 20;
 const assetTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = assetTypeOptions.map((assetType) => ({
   value: assetType,
   label: assetType,
   description: HARDWARE_ASSET_TYPE_EXAMPLES[assetType],
 }));
+const assetTypeFilterSelectOptions: ReadonlyArray<ChecklistSelectOption> = assetTypeSelectOptions;
 const departmentSelectOptions: ReadonlyArray<ChecklistSelectOption> = departmentOptions.map((department) => ({
   value: department,
   label: department,
@@ -467,14 +473,16 @@ function buildDroneKitSpecificationsSummary(args: {
 export default function HardwareInventoryPage() {
   const router = useRouter();
   const [registerMode, setRegisterMode] = useState<RegisterMode>("general");
+  const [isRegisterCollapsed, setIsRegisterCollapsed] = useState(true);
   const [workstationType, setWorkstationType] = useState<WorkstationType>("Laptop");
   const [specTier, setSpecTier] = useState<SpecsTier | "">("");
   const [desktopForm, setDesktopForm] = useState(defaultDesktopForm);
   const [droneKitForm, setDroneKitForm] = useState(defaultDroneKitForm);
   const [search, setSearch] = useState("");
+  const [assetTypeFilter, setAssetTypeFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
-  const [page, setPage] = useState(1);
+  const [visibleTableRows, setVisibleTableRows] = useState(INITIAL_VISIBLE_TABLE_ROWS);
   const [form, setForm] = useState<FormState>(defaultForm);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState<{ id: number; message: string } | null>(null);
@@ -492,15 +500,14 @@ export default function HardwareInventoryPage() {
   >({});
   const [inlineSavingId, setInlineSavingId] = useState<string>("");
 
-  const pageSize = 10;
   const result = useQuery(api.hardwareInventory.list, {
     search: search || undefined,
     status: statusFilter || undefined,
     location: locationFilter || undefined,
     sortKey,
     sortDir,
-    page,
-    pageSize,
+    page: 1,
+    pageSize: 5000,
   });
   const assetTagSeedResult = useQuery(api.hardwareInventory.list, {
     sortKey: "assetTag",
@@ -515,6 +522,8 @@ export default function HardwareInventoryPage() {
 
   const migrationRan = useRef(false);
   const formSectionRef = useRef<HTMLElement | null>(null);
+  const masterPanelRef = useRef<HTMLElement | null>(null);
+  const masterTableWrapRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const batteryImageInputRef = useRef<HTMLInputElement | null>(null);
   const propellerImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -524,6 +533,31 @@ export default function HardwareInventoryPage() {
   const turnoverFormInputRef = useRef<HTMLInputElement | null>(null);
   const isDesktopWorkstation = registerMode === "workstation" && workstationType === "Desktop/PC";
   const isDroneKitMode = registerMode === "droneKit";
+
+  function scrollToSection(sectionRef: RefObject<HTMLElement | null>) {
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function openRegisterForm() {
+    setIsRegisterCollapsed(false);
+    scrollToSection(formSectionRef);
+  }
+
+  function minimizeRegisterForm() {
+    setIsRegisterCollapsed(true);
+    scrollToSection(masterPanelRef);
+  }
+
+  function toggleRegisterAccordion() {
+    if (isRegisterCollapsed) {
+      openRegisterForm();
+      return;
+    }
+    setIsRegisterCollapsed(true);
+  }
 
   useEffect(() => {
     if (migrationRan.current) return;
@@ -572,7 +606,10 @@ export default function HardwareInventoryPage() {
     setFormSuccess({ id: Date.now(), message: pendingMessage });
   }, []);
 
-  const tableRows = result?.items ?? [];
+  const allTableRows = (result?.items ?? []).filter((row) =>
+    assetTypeFilter.length ? assetTypeFilter.includes(String(row.assetType ?? "")) : true,
+  );
+  const tableRows = allTableRows.slice(0, visibleTableRows);
   const knownAssetTags = collectReservedAssetTags(assetTagSeedResult?.items ?? []);
   const assetTypeForCreate =
     registerMode === "workstation" ? workstationType : isDroneKitMode ? "Drone" : form.assetType;
@@ -603,7 +640,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base input-readonly-tone"
-              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              placeholder=""
               value={droneKitGeneratedTags?.droneUnitAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone unit asset tag"
@@ -616,7 +653,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Drone unit serial number"
+              placeholder=""
               value={droneKitForm.droneUnitSerialNumber}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -632,7 +669,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Drone unit specifications"
+              placeholder=""
               value={droneKitForm.droneUnitSpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -658,11 +695,7 @@ export default function HardwareInventoryPage() {
           file={selectedImageFile}
           hasAttachment={Boolean(selectedImageFile)}
           displayName={selectedImageFile ? selectedImageFile.name : "Drone unit image"}
-          helperText={
-            selectedImageFile
-              ? "Ready to save with this unit image."
-              : "Attach the drone unit image."
-          }
+          helperText=""
           badge="IMG"
           ariaLabel="Drone unit asset image upload"
           title="Upload drone unit asset image"
@@ -690,7 +723,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base input-readonly-tone"
-              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              placeholder=""
               value={droneKitGeneratedTags?.batteryAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone battery asset tag"
@@ -703,7 +736,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Battery serial number"
+              placeholder=""
               value={droneKitForm.batterySerialNumber}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -719,7 +752,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Battery specifications"
+              placeholder=""
               value={droneKitForm.batterySpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -751,11 +784,7 @@ export default function HardwareInventoryPage() {
               ? droneKitComponentImageFiles.battery.name
               : "Battery image"
           }
-          helperText={
-            droneKitComponentImageFiles.battery
-              ? "Ready to save with this battery image."
-              : "Attach the battery image."
-          }
+          helperText=""
           badge="IMG"
           ariaLabel="Battery asset image upload"
           title="Upload battery asset image"
@@ -783,7 +812,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base input-readonly-tone"
-              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              placeholder=""
               value={droneKitGeneratedTags?.propellerAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone propeller asset tag"
@@ -796,7 +825,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Propeller specifications"
+              placeholder=""
               value={droneKitForm.propellerSpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -828,11 +857,7 @@ export default function HardwareInventoryPage() {
               ? droneKitComponentImageFiles.propeller.name
               : "Propeller image"
           }
-          helperText={
-            droneKitComponentImageFiles.propeller
-              ? "Ready to save with this propeller image."
-              : "Attach the propeller image."
-          }
+          helperText=""
           badge="IMG"
           ariaLabel="Propeller asset image upload"
           title="Upload propeller asset image"
@@ -860,7 +885,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base input-readonly-tone"
-              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              placeholder=""
               value={droneKitGeneratedTags?.chargerAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone charger asset tag"
@@ -873,7 +898,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Charger serial number"
+              placeholder=""
               value={droneKitForm.chargerSerialNumber}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -889,7 +914,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Charger specifications"
+              placeholder=""
               value={droneKitForm.chargerSpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -921,11 +946,7 @@ export default function HardwareInventoryPage() {
               ? droneKitComponentImageFiles.charger.name
               : "Charger image"
           }
-          helperText={
-            droneKitComponentImageFiles.charger
-              ? "Ready to save with this charger image."
-              : "Attach the charger image."
-          }
+          helperText=""
           badge="IMG"
           ariaLabel="Charger asset image upload"
           title="Upload charger asset image"
@@ -953,7 +974,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base input-readonly-tone"
-              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              placeholder=""
               value={droneKitGeneratedTags?.controllerAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone controller asset tag"
@@ -966,7 +987,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Controller serial number"
+              placeholder=""
               value={droneKitForm.controllerSerialNumber}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -982,7 +1003,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Controller specifications"
+              placeholder=""
               value={droneKitForm.controllerSpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -1014,11 +1035,7 @@ export default function HardwareInventoryPage() {
               ? droneKitComponentImageFiles.controller.name
               : "Controller image"
           }
-          helperText={
-            droneKitComponentImageFiles.controller
-              ? "Ready to save with this controller image."
-              : "Attach the controller image."
-          }
+          helperText=""
           badge="IMG"
           ariaLabel="Controller asset image upload"
           title="Upload controller asset image"
@@ -1049,7 +1066,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base input-readonly-tone"
-              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              placeholder=""
               value={desktopGeneratedTags?.monitorAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated monitor asset tag"
@@ -1062,7 +1079,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Monitor serial number"
+              placeholder=""
               value={desktopForm.monitorSerialNumber}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1078,7 +1095,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Monitor specifications"
+              placeholder=""
               value={desktopForm.monitorSpecs}
               onChange={(e) =>
                 setDesktopForm((prev) => ({ ...prev, monitorSpecs: e.target.value }))
@@ -1091,7 +1108,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Wires / cables"
+              placeholder=""
               value={desktopForm.monitorConsumables}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1115,7 +1132,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base input-readonly-tone"
-              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              placeholder=""
               value={desktopGeneratedTags?.mouseAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated mouse asset tag"
@@ -1128,7 +1145,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Mouse serial number"
+              placeholder=""
               value={desktopForm.mouseSerialNumber ?? ""}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1144,7 +1161,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Mouse specifications"
+              placeholder=""
               value={desktopForm.mouseSpecs}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1168,7 +1185,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base input-readonly-tone"
-              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              placeholder=""
               value={desktopGeneratedTags?.keyboardAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated keyboard asset tag"
@@ -1181,7 +1198,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Keyboard serial number"
+              placeholder=""
               value={desktopForm.keyboardSerialNumber ?? ""}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1197,7 +1214,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Keyboard specifications"
+              placeholder=""
               value={desktopForm.keyboardSpecs}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1221,7 +1238,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base input-readonly-tone"
-              placeholder={assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"}
+              placeholder=""
               value={desktopGeneratedTags?.systemUnitAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated system unit asset tag"
@@ -1234,7 +1251,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="System unit specifications"
+              placeholder=""
               value={desktopForm.systemUnitSpecs}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1259,13 +1276,26 @@ export default function HardwareInventoryPage() {
     { label: "Borrower", key: "borrower" },
   ];
 
-  const totalPages = result?.totalPages ?? 1;
-  const hasPreviousPage = page > 1;
-  const hasNextPage = page < totalPages;
+  const hasMoreTableRows = tableRows.length < allTableRows.length;
+
+  useEffect(() => {
+    setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+    if (masterTableWrapRef.current) {
+      masterTableWrapRef.current.scrollTop = 0;
+    }
+  }, [search, assetTypeFilter, statusFilter, locationFilter, sortKey, sortDir]);
+
+  function handleMasterTableScroll(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (remaining > 120 || !hasMoreTableRows) return;
+    setVisibleTableRows((current) =>
+      Math.min(current + INITIAL_VISIBLE_TABLE_ROWS, allTableRows.length),
+    );
+  }
 
   function resolveRowStatus(row: (typeof tableRows)[number]) {
-    const current = row.status as HardwareStatus;
-    return statuses.includes(current) ? current : "Available";
+    return normalizeHardwareStatusValue(row.status) ?? "Available";
   }
 
   function resolveRowBorrower(row: (typeof tableRows)[number]) {
@@ -1734,7 +1764,8 @@ export default function HardwareInventoryPage() {
       if (turnoverFormInputRef.current) {
         turnoverFormInputRef.current.value = "";
       }
-      setPage(1);
+      setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+      setIsRegisterCollapsed(true);
       setFormSuccess({
         id: Date.now(),
         message: `Asset ${
@@ -1743,8 +1774,9 @@ export default function HardwareInventoryPage() {
             : isDroneKitMode
               ? droneKitGeneratedTags?.droneUnitAssetTag ?? assetTagToSave
               : assetTagToSave
-        } created successfully.`,
+          } created successfully.`,
       });
+      scrollToSection(masterPanelRef);
     } catch (error) {
       setFormSuccess(null);
       setFormError(error instanceof Error ? error.message : "Unable to save asset.");
@@ -1764,90 +1796,120 @@ export default function HardwareInventoryPage() {
           {formSuccess.message}
         </div>
       ) : null}
-      <section className="panel" style={{ padding: 18 }} ref={formSectionRef}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 8,
-            flexWrap: "wrap",
-            marginBottom: 10,
-          }}
-        >
-          <h2 className="type-title-lg">Hardware Asset Register</h2>
-          <div className="type-label">
-            Fields marked <span style={{ color: "#dc2626" }}>*</span> are required
+      <section
+        className={`panel hardware-register-panel operations-reference-shell${isRegisterCollapsed ? " is-collapsed" : ""}`}
+        ref={formSectionRef}
+      >
+        <div className="operations-reference-topbar hardware-register-topbar">
+          <div className="operations-reference-title-group hardware-register-header" role="heading" aria-level={1}>
+            <button
+              type="button"
+              className="hardware-register-accordion"
+              onClick={toggleRegisterAccordion}
+              aria-expanded={!isRegisterCollapsed}
+              aria-controls="hardware-register-form-panel"
+            >
+              <span className="hardware-register-header-row">
+                <span className="operations-reference-title-row">
+                  <span className="operations-reference-title hardware-register-title">Hardware Asset Register</span>
+                </span>
+                <span className="hardware-register-copy">
+                  Minimize this form while reviewing the master table, then expand it whenever you need to register a
+                  new asset.
+              </span>
+              </span>
+              <span className="hardware-register-accordion-side">
+                <span className="hardware-register-accordion-state">
+                  {isRegisterCollapsed ? "Expand form" : "Collapse form"}
+                </span>
+                <span
+                  className={`hardware-register-accordion-icon${isRegisterCollapsed ? "" : " is-open"}`}
+                  aria-hidden="true"
+                >
+                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                    <path
+                      d="M5 7.5L10 12.5L15 7.5"
+                      stroke="currentColor"
+                      strokeWidth="1.75"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              </span>
+            </button>
           </div>
         </div>
-        <div className="register-tab-stack" style={{ marginBottom: 10 }}>
-          <div className="register-pill-tabs">
-            <button
-              type="button"
-              className={`register-pill-tab ${registerMode === "general" ? "active" : ""}`}
-              onClick={() => {
-                setRegisterMode("general");
-                setSpecTier("");
-              }}
-            >
-              <span className="register-pill-tab-inner">
-                <span>General Asset</span>
-              </span>
-            </button>
-            <button
-              type="button"
-              className={`register-pill-tab ${registerMode === "workstation" ? "active" : ""}`}
-              onClick={() => {
-                setRegisterMode("workstation");
-                setForm((prev) => ({ ...prev, assetType: workstationType }));
-              }}
-            >
-              <span className="register-pill-tab-inner">
-                <span>Add Workstation</span>
-              </span>
-            </button>
-            <button
-              type="button"
-              className={`register-pill-tab ${registerMode === "droneKit" ? "active" : ""}`}
-              onClick={() => {
-                setRegisterMode("droneKit");
-                setSpecTier("");
-                setForm((prev) => ({ ...prev, assetType: "Drone" }));
-              }}
-            >
-              <span className="register-pill-tab-inner">
-                <span>Add Drone Kit</span>
-              </span>
-            </button>
-          </div>
-          {registerMode === "workstation" ? (
-            <div className="register-subtabs">
-              {workstationTypes.map((type) => (
+        {!isRegisterCollapsed ? (
+          <div id="hardware-register-form-panel" className="hardware-register-body">
+            <div className="register-tab-stack hardware-register-tab-stack">
+              <div className="operations-reference-tabs register-pill-tabs">
                 <button
-                  key={type}
                   type="button"
-                  className={`register-subtab ${workstationType === type ? "active" : ""}`}
+                  className={`operations-reference-tab register-pill-tab ${registerMode === "general" ? "is-active active" : ""}`}
                   onClick={() => {
-                    setWorkstationType(type);
-                    setForm((prev) => ({ ...prev, assetType: type }));
+                    setRegisterMode("general");
+                    setSpecTier("");
                   }}
                 >
-                  {type}
+                  <span className="register-pill-tab-inner">
+                    <span>General Asset</span>
+                  </span>
                 </button>
-              ))}
+                <button
+                  type="button"
+                  className={`operations-reference-tab register-pill-tab ${registerMode === "workstation" ? "is-active active" : ""}`}
+                  onClick={() => {
+                    setRegisterMode("workstation");
+                    setForm((prev) => ({ ...prev, assetType: workstationType }));
+                  }}
+                >
+                  <span className="register-pill-tab-inner">
+                    <span>Add Workstation</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className={`operations-reference-tab register-pill-tab ${registerMode === "droneKit" ? "is-active active" : ""}`}
+                  onClick={() => {
+                    setRegisterMode("droneKit");
+                    setSpecTier("");
+                    setForm((prev) => ({ ...prev, assetType: "Drone" }));
+                  }}
+                >
+                  <span className="register-pill-tab-inner">
+                    <span>Add Drone Kit</span>
+                  </span>
+                </button>
+              </div>
+              {registerMode === "workstation" ? (
+                <div className="operations-reference-view-switch register-subtabs">
+                  {workstationTypes.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`operations-reference-view-btn register-subtab ${workstationType === type ? "is-active active" : ""}`}
+                      onClick={() => {
+                        setWorkstationType(type);
+                        setForm((prev) => ({ ...prev, assetType: type }));
+                      }}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
-        <div
-          className={`register-fields-grid${isDroneKitMode ? " drone-kit-overview-grid" : registerMode === "workstation" ? " workstation-overview-grid" : ""}`}
-          style={{
-            display: "grid",
-            gridTemplateColumns: isDroneKitMode || registerMode === "workstation"
-              ? "repeat(auto-fit, minmax(180px, 1fr))"
-              : "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: isDroneKitMode || registerMode === "workstation" ? 8 : 10,
-          }}
-        >
+            <div
+              className={`register-fields-grid${isDroneKitMode ? " drone-kit-overview-grid" : registerMode === "workstation" ? " workstation-overview-grid" : ""}`}
+              style={{
+                display: "grid",
+                gridTemplateColumns: isDroneKitMode || registerMode === "workstation"
+                  ? "repeat(auto-fit, minmax(180px, 1fr))"
+                  : "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: isDroneKitMode || registerMode === "workstation" ? 8 : 10,
+              }}
+            >
           {!isDesktopWorkstation ? (
             <div style={{ display: "grid", gap: 4 }}>
             <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
@@ -1855,13 +1917,7 @@ export default function HardwareInventoryPage() {
             </label>
               <input
               className="input-base input-readonly-tone"
-              placeholder={
-                assetTypeForCreate
-                  ? assetTagSeedResult
-                    ? "Generating asset tag"
-                    : "Loading next asset tag"
-                  : "Select asset type first"
-              }
+              placeholder=""
               value={autoAssetTag}
               readOnly
               aria-label={isDesktopWorkstation ? "Auto-generated main asset tag" : "Auto-generated asset tag"}
@@ -1888,7 +1944,7 @@ export default function HardwareInventoryPage() {
               <ChecklistSelect
                 value={form.assetType}
                 options={assetTypeSelectOptions}
-                placeholder="Select asset type"
+                placeholder=""
                 ariaLabel="Asset type"
                 onChange={(value) => setForm((prev) => ({ ...prev, assetType: value }))}
               />
@@ -1901,7 +1957,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder="Asset Name or Description"
+                placeholder=""
                 value={form.assetNameDescription}
                 onChange={(e) =>
                   setForm((prev) => ({ ...prev, assetNameDescription: e.target.value }))
@@ -1916,7 +1972,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder="Specifications"
+                placeholder=""
                 value={form.specifications}
                 onChange={(e) => setForm((prev) => ({ ...prev, specifications: e.target.value }))}
               />
@@ -1930,7 +1986,7 @@ export default function HardwareInventoryPage() {
               <ChecklistSelect
                 value={specTier}
                 options={specsTierSelectOptions}
-                placeholder="Select specs tier"
+                placeholder=""
                 ariaLabel="Specs tier"
                 onChange={(value) => setSpecTier(value as SpecsTier | "")}
               />
@@ -1943,7 +1999,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder="Serial Number"
+                placeholder=""
                 value={form.serialNumber}
                 onChange={(e) => setForm((prev) => ({ ...prev, serialNumber: e.target.value }))}
               />
@@ -1956,7 +2012,7 @@ export default function HardwareInventoryPage() {
             <ChecklistSelect
               value={form.locationPersonAssigned}
               options={locationSelectOptions}
-              placeholder="Select location"
+              placeholder=""
               ariaLabel="Location"
               onChange={(value) => setForm((prev) => ({ ...prev, locationPersonAssigned: value }))}
             />
@@ -1968,7 +2024,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder="Turnover To"
+                placeholder=""
                 value={form.personAssigned}
                 onChange={(e) =>
                   setForm((prev) => ({
@@ -1985,7 +2041,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder="IT staff name"
+                placeholder=""
                 value={droneKitForm.receivedBy}
                 onChange={(e) =>
                   setDroneKitForm((prev) => ({
@@ -2004,7 +2060,7 @@ export default function HardwareInventoryPage() {
               <ChecklistSelect
                 value={form.department}
                 options={departmentSelectOptions}
-                placeholder="Select department"
+                placeholder=""
                 ariaLabel="Department"
                 onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
               />
@@ -2017,7 +2073,7 @@ export default function HardwareInventoryPage() {
             <ChecklistSelect
               value={form.status}
               options={assetStatusSelectOptions}
-              placeholder="Select status"
+              placeholder=""
               ariaLabel="Status"
               onChange={(value) => setForm((prev) => ({ ...prev, status: value as FormState["status"] }))}
             />
@@ -2030,7 +2086,7 @@ export default function HardwareInventoryPage() {
                 </label>
                 <input
                   className="input-base"
-                  placeholder={form.status === "Borrowed" ? "Borrower Name" : "Available when status is Borrowed"}
+                  placeholder=""
                   value={form.status === "Borrowed" ? form.borrower : ""}
                   disabled={form.status !== "Borrowed"}
                   style={
@@ -2090,7 +2146,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Warranty"
+              placeholder=""
               value={form.warranty}
               onChange={(e) => setForm((prev) => ({ ...prev, warranty: e.target.value }))}
             />
@@ -2107,7 +2163,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder="Remarks (optional)"
+              placeholder=""
               value={form.remarks}
               onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
             />
@@ -2131,7 +2187,7 @@ export default function HardwareInventoryPage() {
                 <div>
                   <div className="workstation-component-title">Extra Components</div>
                   <div className="workstation-extra-components-copy">
-                    Add separately tagged peripherals like another monitor or a headset.
+                    Add tagged peripherals.
                   </div>
                 </div>
                 <button
@@ -2163,9 +2219,7 @@ export default function HardwareInventoryPage() {
                         </label>
                         <input
                           className="input-base input-readonly-tone"
-                          placeholder={
-                            assetTagSeedResult ? "Generating asset tag" : "Loading next asset tag"
-                          }
+                          placeholder=""
                           value={desktopGeneratedTags?.extraComponents[index]?.assetTag ?? ""}
                           readOnly
                           aria-label={`Auto-generated asset tag for component ${index + 1}`}
@@ -2179,7 +2233,7 @@ export default function HardwareInventoryPage() {
                         <ChecklistSelect
                           value={component.componentType}
                           options={componentTypeSelectOptions}
-                          placeholder="Select component type"
+                          placeholder=""
                           ariaLabel={`Component type for extra component ${index + 1}`}
                           onChange={(value) =>
                             setDesktopForm((prev) => ({
@@ -2199,7 +2253,7 @@ export default function HardwareInventoryPage() {
                         </label>
                         <input
                           className="input-base"
-                          placeholder="Component specs"
+                          placeholder=""
                           value={component.specifications}
                           onChange={(e) =>
                             setDesktopForm((prev) => ({
@@ -2265,11 +2319,7 @@ export default function HardwareInventoryPage() {
               file={selectedImageFile}
               hasAttachment={Boolean(selectedImageFile)}
               displayName={selectedImageFile ? selectedImageFile.name : "Asset image"}
-              helperText={
-                selectedImageFile
-                  ? "Ready to save with this image attached."
-                  : "Attach an image before creating the asset."
-              }
+              helperText=""
               badge="IMG"
               ariaLabel="Asset image upload"
               title="Upload asset image"
@@ -2293,11 +2343,7 @@ export default function HardwareInventoryPage() {
             file={selectedReceivingFormFile}
             hasAttachment={Boolean(selectedReceivingFormFile)}
             displayName={selectedReceivingFormFile ? selectedReceivingFormFile.name : "Receiving form"}
-            helperText={
-              selectedReceivingFormFile
-                ? "Ready to save with this receiving form attached."
-                : "Optional admin receipt form."
-            }
+            helperText=""
             badge="PDF"
             ariaLabel="Receiving form upload"
             title="Upload receiving form"
@@ -2325,11 +2371,7 @@ export default function HardwareInventoryPage() {
             file={selectedTurnoverFormFile}
             hasAttachment={Boolean(selectedTurnoverFormFile)}
             displayName={selectedTurnoverFormFile ? selectedTurnoverFormFile.name : "Turnover form"}
-            helperText={
-              selectedTurnoverFormFile
-                ? "Ready to save with this signed turnover form attached."
-                : "Optional signed turnover document."
-            }
+            helperText=""
             badge="PDF"
             ariaLabel="Signed turnover form upload"
             title="Upload signed turnover form"
@@ -2344,36 +2386,50 @@ export default function HardwareInventoryPage() {
                 : undefined
             }
           />
-          <div className="form-action-field">
-            <label className="form-action-label">Action</label>
-            <button
-              className="btn-primary form-action-button"
-              onClick={handleCreate}
-              disabled={isSaving}
-            >
-              {isSaving ? "Saving..." : "Create Asset"}
-            </button>
-            <div className="form-action-helper">Create and save this asset record</div>
+            </div>
+            <div className="form-action-field" style={{ marginTop: 12 }}>
+              <button
+                className="btn-primary form-action-button"
+                onClick={handleCreate}
+                disabled={isSaving}
+              >
+                {isSaving ? "Saving..." : "Create Asset"}
+              </button>
+            </div>
+            {formError ? (
+              <p style={{ color: "#b91c1c", marginTop: 8, fontSize: "var(--type-body-sm)" }}>{formError}</p>
+            ) : null}
           </div>
-        </div>
-        {formError ? (
-          <p style={{ color: "#b91c1c", marginTop: 8, fontSize: "var(--type-body-sm)" }}>{formError}</p>
         ) : null}
       </section>
 
-      <section className="panel" style={{ marginTop: 16, padding: 14, display: "grid", gap: 12 }}>
-        <div style={{ display: "grid", gap: 4 }}>
-          <div className="type-subsection-title">Asset Master Table</div>
-          <div className="type-section-copy">
-            Review all registered assets, filter by status or location, and update borrower or status details directly
-            from the table.
+      <section
+        className="panel hardware-master-panel"
+        style={{ marginTop: 40, padding: 14, display: "grid", gap: 12 }}
+        ref={masterPanelRef}
+      >
+        <div className="hardware-section-head hardware-section-head--split">
+          <div>
+            <h2 className="operations-reference-title hardware-section-title">Asset Master Table</h2>
+            <div className="type-section-copy">
+              Search and filter assets.
+            </div>
+          </div>
+          <div className="hardware-section-actions">
+            <button
+              type="button"
+              className="btn-secondary hardware-section-button"
+              onClick={openRegisterForm}
+            >
+              Register Asset
+            </button>
           </div>
         </div>
         <div
-          className="hardware-master-toolbar"
+          className="hardware-master-toolbar hardware-master-toolbar-controls"
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 252px) repeat(2, minmax(0, 172px))",
+            gridTemplateColumns: "minmax(0, 252px) repeat(3, minmax(0, 172px))",
             justifyContent: "start",
             gap: 8,
           }}
@@ -2391,10 +2447,25 @@ export default function HardwareInventoryPage() {
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
-                setPage(1);
+                setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
               }}
             />
           </div>
+          <ChecklistSelect
+            values={assetTypeFilter}
+            options={assetTypeFilterSelectOptions}
+            placeholder="Type"
+            ariaLabel="Filter by asset type"
+            compact
+            minMenuWidth={172}
+            multiple
+            multipleSummaryLabel="Type"
+            multipleSummaryStyle="badge"
+            onValuesChange={(values) => {
+              setAssetTypeFilter(values);
+              setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+            }}
+          />
           <ChecklistSelect
             value={statusFilter}
             options={assetStatusFilterOptions}
@@ -2404,7 +2475,7 @@ export default function HardwareInventoryPage() {
             minMenuWidth={156}
             onChange={(value) => {
               setStatusFilter(value);
-              setPage(1);
+              setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
             }}
           />
           <ChecklistSelect
@@ -2416,21 +2487,25 @@ export default function HardwareInventoryPage() {
             minMenuWidth={156}
             onChange={(value) => {
               setLocationFilter(value);
-              setPage(1);
+              setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
             }}
           />
         </div>
 
-        <div className="saas-table-wrap">
-          <table className="saas-table hardware-master-table" style={{ minWidth: 1300 }}>
+        <div
+          ref={masterTableWrapRef}
+          className="saas-table-wrap hardware-master-table-wrap"
+          onScroll={handleMasterTableScroll}
+        >
+          <table className="saas-table hardware-master-table" style={{ minWidth: 1240 }}>
             <colgroup>
               <col style={{ width: 104 }} />
               <col style={{ width: 116 }} />
               <col style={{ width: 420 }} />
               <col style={{ width: 170 }} />
               <col style={{ width: 190 }} />
-              <col style={{ width: 130 }} />
-              <col style={{ width: 170 }} />
+              <col style={{ width: 112 }} />
+              <col style={{ width: 148 }} />
             </colgroup>
             <thead>
               <tr>
@@ -2489,31 +2564,35 @@ export default function HardwareInventoryPage() {
                       const editState = getInlineRowState(row);
                       const isSaving = inlineSavingId === String(row._id);
                       return (
-                        <ChecklistSelect
-                          value={editState.status}
-                          options={assetStatusSelectOptions}
-                          placeholder="Select status"
-                          ariaLabel={`Status for asset ${row.assetTag}`}
-                          disabled={isSaving}
-                          minMenuWidth={156}
-                          onChange={(value) => {
-                            const nextStatus = value as HardwareStatus;
-                            const rowId = String(row._id);
-                            const nextBorrower = nextStatus === "Borrowed" ? editState.borrower : "";
+                        <div style={{ width: 96 }}>
+                          <ChecklistSelect
+                            value={editState.status}
+                            options={assetStatusSelectOptions}
+                            placeholder="Select status"
+                            ariaLabel={`Status for asset ${row.assetTag}`}
+                            disabled={isSaving}
+                            compact
+                            minMenuWidth={140}
+                            triggerStyle={{ minHeight: 32 }}
+                            onChange={(value) => {
+                              const nextStatus = value as HardwareStatus;
+                              const rowId = String(row._id);
+                              const nextBorrower = nextStatus === "Borrowed" ? editState.borrower : "";
 
-                            setInlineEdits((prev) => ({
-                              ...prev,
-                              [rowId]: {
-                                status: nextStatus,
-                                borrower: nextBorrower,
-                              },
-                            }));
+                              setInlineEdits((prev) => ({
+                                ...prev,
+                                [rowId]: {
+                                  status: nextStatus,
+                                  borrower: nextBorrower,
+                                },
+                              }));
 
-                            if (nextStatus !== "Borrowed") {
-                              void persistInlineUpdate(row, nextStatus, nextBorrower);
-                            }
-                          }}
-                        />
+                              if (nextStatus !== "Borrowed") {
+                                void persistInlineUpdate(row, nextStatus, nextBorrower);
+                              }
+                            }}
+                          />
+                        </div>
                       );
                     })()}
                   </td>
@@ -2523,33 +2602,35 @@ export default function HardwareInventoryPage() {
                       const isBorrowed = editState.status === "Borrowed";
                       const isSaving = inlineSavingId === String(row._id);
                       return (
-                        <input
-                          className="input-base"
-                          style={{ minHeight: 36 }}
-                          value={isBorrowed ? editState.borrower : "none"}
-                          placeholder={isBorrowed ? "Borrower name" : "none"}
-                          disabled={!isBorrowed || isSaving}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => {
-                            const nextBorrower = event.target.value;
-                            const rowId = String(row._id);
-                            setInlineEdits((prev) => ({
-                              ...prev,
-                              [rowId]: {
-                                status: editState.status,
-                                borrower: nextBorrower,
-                              },
-                            }));
-                          }}
-                          onBlur={() => {
-                            void handleInlineBorrowerCommit(row);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              (event.currentTarget as HTMLInputElement).blur();
-                            }
-                          }}
-                        />
+                        <div style={{ width: 136 }}>
+                          <input
+                            className="input-base"
+                            style={{ minHeight: 32 }}
+                            value={isBorrowed ? editState.borrower : "none"}
+                            placeholder={isBorrowed ? "Borrower name" : "none"}
+                            disabled={!isBorrowed || isSaving}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(event) => {
+                              const nextBorrower = event.target.value;
+                              const rowId = String(row._id);
+                              setInlineEdits((prev) => ({
+                                ...prev,
+                                [rowId]: {
+                                  status: editState.status,
+                                  borrower: nextBorrower,
+                                },
+                              }));
+                            }}
+                            onBlur={() => {
+                              void handleInlineBorrowerCommit(row);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                (event.currentTarget as HTMLInputElement).blur();
+                              }
+                            }}
+                          />
+                        </div>
                       );
                     })()}
                   </td>
@@ -2566,28 +2647,12 @@ export default function HardwareInventoryPage() {
           </table>
         </div>
 
-        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between" }}>
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontSize: 13, color: "#4b5563" }}>
-            Showing {(result?.items?.length ?? 0)} of {result?.total ?? 0}
+            Showing {tableRows.length} of {allTableRows.length}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              className="btn-secondary"
-              disabled={!hasPreviousPage}
-              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-            >
-              Prev
-            </button>
-            <span style={{ alignSelf: "center", fontSize: 13 }}>
-              Page {page} / {totalPages}
-            </span>
-            <button
-              className="btn-primary"
-              disabled={!hasNextPage}
-              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-            >
-              Next
-            </button>
+          <div style={{ fontSize: 13, color: "#64748b" }}>
+            {hasMoreTableRows ? "Scroll to load more" : "All rows loaded"}
           </div>
         </div>
 

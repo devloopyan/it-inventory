@@ -83,7 +83,13 @@ export default defineSchema({
     reservationPickupDate: v.optional(v.string()),
     reservationReturnDueDate: v.optional(v.string()),
     reservationSlipNote: v.optional(v.string()),
+    reservationLoggedAt: v.optional(v.number()),
     reservationStatus: v.optional(v.string()),
+    borrowedAt: v.optional(v.number()),
+    borrowReleaseCondition: v.optional(v.string()),
+    borrowReleaseConditionCheckedAt: v.optional(v.number()),
+    borrowReturnCondition: v.optional(v.string()),
+    borrowReturnConditionCheckedAt: v.optional(v.number()),
     imageStorageId: v.optional(v.id("_storage")),
     receivingFormStorageId: v.optional(v.id("_storage")),
     turnoverFormStorageId: v.optional(v.id("_storage")),
@@ -253,5 +259,18 @@ export default defineSchema({
     createdBy: v.optional(v.string()),
   })
     .index("by_startAt", ["startAt"])
+    .index("by_updatedAt", ["updatedAt"]),
+  operationsTasks: defineTable({
+    title: v.string(),
+    description: v.optional(v.string()),
+    status: v.string(),
+    priority: v.string(),
+    owner: v.optional(v.string()),
+    dueLabel: v.optional(v.string()),
+    tags: v.array(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
     .index("by_updatedAt", ["updatedAt"]),
 });

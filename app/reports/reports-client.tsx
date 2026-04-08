@@ -47,6 +47,14 @@ function formatTimestamp(value: number) {
   });
 }
 
+function formatMonthLabel(value: number) {
+  return new Date(value).toLocaleString("en-US", {
+    timeZone: OFFICE_TIMEZONE,
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function getWorkflowLabel(workflowType: string) {
   switch (workflowType) {
     case "serviceRequest":
@@ -146,9 +154,26 @@ function buildRankedRows(
     }));
 }
 
+function getApprovalStageTone(stage: string) {
+  switch (stage) {
+    case "Approved":
+      return "#16a34a";
+    case "Pending IT Team Leader":
+    case "Pending OSMD Manager":
+      return "#d97706";
+    case "For Revision":
+      return "#dc2626";
+    case "Not Submitted":
+      return "#2563eb";
+    default:
+      return "#64748b";
+  }
+}
+
 export default function ReportsClient() {
   const [reportTimestamp] = useState(() => Date.now());
   const monitoringOverview = useQuery(api.monitoring.getOverview, {});
+  const dataSecurityOverview = useQuery(api.monitoring.getDataSecurityOverview, {});
   const incidentRows = useQuery(api.monitoring.list, { view: "incident", showClosed: true });
   const outageRows = useQuery(api.monitoring.list, { view: "internet", showClosed: true });
   const inventoryRows = useQuery(api.hardwareInventory.listAll, {});
@@ -156,6 +181,7 @@ export default function ReportsClient() {
 
   const ready =
     monitoringOverview !== undefined &&
+    dataSecurityOverview !== undefined &&
     incidentRows !== undefined &&
     outageRows !== undefined &&
     inventoryRows !== undefined &&
@@ -403,6 +429,36 @@ export default function ReportsClient() {
   const assetMax = assetRowsForCard.reduce((max, row) => Math.max(max, row.value), 0);
   const categoryMax = topCategories.reduce((max, row) => Math.max(max, row.value), 0);
   const departmentMax = topDepartments.reduce((max, row) => Math.max(max, row.value), 0);
+  const securityPeriodLabel = formatMonthLabel(dataSecurityOverview?.periodStart ?? reportTimestamp);
+  const securityStats = [
+    {
+      label: "Sensitive requests",
+      value: ready ? formatCount(dataSecurityOverview?.sensitiveAccessRequests ?? 0, ready) : "-",
+      helper: "Requests opened this month that require sensitive access handling.",
+    },
+    {
+      label: "Pending approvals",
+      value: ready ? formatCount(dataSecurityOverview?.pendingSensitiveApprovals ?? 0, ready) : "-",
+      helper: "Sensitive access requests still waiting on leadership approval.",
+    },
+    {
+      label: "Approval turnaround",
+      value: ready ? formatDuration(dataSecurityOverview?.averageApprovalTurnaroundMinutes) : "-",
+      helper: "Average time from request receipt to latest approval for approved requests this month.",
+    },
+    {
+      label: "Audit trail coverage",
+      value: ready ? formatPercent(dataSecurityOverview?.auditTrailCoveragePercent, 1) : "-",
+      helper: ready
+        ? `${(dataSecurityOverview?.ticketsWithAuditTrail ?? 0).toLocaleString("en-US")} of ${(dataSecurityOverview?.sensitiveAccessRequests ?? 0).toLocaleString("en-US")} requests have approval history.`
+        : "Checking approval history coverage for sensitive requests.",
+    },
+    {
+      label: "Unapproved completion risk",
+      value: ready ? formatCount(dataSecurityOverview?.unapprovedCompletionRisk ?? 0, ready) : "-",
+      helper: "Sensitive access items completed this month without final approved status.",
+    },
+  ];
 
   return (
     <div className="dashboard-page reports-page">
@@ -545,6 +601,93 @@ export default function ReportsClient() {
               </div>
             ))}
           </div>
+        </section>
+      </div>
+
+      <div className="reports-grid">
+        <section className="saas-card reports-panel reports-panel-full">
+          <div className="reports-panel-head">
+            <span className="reports-section-kicker">Data Security</span>
+            <h2 className="reports-panel-title">Sensitive access governance for {securityPeriodLabel}</h2>
+            <p className="reports-panel-subtitle">
+              Phase 1 view using current Monitoring records where sensitive access handling is required.
+            </p>
+          </div>
+
+          <div className="reports-chip-list" aria-label="Data security filters and highlights">
+            <span className="reports-chip">This Month</span>
+            <span className="reports-chip">Sensitive access only</span>
+            <span className="reports-chip">
+              {ready
+                ? `${dataSecurityOverview?.approvedSensitiveRequests ?? 0} approved this month`
+                : "Approval completion"}
+            </span>
+            <span className="reports-chip">
+              {ready
+                ? `${dataSecurityOverview?.ticketsWithAuditTrail ?? 0} with approval history`
+                : "Approval history coverage"}
+            </span>
+          </div>
+
+          <div className="reports-stat-grid">
+            {securityStats.map((stat) => (
+              <div key={stat.label} className="reports-stat-card">
+                <div className="reports-stat-label">{stat.label}</div>
+                <div className="reports-stat-value">{stat.value}</div>
+                <div className="reports-stat-helper">{stat.helper}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="reports-panel-head">
+            <span className="reports-section-kicker">Needs Review</span>
+            <h3 className="reports-panel-title">Sensitive access queue</h3>
+            <p className="reports-panel-subtitle">
+              Current month requests that are pending approval or returned for revision.
+            </p>
+          </div>
+
+          {ready && (dataSecurityOverview?.attentionItems.length ?? 0) > 0 ? (
+            <div className="reports-list">
+              {dataSecurityOverview?.attentionItems.map((ticket) => {
+                const tone = getApprovalStageTone(ticket.approvalStage);
+                return (
+                  <Link
+                    key={ticket._id}
+                    href={`/monitoring/${ticket._id}`}
+                    className="reports-list-item"
+                  >
+                    <div className="reports-list-main">
+                      <div className="reports-list-title">{ticket.title}</div>
+                      <div className="reports-list-subtitle">
+                        {ticket.ticketNumber} | {ticket.requesterName} | {ticket.category}
+                      </div>
+                    </div>
+
+                    <div className="reports-list-side">
+                      <span
+                        className="reports-status-badge"
+                        style={{
+                          color: tone,
+                          borderColor: withAlpha(tone, "33"),
+                          background: withAlpha(tone, "14"),
+                        }}
+                      >
+                        {ticket.approvalStage}
+                      </span>
+                      <span className="reports-list-meta">{formatTimestamp(ticket.updatedAt)}</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="reports-empty">
+              {ready
+                ? "No sensitive access requests are pending approval or marked for revision this month."
+                : "Loading data security queue."}
+            </div>
+          )}
         </section>
       </div>
 

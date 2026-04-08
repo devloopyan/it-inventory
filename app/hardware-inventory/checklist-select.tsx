@@ -19,14 +19,20 @@ type MenuPosition = {
 };
 
 type ChecklistSelectProps = {
-  value: string;
+  value?: string;
+  values?: string[];
   options: ReadonlyArray<ChecklistSelectOption>;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
+  onValuesChange?: (values: string[]) => void;
   placeholder: string;
   ariaLabel: string;
   disabled?: boolean;
   minMenuWidth?: number;
   compact?: boolean;
+  multiple?: boolean;
+  multipleSummaryLabel?: string;
+  multipleSummaryStyle?: "text" | "badge";
+  triggerStyle?: CSSProperties;
 };
 
 function ChecklistChevronIcon({ open }: { open: boolean }) {
@@ -69,13 +75,19 @@ function ChecklistCheckIcon() {
 
 export default function ChecklistSelect({
   value,
+  values,
   options,
   onChange,
+  onValuesChange,
   placeholder,
   ariaLabel,
   disabled = false,
   minMenuWidth = 180,
   compact = false,
+  multiple = false,
+  multipleSummaryLabel = "Selected",
+  multipleSummaryStyle = "text",
+  triggerStyle,
 }: ChecklistSelectProps) {
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition>({ top: 0, left: 0, width: minMenuWidth });
@@ -84,9 +96,19 @@ export default function ChecklistSelect({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId();
 
-  const selectedOption = options.find((option) => option.value === value);
-  const triggerLabel = selectedOption?.label ?? placeholder;
-  const triggerStyle = selectedOption?.triggerStyle;
+  const selectedValues = multiple ? values ?? [] : value ? [value] : [];
+  const selectedOptions = options.filter((option) => selectedValues.includes(option.value));
+  const selectedOption = !multiple ? options.find((option) => option.value === value) : undefined;
+  const hasSelection = selectedOptions.length > 0;
+  const triggerLabel = multiple
+    ? selectedOptions.length === 0
+      ? placeholder
+      : multipleSummaryLabel
+    : selectedOption?.label ?? placeholder;
+  const computedTriggerStyle = {
+    ...(!multiple ? selectedOption?.triggerStyle : undefined),
+    ...triggerStyle,
+  };
 
   useEffect(() => {
     if (!open || disabled) return undefined;
@@ -149,27 +171,34 @@ export default function ChecklistSelect({
     <div
       ref={containerRef}
       className={`checklist-select${open ? " is-open" : ""}${disabled ? " is-disabled" : ""}${
-        triggerStyle ? " is-toned" : ""
+        computedTriggerStyle ? " is-toned" : ""
       }${compact ? " is-compact" : ""}`}
     >
       <button
         ref={triggerRef}
         type="button"
-        className={`checklist-select-trigger${selectedOption ? " has-selection" : ""}${triggerStyle ? " is-toned" : ""}`}
+        className={`checklist-select-trigger${hasSelection ? " has-selection" : ""}${computedTriggerStyle ? " is-toned" : ""}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={ariaLabel}
-        title={selectedOption?.description}
+        title={multiple ? selectedOptions.map((option) => option.label).join(", ") : selectedOption?.description}
         disabled={disabled}
-        style={triggerStyle}
+        style={computedTriggerStyle}
         onClick={() => {
           if (!disabled) {
             setOpen((current) => !current);
           }
         }}
       >
-        <span className="checklist-select-trigger-label">{triggerLabel}</span>
+        <span className="checklist-select-trigger-content">
+          <span className="checklist-select-trigger-label">{triggerLabel}</span>
+          {multiple && hasSelection && multipleSummaryStyle === "badge" ? (
+            <span className="checklist-select-trigger-count" aria-hidden="true">
+              {selectedOptions.length}
+            </span>
+          ) : null}
+        </span>
         <span className="checklist-select-trigger-icon" aria-hidden="true">
           <ChecklistChevronIcon open={open} />
         </span>
@@ -182,6 +211,7 @@ export default function ChecklistSelect({
               className="checklist-select-menu"
               role="listbox"
               aria-label={ariaLabel}
+              aria-multiselectable={multiple || undefined}
               style={{
                 top: menuPosition.top,
                 left: menuPosition.left,
@@ -189,7 +219,8 @@ export default function ChecklistSelect({
               }}
             >
               {options.map((option) => {
-                const isSelected = option.value === value;
+                const isSelected = selectedValues.includes(option.value);
+                const markerVariant = option.markerVariant ?? (multiple ? "checkbox" : "none");
 
                 return (
                   <button
@@ -199,20 +230,29 @@ export default function ChecklistSelect({
                     aria-selected={isSelected}
                     className={`checklist-select-option${isSelected ? " is-selected" : ""}`}
                     onClick={() => {
-                      onChange(option.value);
+                      if (multiple) {
+                        const nextValues = isSelected
+                          ? selectedValues.filter((selectedValue) => selectedValue !== option.value)
+                          : options
+                              .map((item) => item.value)
+                              .filter((itemValue) => selectedValues.includes(itemValue) || itemValue === option.value);
+                        onValuesChange?.(nextValues);
+                        return;
+                      }
+                      onChange?.(option.value);
                       setOpen(false);
                       triggerRef.current?.focus();
                     }}
                     title={option.description}
                   >
-                    {option.markerVariant === "dot" ? (
+                    {markerVariant === "dot" ? (
                       <span className="checklist-select-dot-wrap" aria-hidden="true">
                         <span
                           className="checklist-select-dot"
                           style={{ backgroundColor: option.markerColor ?? "var(--muted)" }}
                         />
                       </span>
-                    ) : option.markerVariant === "checkbox" ? (
+                    ) : markerVariant === "checkbox" ? (
                       <span className="checklist-select-check" aria-hidden="true">
                         {isSelected ? <ChecklistCheckIcon /> : null}
                       </span>
