@@ -79,9 +79,6 @@ const IT_SUPPORT_STAFF_OPTIONS = [
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
 const tabs: { key: TabKey; label: string }[] = [
-  { key: "master", label: "Master Tracker" },
-  { key: "workstation", label: "Workstation" },
-  { key: "storage", label: "Storage" },
   { key: "borrowed", label: "Borrowed" },
   { key: "reserved", label: "Reserved" },
   { key: "available", label: "Available" },
@@ -720,7 +717,7 @@ export default function DashboardPage() {
     (api.hardwareInventory as Record<string, unknown>)["returnBorrowedAsset"] as never,
   ) as unknown as (args: { inventoryId: never; returnCondition: string }) => Promise<unknown>;
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<TabKey>("workstation");
+  const [activeTab, setActiveTab] = useState<TabKey>("borrowed");
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [reservationPickerId, setReservationPickerId] = useState("");
   const [reservationTargetIds, setReservationTargetIds] = useState<string[]>([]);

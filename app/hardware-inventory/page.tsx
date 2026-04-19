@@ -52,6 +52,7 @@ const componentTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = compone
 const hardwareInventoryPendingToastKey = "hardware-inventory:pending-toast";
 
 type RegisterMode = "general" | "workstation" | "droneKit";
+type MasterTableView = "master" | "workstation" | "storage";
 type WorkstationType = (typeof workstationTypes)[number];
 type SpecsTier = (typeof specsTierOptions)[number];
 type ExtraComponent = {
@@ -241,10 +242,38 @@ const locationFilterSelectOptions: ReadonlyArray<ChecklistSelectOption> = [
 ];
 
 const DRONE_KIT_DEFAULT_DEPARTMENT = "IT OPERATIONS";
+const masterTableViews: Array<{ key: Exclude<MasterTableView, "master">; label: string }> = [
+  { key: "workstation", label: "Workstation" },
+  { key: "storage", label: "Storage" },
+];
 
 function formatValue(value?: string) {
   if (!value) return "-";
   return value;
+}
+
+function isAssetMasterWorkstationRecord(row: {
+  assetType?: string;
+  registerMode?: string;
+  workstationType?: string;
+  turnoverTo?: string;
+  turnoverFormStorageId?: string;
+}) {
+  if (row.registerMode === "workstation") return true;
+  if (row.workstationType === "Laptop" || row.workstationType === "Desktop/PC") return true;
+  if (row.assetType === "Laptop" || row.assetType === "Desktop/PC") {
+    const turnoverTo = row.turnoverTo?.trim();
+    return Boolean(
+      row.turnoverFormStorageId &&
+        turnoverTo &&
+        turnoverTo.toLowerCase() !== "unassigned",
+    );
+  }
+  return false;
+}
+
+function isMainStorageRecord(row: { location?: string; locationPersonAssigned?: string }) {
+  return (row.locationPersonAssigned ?? row.location ?? "") === "MAIN STORAGE";
 }
 
 function buildDesktopSpecificationsSummary(args: {
@@ -479,6 +508,7 @@ export default function HardwareInventoryPage() {
   const [desktopForm, setDesktopForm] = useState(defaultDesktopForm);
   const [droneKitForm, setDroneKitForm] = useState(defaultDroneKitForm);
   const [search, setSearch] = useState("");
+  const [masterTableView, setMasterTableView] = useState<MasterTableView>("master");
   const [assetTypeFilter, setAssetTypeFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
@@ -606,9 +636,18 @@ export default function HardwareInventoryPage() {
     setFormSuccess({ id: Date.now(), message: pendingMessage });
   }, []);
 
-  const allTableRows = (result?.items ?? []).filter((row) =>
-    assetTypeFilter.length ? assetTypeFilter.includes(String(row.assetType ?? "")) : true,
-  );
+  const allTableRows = (result?.items ?? []).filter((row) => {
+    if (assetTypeFilter.length && !assetTypeFilter.includes(String(row.assetType ?? ""))) {
+      return false;
+    }
+    if (masterTableView === "workstation") {
+      return isAssetMasterWorkstationRecord(row);
+    }
+    if (masterTableView === "storage") {
+      return isMainStorageRecord(row);
+    }
+    return true;
+  });
   const tableRows = allTableRows.slice(0, visibleTableRows);
   const knownAssetTags = collectReservedAssetTags(assetTagSeedResult?.items ?? []);
   const assetTypeForCreate =
@@ -1283,7 +1322,7 @@ export default function HardwareInventoryPage() {
     if (masterTableWrapRef.current) {
       masterTableWrapRef.current.scrollTop = 0;
     }
-  }, [search, assetTypeFilter, statusFilter, locationFilter, sortKey, sortDir]);
+  }, [search, assetTypeFilter, statusFilter, locationFilter, masterTableView, sortKey, sortDir]);
 
   function handleMasterTableScroll(event: UIEvent<HTMLDivElement>) {
     const element = event.currentTarget;
@@ -2408,29 +2447,19 @@ export default function HardwareInventoryPage() {
         style={{ marginTop: 40, padding: 14, display: "grid", gap: 12 }}
         ref={masterPanelRef}
       >
-        <div className="hardware-section-head hardware-section-head--split">
+        <div className="hardware-section-head">
           <div>
             <h2 className="operations-reference-title hardware-section-title">Asset Master Table</h2>
             <div className="type-section-copy">
-              Search and filter assets.
+              Search and filter all hardware assets.
             </div>
-          </div>
-          <div className="hardware-section-actions">
-            <button
-              type="button"
-              className="btn-secondary hardware-section-button"
-              onClick={openRegisterForm}
-            >
-              Register Asset
-            </button>
           </div>
         </div>
         <div
           className="hardware-master-toolbar hardware-master-toolbar-controls"
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 252px) repeat(3, minmax(0, 172px))",
-            justifyContent: "start",
+            gridTemplateColumns: "minmax(0, 252px) repeat(3, minmax(0, 172px)) minmax(180px, 1fr)",
             gap: 8,
           }}
         >
@@ -2490,6 +2519,25 @@ export default function HardwareInventoryPage() {
               setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
             }}
           />
+          <div className="asset-master-view-filters" aria-label="Asset master quick filters">
+            {masterTableViews.map((view) => {
+              const active = masterTableView === view.key;
+              return (
+                <button
+                  key={view.key}
+                  type="button"
+                  aria-pressed={active}
+                  className={`asset-master-view-filter${active ? " active" : ""}`}
+                  onClick={() => {
+                    setMasterTableView(active ? "master" : view.key);
+                    setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+                  }}
+                >
+                  {view.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div

@@ -2309,6 +2309,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                 {row.borrowingItems.map((item) => item.assetTag).slice(0, 2).join(", ")}
                                 {row.borrowingItems.length > 2 ? ` +${row.borrowingItems.length - 2} more` : ""}
                               </span>
+                            ) : row.requestedItemsText ? (
+                              <span style={{ color: "var(--muted)", fontSize: 12 }}>
+                                Requested: {row.requestedItemsText}
+                              </span>
                             ) : null}
                           </div>
                         </td>
@@ -2328,7 +2332,11 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                           ) : row.expectedReturnAt ? (
                             <div style={{ display: "grid", gap: 4 }}>
                               <span>{formatDateTime(row.expectedReturnAt)}</span>
-                              <span style={{ color: "var(--muted)", fontSize: 12 }}>Expected return</span>
+                              <span style={{ color: "var(--muted)", fontSize: 12 }}>
+                                {row.requestedBorrowDate
+                                  ? `Borrow ${formatDateTime(row.requestedBorrowDate)}`
+                                  : "Expected return"}
+                              </span>
                             </div>
                           ) : (
                             "-"
@@ -2357,15 +2365,17 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                           )}
                         </td>
                         <td>
-                          {activeTab === "meetings"
-                            ? row.meetingMode || "-"
-                            : activeTab === "borrowing"
-                              ? row.borrowingItems?.length
-                                ? `${row.borrowingItems.length} linked`
-                                : "-"
-                              : row.approvalRequired
-                                ? <Chip label={row.approvalStage} />
-                                : "-"}
+                            {activeTab === "meetings"
+                              ? row.meetingMode || "-"
+                              : activeTab === "borrowing"
+                                ? row.borrowingItems?.length
+                                  ? `${row.borrowingItems.length} linked`
+                                  : row.requestedItemsText
+                                    ? "Needs asset matching"
+                                    : "-"
+                                : row.approvalRequired
+                                  ? <Chip label={row.approvalStage} />
+                                  : "-"}
                         </td>
                         <td>{formatDateTime(row.updatedAt)}</td>
                       </tr>

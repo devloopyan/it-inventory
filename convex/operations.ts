@@ -1,5 +1,5 @@
 import { mutation, query } from "./_generated/server";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 
 const OPERATIONS_TASK_STATUSES = ["backlog", "todo", "inProgress", "done"] as const;
@@ -127,6 +127,36 @@ export const updateTaskStatus = mutation({
 
     await ctx.db.patch(task._id, {
       status: ensureTaskStatus(args.status),
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+export const updateTask = mutation({
+  args: {
+    taskId: v.id("operationsTasks"),
+    title: v.string(),
+    description: v.optional(v.string()),
+    priority: v.string(),
+    owner: v.optional(v.string()),
+    dueLabel: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      throw new Error("Task could not be found.");
+    }
+
+    await ctx.db.patch(task._id, {
+      title: normalizeRequired(args.title, "Task title"),
+      description: normalizeOptional(args.description),
+      priority: ensureTaskPriority(args.priority),
+      owner: normalizeOptional(args.owner),
+      dueLabel: normalizeOptional(args.dueLabel),
+      tags: normalizeTags(args.tags),
       updatedAt: Date.now(),
     });
 

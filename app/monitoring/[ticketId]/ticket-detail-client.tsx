@@ -182,6 +182,112 @@ function normalizeMeetingRequestStatus(status: string) {
   return normalizeMeetingRequestStatusValue(status) ?? "New";
 }
 
+function BorrowingAssetLookup(props: {
+  query: string;
+  onQueryChange: (value: string) => void;
+  options: ReadonlyArray<{
+    _id: Id<"hardwareInventory">;
+    assetTag?: string;
+    assetNameDescription?: string;
+    assetType?: string;
+    serialNumber?: string;
+    status?: string;
+  }>;
+  onAddAsset: (asset: {
+    _id: Id<"hardwareInventory">;
+    assetTag?: string;
+    assetNameDescription?: string;
+    assetType?: string;
+    serialNumber?: string;
+    status?: string;
+  }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} style={{ position: "relative" }}>
+      <input
+        className="input-base"
+        placeholder="Search exact asset to link"
+        value={props.query}
+        onFocus={() => setOpen(true)}
+        onChange={(event) => {
+          props.onQueryChange(event.target.value);
+          setOpen(true);
+        }}
+      />
+      {open ? (
+        <div
+          className="monitoring-filter-menu"
+          style={{
+            position: "absolute",
+            insetInline: 0,
+            top: "calc(100% + 8px)",
+            zIndex: 20,
+            maxHeight: 280,
+            overflowY: "auto",
+          }}
+          role="listbox"
+          aria-label="Available assets"
+        >
+          {props.options.length ? (
+            props.options.map((asset) => (
+              <button
+                key={String(asset._id)}
+                type="button"
+                className="monitoring-filter-option"
+                style={{ alignItems: "flex-start" }}
+                onClick={() => {
+                  props.onAddAsset(asset);
+                  setOpen(false);
+                }}
+              >
+                <span className="monitoring-filter-option-text" style={{ display: "grid", gap: 4, textAlign: "left" }}>
+                  <strong style={{ fontSize: 13 }}>{asset.assetTag ?? "No Tag"}</strong>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                    {asset.assetNameDescription ?? asset.assetType ?? "Asset"}
+                    {asset.serialNumber ? ` | ${asset.serialNumber}` : ""}
+                  </span>
+                </span>
+                <span style={{ marginLeft: "auto" }}>
+                  <Chip label={asset.status ?? "Unknown"} />
+                </span>
+              </button>
+            ))
+          ) : (
+            <div style={{ padding: 14, fontSize: 13, color: "var(--muted)" }}>No matching assets found.</div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function getMeetingProgress(status: string) {
   const normalized = normalizeMeetingRequestStatus(status);
   const stepIndex = MEETING_PROGRESS_STEPS.indexOf(normalized as (typeof MEETING_PROGRESS_STEPS)[number]);
@@ -575,6 +681,8 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const [causeActionTaken, setCauseActionTaken] = useState("");
   const [revisionReason, setRevisionReason] = useState("");
   const [assetId, setAssetId] = useState("");
+  const [requestedItemsText, setRequestedItemsText] = useState("");
+  const [requestedBorrowDate, setRequestedBorrowDate] = useState("");
   const [expectedReturnAt, setExpectedReturnAt] = useState("");
   const [borrowingItems, setBorrowingItems] = useState<
     Array<{
@@ -606,6 +714,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const [meetingSupportNotes, setMeetingSupportNotes] = useState("");
   const [meetingAssets, setMeetingAssets] = useState<EditableMeetingAsset[]>([]);
   const [meetingAssetSearch, setMeetingAssetSearch] = useState("");
+  const [borrowingAssetSearch, setBorrowingAssetSearch] = useState("");
   const [isMeetingEditing, setIsMeetingEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -627,6 +736,8 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     setCauseActionTaken(detail.ticket.causeActionTaken ?? "");
     setRevisionReason(detail.ticket.revisionReason ?? "");
     setAssetId(detail.ticket.assetId ? String(detail.ticket.assetId) : "");
+    setRequestedItemsText(detail.ticket.requestedItemsText ?? "");
+    setRequestedBorrowDate(toDateTimeLocalValue(detail.ticket.requestedBorrowDate));
     setExpectedReturnAt(toDateTimeLocalValue(detail.ticket.expectedReturnAt));
     setBorrowingItems(
       (detail.ticket.borrowingItems ?? []).map((item) => ({
@@ -659,9 +770,35 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
         assetLabel: item.assetLabel,
       })),
     );
+    setBorrowingAssetSearch("");
     setMeetingAssetSearch("");
     setIsMeetingEditing(false);
   }, [detail]);
+
+  const selectedBorrowingAssetIds = new Set(borrowingItems.map((item) => item.assetId));
+  const borrowingAssetSearchTerm = borrowingAssetSearch.trim().toLowerCase();
+  const borrowingAssetOptions = (assets ?? [])
+    .filter((asset) => !selectedBorrowingAssetIds.has(String(asset._id)))
+    .filter((asset) => (asset.locationPersonAssigned ?? asset.location ?? "") === "MAIN STORAGE")
+    .filter((asset) => ["Available", "Working"].includes(String(asset.status ?? "")))
+    .filter((asset) => asset.reservationStatus !== "Reserved")
+    .filter((asset) => {
+      if (!borrowingAssetSearchTerm) return true;
+      return [
+        asset.assetTag,
+        asset.assetNameDescription,
+        asset.assetType,
+        asset.serialNumber,
+        asset.status,
+      ].some((value) => String(value ?? "").toLowerCase().includes(borrowingAssetSearchTerm));
+    })
+    .sort((left, right) => {
+      if ((left.status === "Available") !== (right.status === "Available")) {
+        return left.status === "Available" ? -1 : 1;
+      }
+      return String(left.assetTag ?? "").localeCompare(String(right.assetTag ?? ""));
+    })
+    .slice(0, 8);
 
   async function uploadFileToStorage(file: File | null, failureMessage: string) {
     if (!file) return undefined;
@@ -716,11 +853,14 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
       const nextStatus = isMeetingRequest ? normalizeMeetingRequestStatus(status) : status;
       const nextMeetingStartAt = isMeetingRequest ? toTimestamp(meetingStart) : undefined;
       const nextMeetingEndAt = isMeetingRequest ? toTimestamp(meetingEnd) : undefined;
+      const nextRequestedBorrowDate = isBorrowingRequest ? toTimestamp(requestedBorrowDate) : undefined;
+      const nextExpectedReturnAt = isBorrowingRequest ? toTimestamp(expectedReturnAt) : undefined;
       const trimmedMeetingTitle = meetingTitle.trim();
       const trimmedMeetingRequesterName = meetingRequesterName.trim();
       const trimmedMeetingLocation = meetingLocation.trim();
       const trimmedMeetingAttendeeCount = meetingAttendeeCount.trim();
       const trimmedMeetingSupportNotes = meetingSupportNotes.trim();
+      const trimmedRequestedItemsText = requestedItemsText.trim();
 
       if (isMeetingRequest) {
         if (!trimmedMeetingRequesterName) {
@@ -740,6 +880,21 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
         }
         if (!trimmedMeetingAttendeeCount) {
           throw new Error("Expected attendees is required.");
+        }
+      }
+
+      if (isBorrowingRequest) {
+        if (!trimmedRequestedItemsText && !borrowingItems.length) {
+          throw new Error("Requested item or linked asset is required.");
+        }
+        if (!nextExpectedReturnAt) {
+          throw new Error("Expected return date and time is required.");
+        }
+        if (requestedBorrowDate && !nextRequestedBorrowDate) {
+          throw new Error("Planned borrow date is invalid.");
+        }
+        if (nextRequestedBorrowDate && nextExpectedReturnAt < nextRequestedBorrowDate) {
+          throw new Error("Expected return date and time must be after the planned borrow date.");
         }
       }
 
@@ -786,15 +941,15 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
         majorIncident: isMeetingRequest ? false : majorIncident,
         ...(isBorrowingRequest
           ? {
-              expectedReturnAt: expectedReturnAt ? toTimestamp(expectedReturnAt) : undefined,
-              borrowingItems: borrowingItems.length
-                ? borrowingItems.map((item) => ({
-                    assetId: item.assetId as Id<"hardwareInventory">,
-                    releaseCondition: item.releaseCondition,
-                    returnCondition: item.returnCondition || undefined,
-                    returnedAt: toTimestamp(item.returnedAt),
-                  }))
-                : undefined,
+              requestedItemsText: trimmedRequestedItemsText || undefined,
+              requestedBorrowDate: nextRequestedBorrowDate,
+              expectedReturnAt: nextExpectedReturnAt,
+              borrowingItems: borrowingItems.map((item) => ({
+                assetId: item.assetId as Id<"hardwareInventory">,
+                releaseCondition: item.releaseCondition,
+                returnCondition: item.returnCondition || undefined,
+                returnedAt: toTimestamp(item.returnedAt),
+              })),
             }
           : {
               assetId: assetId ? (assetId as Id<"hardwareInventory">) : undefined,
@@ -1278,6 +1433,26 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                         </option>
                       ))}
                     </select>
+                  </FieldBlock>
+                ) : null}
+                {isBorrowingRequest ? (
+                  <FieldBlock label="Requested Item / Equipment">
+                    <textarea
+                      className="input-base"
+                      style={{ minHeight: 88, resize: "vertical" }}
+                      value={requestedItemsText}
+                      onChange={(event) => setRequestedItemsText(event.target.value)}
+                    />
+                  </FieldBlock>
+                ) : null}
+                {isBorrowingRequest ? (
+                  <FieldBlock label="Planned Borrow Date">
+                    <input
+                      className="input-base"
+                      type="datetime-local"
+                      value={requestedBorrowDate}
+                      onChange={(event) => setRequestedBorrowDate(event.target.value)}
+                    />
                   </FieldBlock>
                 ) : null}
                 {isBorrowingRequest ? (
@@ -1837,8 +2012,40 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
             <section className="monitoring-detail-section monitoring-detail-section-compact">
               <div className="type-section-title">Borrowing Request</div>
               <div className="monitoring-detail-stack">
+                <DetailCard
+                  label="Requested Item / Equipment"
+                  value={requestedItemsText || ticket.requestedItemsText || "No requested item saved yet"}
+                />
+                <DetailCard
+                  label="Planned Borrow"
+                  value={formatDateTime(toTimestamp(requestedBorrowDate) ?? ticket.requestedBorrowDate)}
+                />
                 <DetailCard label="Expected Return" value={formatDateTime(toTimestamp(expectedReturnAt) ?? ticket.expectedReturnAt)} />
                 <DetailCard label="Linked Assets" value={borrowingItems.length ? String(borrowingItems.length) : "No linked assets saved yet"} />
+              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="type-helper">
+                  Search the exact inventory item here once IT decides which asset to reserve for the request.
+                </div>
+                <BorrowingAssetLookup
+                  query={borrowingAssetSearch}
+                  onQueryChange={setBorrowingAssetSearch}
+                  options={borrowingAssetOptions}
+                  onAddAsset={(asset) => {
+                    setBorrowingItems((prev) => [
+                      ...prev,
+                      {
+                        assetId: String(asset._id),
+                        assetTag: asset.assetTag ?? "No Tag",
+                        assetLabel: asset.assetNameDescription ?? asset.assetType ?? "Asset",
+                        releaseCondition: MONITORING_BORROW_CONDITION_OPTIONS[0],
+                        returnCondition: "",
+                        returnedAt: "",
+                      },
+                    ]);
+                    setBorrowingAssetSearch("");
+                  }}
+                />
               </div>
               <div className="monitoring-detail-list">
                 {borrowingItems.map((item, index) => (
@@ -1853,7 +2060,25 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                       </Link>
                     </div>
                     <div className="monitoring-detail-asset-grid">
-                      <DetailCard label="Release Condition" value={item.releaseCondition} />
+                      <FieldBlock label="Release Condition">
+                        <select
+                          className="input-base"
+                          value={item.releaseCondition}
+                          onChange={(event) =>
+                            setBorrowingItems((prev) =>
+                              prev.map((entry, entryIndex) =>
+                                entryIndex === index ? { ...entry, releaseCondition: event.target.value } : entry,
+                              ),
+                            )
+                          }
+                        >
+                          {MONITORING_BORROW_CONDITION_OPTIONS.map((condition) => (
+                            <option key={condition} value={condition}>
+                              {condition}
+                            </option>
+                          ))}
+                        </select>
+                      </FieldBlock>
                       <FieldBlock label="Returned Condition">
                         <select
                           className="input-base"
@@ -1888,6 +2113,19 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                           }
                         />
                       </FieldBlock>
+                      <div style={{ display: "flex", alignItems: "end" }}>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() =>
+                            setBorrowingItems((prev) =>
+                              prev.filter((_, entryIndex) => entryIndex !== index),
+                            )
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

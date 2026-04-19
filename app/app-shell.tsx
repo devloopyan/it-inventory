@@ -83,6 +83,18 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         ),
       },
       {
+        href: "/digital-inventory",
+        label: "Digital Inventory",
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="2" />
+            <path d="M8 9H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M8 13H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M8 17H11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        ),
+      },
+      {
         href: "/operations",
         label: "Operations",
         icon: (
@@ -137,6 +149,7 @@ const routeLabelMap: Record<string, string> = {
   reports: "Reports",
   admin: "Admin",
   assets: "Assets",
+  "digital-inventory": "Digital Inventory",
   "hardware-inventory": "Hardware Inventory",
 };
 
