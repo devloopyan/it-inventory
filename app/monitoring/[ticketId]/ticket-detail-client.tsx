@@ -339,7 +339,7 @@ function getMeetingStatusSelectStyle(status: string) {
     borderColor: style.borderColor,
     backgroundColor: style.background,
     color: style.color,
-    fontWeight: 700,
+    fontWeight: 600,
   } as const;
 }
 
@@ -367,7 +367,7 @@ function Chip({ label }: { label: string }) {
         background: style.background,
         color: style.color,
         fontSize: "var(--type-label)",
-        fontWeight: 700,
+        fontWeight: 600,
       }}
     >
       {label}
@@ -2154,3 +2154,4 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     </div>
   );
 }
+

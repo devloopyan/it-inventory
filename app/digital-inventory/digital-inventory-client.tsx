@@ -873,7 +873,7 @@ export default function DigitalInventoryClient() {
 
         <div className="digital-table-head">
           <div>
-            <h2>{getActiveTabLabel(activeTab)}</h2>
+            <h1>{getActiveTabLabel(activeTab)}</h1>
             <p>{activeTabRows} record{activeTabRows === 1 ? "" : "s"} shown</p>
           </div>
         </div>

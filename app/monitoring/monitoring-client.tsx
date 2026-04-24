@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { startTransition, useDeferredValue, useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
@@ -302,11 +301,11 @@ function Chip({ label }: { label: string }) {
         alignItems: "center",
         padding: "4px 10px",
         borderRadius: 999,
-        border: `1px solid ${style.borderColor}`,
         background: style.background,
         color: style.color,
-        fontSize: "var(--type-label)",
-        fontWeight: 700,
+        fontSize: "12px",
+        fontWeight: 600,
+        lineHeight: 1.2,
       }}
     >
       {label}
@@ -331,7 +330,7 @@ function FieldGroup(props: {
 }) {
   return (
     <label style={{ display: "grid", gap: 6, alignContent: "start" }}>
-      <span style={{ fontSize: "var(--type-label)", fontWeight: 700, color: "var(--muted)" }}>
+      <span style={{ fontSize: "var(--type-label)", fontWeight: 600, color: "var(--muted)" }}>
         {props.label}
         {props.required ? <span style={{ color: "#b91c1c" }}> *</span> : null}
       </span>
@@ -677,7 +676,7 @@ function FormErrorBanner({ message }: { message: string }) {
         borderRadius: 12,
         padding: "10px 12px",
         fontSize: 13,
-        fontWeight: 700,
+        fontWeight: 600,
       }}
     >
       {message}
@@ -1376,7 +1375,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
 
       </section>
 
-      <section className="panel" style={{ padding: 16, display: "grid", gap: 14 }}>
+      <section
+        className="panel monitoring-tab-panel"
+        style={{ padding: 16, display: "grid", gap: 14, border: "none", boxShadow: "none", borderRadius: 0, background: "transparent" }}
+      >
         <div className="monitoring-tab-strip" role="tablist" aria-label="Monitoring sections">
           {MONITORING_TABS.map((tab) => (
             <button
@@ -2123,7 +2125,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               </button>
             </div>
 
-            <div className="saas-table-wrap">
+            <div className="saas-table-wrap monitoring-tab-table-wrap">
               <table className="saas-table" style={{ minWidth: 980 }}>
                 <thead>
                   <tr>
@@ -2253,7 +2255,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               ) : null}
             </div>
 
-            <div className="saas-table-wrap">
+            <div className="saas-table-wrap monitoring-tab-table-wrap">
               {requestTableError ? <FormErrorBanner message={requestTableError} /> : null}
               <table className="saas-table" style={{ minWidth: 980 }}>
                 <thead>
@@ -2392,15 +2394,8 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ color: "var(--muted)", fontSize: 12 }}>
-            Default request source: <strong style={{ color: "var(--foreground)" }}>{MONITORING_REQUEST_SOURCE}</strong>
-          </span>
-          <Link href="/reports" className="btn-secondary">
-            Open Reports
-          </Link>
-        </div>
       </section>
     </div>
   );
 }
+

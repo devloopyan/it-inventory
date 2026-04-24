@@ -236,7 +236,7 @@ function StatusChip({ status }: { status: HardwareStatus }) {
         borderRadius: 999,
         padding: "4px 10px",
         fontSize: "var(--type-label)",
-        fontWeight: 700,
+        fontWeight: 600,
       }}
     >
       {status}
@@ -277,7 +277,7 @@ function WorkstationComponentCard({ component }: { component: WorkstationCompone
         <div style={{ fontSize: "var(--type-label)", color: "var(--muted)", fontWeight: 600 }}>
           {formatText(component.componentType)}
         </div>
-        <div style={{ fontSize: "var(--type-title-sm)", fontWeight: 700 }}>{formatText(component.assetTag)}</div>
+        <div style={{ fontSize: "var(--type-title-sm)", fontWeight: 600 }}>{formatText(component.assetTag)}</div>
       </div>
       <div style={{ fontSize: "var(--type-body-sm)", lineHeight: 1.5, color: "var(--muted-strong)", whiteSpace: "pre-wrap" }}>
         {formatText(component.specifications)}
@@ -1629,3 +1629,4 @@ export default function HardwareInventoryDetailPage() {
     </div>
   );
 }
+

@@ -216,6 +216,20 @@ const statusStyles: Record<
   "Pre-owned": { background: "#fef3c7", color: "#b45309", borderColor: "#fcd34d" },
 };
 
+const assetMasterStatusStyles: Record<
+  HardwareStatus,
+  { background: string; color: string; borderColor: string }
+> = {
+  Available: { background: "#dcfce7", color: "#15803d", borderColor: "#dcfce7" },
+  Working: { background: "#dbeafe", color: "#2563eb", borderColor: "#dbeafe" },
+  Borrowed: { background: "#ffedd5", color: "#ea580c", borderColor: "#ffedd5" },
+  Assigned: { background: "#e0f2fe", color: "#0284c7", borderColor: "#e0f2fe" },
+  "For Repair": { background: "#fee2e2", color: "#dc2626", borderColor: "#fee2e2" },
+  Retired: { background: "#e5e7eb", color: "#4b5563", borderColor: "#e5e7eb" },
+  NEW: { background: "#dbeafe", color: "#2563eb", borderColor: "#dbeafe" },
+  "Pre-owned": { background: "#fef3c7", color: "#b45309", borderColor: "#fef3c7" },
+};
+
 function buildStatusSelectOptions(styleMap: Record<HardwareStatus, { background: string; color: string; borderColor: string }>) {
   return statuses.map((status) => ({
     value: status,
@@ -232,6 +246,7 @@ function buildStatusSelectOptions(styleMap: Record<HardwareStatus, { background:
 }
 
 const assetStatusSelectOptions: ReadonlyArray<ChecklistSelectOption> = buildStatusSelectOptions(statusStyles);
+const assetMasterStatusSelectOptions: ReadonlyArray<ChecklistSelectOption> = buildStatusSelectOptions(assetMasterStatusStyles);
 const assetStatusFilterOptions: ReadonlyArray<ChecklistSelectOption> = [
   { value: "", label: "All Statuses" },
   ...assetStatusSelectOptions,
@@ -245,6 +260,11 @@ const DRONE_KIT_DEFAULT_DEPARTMENT = "IT OPERATIONS";
 const masterTableViews: Array<{ key: Exclude<MasterTableView, "master">; label: string }> = [
   { key: "workstation", label: "Workstation" },
   { key: "storage", label: "Storage" },
+];
+
+const masterToolbarViews: Array<{ key: MasterTableView; label: string }> = [
+  { key: "master", label: "All" },
+  ...masterTableViews,
 ];
 
 function formatValue(value?: string) {
@@ -530,6 +550,10 @@ export default function HardwareInventoryPage() {
   >({});
   const [inlineSavingId, setInlineSavingId] = useState<string>("");
 
+  const hasActiveMasterFilters = Boolean(
+    search.trim() || assetTypeFilter.length || statusFilter || locationFilter,
+  );
+
   const result = useQuery(api.hardwareInventory.list, {
     search: search || undefined,
     status: statusFilter || undefined,
@@ -683,7 +707,7 @@ export default function HardwareInventoryPage() {
               value={droneKitGeneratedTags?.droneUnitAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone unit asset tag"
-              style={{ color: "var(--foreground)", fontWeight: 700 }}
+              style={{ color: "var(--foreground)", fontWeight: 600 }}
             />
           </div>
           <div className="drone-kit-card-field">
@@ -766,7 +790,7 @@ export default function HardwareInventoryPage() {
               value={droneKitGeneratedTags?.batteryAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone battery asset tag"
-              style={{ color: "var(--foreground)", fontWeight: 700 }}
+              style={{ color: "var(--foreground)", fontWeight: 600 }}
             />
           </div>
           <div className="drone-kit-card-field">
@@ -855,7 +879,7 @@ export default function HardwareInventoryPage() {
               value={droneKitGeneratedTags?.propellerAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone propeller asset tag"
-              style={{ color: "var(--foreground)", fontWeight: 700 }}
+              style={{ color: "var(--foreground)", fontWeight: 600 }}
             />
           </div>
           <div className="drone-kit-card-field drone-kit-card-field--wide">
@@ -928,7 +952,7 @@ export default function HardwareInventoryPage() {
               value={droneKitGeneratedTags?.chargerAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone charger asset tag"
-              style={{ color: "var(--foreground)", fontWeight: 700 }}
+              style={{ color: "var(--foreground)", fontWeight: 600 }}
             />
           </div>
           <div className="drone-kit-card-field">
@@ -1017,7 +1041,7 @@ export default function HardwareInventoryPage() {
               value={droneKitGeneratedTags?.controllerAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated drone controller asset tag"
-              style={{ color: "var(--foreground)", fontWeight: 700 }}
+              style={{ color: "var(--foreground)", fontWeight: 600 }}
             />
           </div>
           <div className="drone-kit-card-field">
@@ -1109,7 +1133,7 @@ export default function HardwareInventoryPage() {
               value={desktopGeneratedTags?.monitorAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated monitor asset tag"
-              style={{ color: "var(--foreground)", fontWeight: 700 }}
+              style={{ color: "var(--foreground)", fontWeight: 600 }}
             />
           </div>
           <div className="workstation-card-field">
@@ -1175,7 +1199,7 @@ export default function HardwareInventoryPage() {
               value={desktopGeneratedTags?.mouseAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated mouse asset tag"
-              style={{ color: "var(--foreground)", fontWeight: 700 }}
+              style={{ color: "var(--foreground)", fontWeight: 600 }}
             />
           </div>
           <div className="workstation-card-field">
@@ -1228,7 +1252,7 @@ export default function HardwareInventoryPage() {
               value={desktopGeneratedTags?.keyboardAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated keyboard asset tag"
-              style={{ color: "var(--foreground)", fontWeight: 700 }}
+              style={{ color: "var(--foreground)", fontWeight: 600 }}
             />
           </div>
           <div className="workstation-card-field">
@@ -1281,7 +1305,7 @@ export default function HardwareInventoryPage() {
               value={desktopGeneratedTags?.systemUnitAssetTag ?? ""}
               readOnly
               aria-label="Auto-generated system unit asset tag"
-              style={{ color: "var(--foreground)", fontWeight: 700 }}
+              style={{ color: "var(--foreground)", fontWeight: 600 }}
             />
           </div>
           <div className="workstation-card-field workstation-card-field--wide">
@@ -1465,6 +1489,14 @@ export default function HardwareInventoryPage() {
     }
 
     return uploadData.storageId;
+  }
+
+  function resetMasterFilters() {
+    setSearch("");
+    setAssetTypeFilter([]);
+    setStatusFilter("");
+    setLocationFilter("");
+    setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
   }
 
   async function handleCreate() {
@@ -1840,23 +1872,23 @@ export default function HardwareInventoryPage() {
         ref={formSectionRef}
       >
         <div className="operations-reference-topbar hardware-register-topbar">
-          <div className="operations-reference-title-group hardware-register-header" role="heading" aria-level={1}>
+          <div className="operations-reference-title-group hardware-register-header">
+            <div className="hardware-register-header-row">
+              <div className="operations-reference-title-row">
+                <h1 className="operations-reference-title hardware-register-title">Hardware Asset Register</h1>
+              </div>
+              <p className="hardware-register-copy">
+                Minimize this form while reviewing the master table, then expand it whenever you need to register a new
+                asset.
+              </p>
+            </div>
             <button
               type="button"
-              className="hardware-register-accordion"
+              className="hardware-register-accordion hardware-register-accordion-toggle"
               onClick={toggleRegisterAccordion}
               aria-expanded={!isRegisterCollapsed}
               aria-controls="hardware-register-form-panel"
             >
-              <span className="hardware-register-header-row">
-                <span className="operations-reference-title-row">
-                  <span className="operations-reference-title hardware-register-title">Hardware Asset Register</span>
-                </span>
-                <span className="hardware-register-copy">
-                  Minimize this form while reviewing the master table, then expand it whenever you need to register a
-                  new asset.
-              </span>
-              </span>
               <span className="hardware-register-accordion-side">
                 <span className="hardware-register-accordion-state">
                   {isRegisterCollapsed ? "Expand form" : "Collapse form"}
@@ -2262,7 +2294,7 @@ export default function HardwareInventoryPage() {
                           value={desktopGeneratedTags?.extraComponents[index]?.assetTag ?? ""}
                           readOnly
                           aria-label={`Auto-generated asset tag for component ${index + 1}`}
-                          style={{ color: "var(--foreground)", fontWeight: 700 }}
+                          style={{ color: "var(--foreground)", fontWeight: 600 }}
                         />
                       </div>
                       <div className="workstation-card-field">
@@ -2443,100 +2475,110 @@ export default function HardwareInventoryPage() {
       </section>
 
       <section
-        className="panel hardware-master-panel"
-        style={{ marginTop: 40, padding: 14, display: "grid", gap: 12 }}
+        className="panel hardware-master-panel hardware-master-panel-layout"
         ref={masterPanelRef}
       >
         <div className="hardware-section-head">
           <div>
-            <h2 className="operations-reference-title hardware-section-title">Asset Master Table</h2>
+            <h1 className="operations-reference-title hardware-section-title">Asset Master Table</h1>
             <div className="type-section-copy">
               Search and filter all hardware assets.
             </div>
           </div>
         </div>
-        <div
-          className="hardware-master-toolbar hardware-master-toolbar-controls"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 252px) repeat(3, minmax(0, 172px)) minmax(180px, 1fr)",
-            gap: 8,
-          }}
-        >
-          <div className="search-field hardware-toolbar-search">
-            <span className="search-icon">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" />
-              </svg>
-            </span>
-            <input
-              className="input-base"
-              placeholder="Search asset, serial, assignee"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
-              }}
-            />
+        <div className="hardware-master-toolbar hardware-master-toolbar-controls asset-master-toolbar-row">
+          <div className="asset-master-toolbar-left">
+            <div className="search-field hardware-toolbar-search asset-master-toolbar-search">
+              <span className="search-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                  <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" />
+                </svg>
+              </span>
+              <input
+                className="input-base"
+                placeholder="Search asset, serial, assignee"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+                }}
+              />
+            </div>
+            <div className="asset-master-toolbar-filter asset-master-toolbar-filter-type">
+              <ChecklistSelect
+                values={assetTypeFilter}
+                options={assetTypeFilterSelectOptions}
+                placeholder="Type"
+                ariaLabel="Filter by asset type"
+                compact
+                minMenuWidth={172}
+                multiple
+                multipleSummaryLabel="Type"
+                multipleSummaryStyle="badge"
+                onValuesChange={(values) => {
+                  setAssetTypeFilter(values);
+                  setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+                }}
+              />
+            </div>
+            <div className="asset-master-toolbar-filter asset-master-toolbar-filter-status">
+              <ChecklistSelect
+                value={statusFilter}
+                options={assetStatusFilterOptions}
+                placeholder="All Statuses"
+                ariaLabel="Filter by status"
+                compact
+                minMenuWidth={156}
+                onChange={(value) => {
+                  setStatusFilter(value);
+                  setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+                }}
+              />
+            </div>
+            <div className="asset-master-toolbar-filter asset-master-toolbar-filter-location">
+              <ChecklistSelect
+                value={locationFilter}
+                options={locationFilterSelectOptions}
+                placeholder="All Locations"
+                ariaLabel="Filter by location"
+                compact
+                minMenuWidth={156}
+                onChange={(value) => {
+                  setLocationFilter(value);
+                  setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              className={`asset-master-clear-btn${hasActiveMasterFilters ? "" : " is-hidden"}`}
+              onClick={resetMasterFilters}
+            >
+              <span aria-hidden="true">×</span>
+              <span>Clear filters</span>
+            </button>
           </div>
-          <ChecklistSelect
-            values={assetTypeFilter}
-            options={assetTypeFilterSelectOptions}
-            placeholder="Type"
-            ariaLabel="Filter by asset type"
-            compact
-            minMenuWidth={172}
-            multiple
-            multipleSummaryLabel="Type"
-            multipleSummaryStyle="badge"
-            onValuesChange={(values) => {
-              setAssetTypeFilter(values);
-              setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
-            }}
-          />
-          <ChecklistSelect
-            value={statusFilter}
-            options={assetStatusFilterOptions}
-            placeholder="All Statuses"
-            ariaLabel="Filter by status"
-            compact
-            minMenuWidth={156}
-            onChange={(value) => {
-              setStatusFilter(value);
-              setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
-            }}
-          />
-          <ChecklistSelect
-            value={locationFilter}
-            options={locationFilterSelectOptions}
-            placeholder="All Locations"
-            ariaLabel="Filter by location"
-            compact
-            minMenuWidth={156}
-            onChange={(value) => {
-              setLocationFilter(value);
-              setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
-            }}
-          />
-          <div className="asset-master-view-filters" aria-label="Asset master quick filters">
-            {masterTableViews.map((view) => {
-              const active = masterTableView === view.key;
-              return (
-                <button
-                  key={view.key}
-                  type="button"
-                  aria-pressed={active}
-                  className={`asset-master-view-filter${active ? " active" : ""}`}
-                  onClick={() => {
-                    setMasterTableView(active ? "master" : view.key);
-                    setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
-                  }}
-                >
-                  {view.label}
-                </button>
-              );
-            })}
+          <div className="asset-master-toolbar-right">
+            <div className="asset-master-view-filters" aria-label="Asset master quick filters">
+              {masterToolbarViews.map((view) => {
+                const active = masterTableView === view.key;
+                return (
+                  <button
+                    key={view.key}
+                    type="button"
+                    aria-pressed={active}
+                    className={`asset-master-view-filter${active ? " active" : ""}`}
+                    onClick={() => {
+                      setMasterTableView(view.key);
+                      setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+                    }}
+                  >
+                    {view.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -2545,15 +2587,15 @@ export default function HardwareInventoryPage() {
           className="saas-table-wrap hardware-master-table-wrap"
           onScroll={handleMasterTableScroll}
         >
-          <table className="saas-table hardware-master-table" style={{ minWidth: 1240 }}>
+          <table className="saas-table hardware-master-table" style={{ minWidth: 1080 }}>
             <colgroup>
-              <col style={{ width: 104 }} />
-              <col style={{ width: 116 }} />
-              <col style={{ width: 420 }} />
-              <col style={{ width: 170 }} />
-              <col style={{ width: 190 }} />
-              <col style={{ width: 112 }} />
-              <col style={{ width: 148 }} />
+              <col style={{ width: 92 }} />
+              <col style={{ width: 98 }} />
+              <col style={{ width: 330 }} />
+              <col style={{ width: 150 }} />
+              <col style={{ width: 150 }} />
+              <col style={{ width: 96 }} />
+              <col style={{ width: 120 }} />
             </colgroup>
             <thead>
               <tr>
@@ -2584,44 +2626,40 @@ export default function HardwareInventoryPage() {
                   <td>{formatValue(row.assetTag)}</td>
                   <td>{formatValue(row.assetType ?? "")}</td>
                   <td>
-                    <div style={{ display: "grid", gap: 4 }}>
-                      <div>{formatValue(row.assetNameDescription ?? "")}</div>
-                      <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                        {formatValue(row.specifications ?? "")}
+                      <div className="hardware-master-spec-cell">
+                        <div>{formatValue(row.assetNameDescription ?? "")}</div>
+                        <div className="hardware-master-spec-copy">
+                          {formatValue(row.specifications ?? "")}
+                        </div>
                       </div>
-                    </div>
                   </td>
                   <td>
                     {formatValue(row.location ?? row.locationPersonAssigned ?? "")}
                   </td>
-                  <td>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        lineHeight: 1.4,
-                        color: "var(--foreground)",
-                      }}
-                      title="Open asset details to edit Turnover To"
-                      aria-label={`Turnover to ${formatValue(row.assignedTo ?? row.turnoverTo ?? "Unassigned")}`}
-                    >
-                      {formatValue(row.assignedTo ?? row.turnoverTo ?? "Unassigned")}
-                    </div>
-                  </td>
+                    <td>
+                      <div
+                        className="hardware-master-turnover-cell"
+                        title="Open asset details to edit Turnover To"
+                        aria-label={`Turnover to ${formatValue(row.assignedTo ?? row.turnoverTo ?? "Unassigned")}`}
+                      >
+                        {formatValue(row.assignedTo ?? row.turnoverTo ?? "Unassigned")}
+                      </div>
+                    </td>
                   <td>
                     {(() => {
                       const editState = getInlineRowState(row);
                       const isSaving = inlineSavingId === String(row._id);
                       return (
-                        <div style={{ width: 96 }}>
+                        <div className="hardware-master-status-select">
                           <ChecklistSelect
                             value={editState.status}
-                            options={assetStatusSelectOptions}
+                            options={assetMasterStatusSelectOptions}
                             placeholder="Select status"
                             ariaLabel={`Status for asset ${row.assetTag}`}
                             disabled={isSaving}
                             compact
                             minMenuWidth={140}
-                            triggerStyle={{ minHeight: 32 }}
+                            triggerStyle={{ minHeight: 28 }}
                             onChange={(value) => {
                               const nextStatus = value as HardwareStatus;
                               const rowId = String(row._id);
@@ -2650,10 +2688,10 @@ export default function HardwareInventoryPage() {
                       const isBorrowed = editState.status === "Borrowed";
                       const isSaving = inlineSavingId === String(row._id);
                       return (
-                        <div style={{ width: 136 }}>
+                        <div className="hardware-master-borrower-cell">
                           <input
                             className="input-base"
-                            style={{ minHeight: 32 }}
+                            style={{ minHeight: 30 }}
                             value={isBorrowed ? editState.borrower : "none"}
                             placeholder={isBorrowed ? "Borrower name" : "none"}
                             disabled={!isBorrowed || isSaving}
@@ -2708,4 +2746,5 @@ export default function HardwareInventoryPage() {
     </div>
   );
 }
+
 
