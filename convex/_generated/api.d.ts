@@ -12,7 +12,9 @@ import type * as assetLogs from "../assetLogs.js";
 import type * as assets from "../assets.js";
 import type * as borrowers from "../borrowers.js";
 import type * as dashboardCalendar from "../dashboardCalendar.js";
+import type * as digitalInventory from "../digitalInventory.js";
 import type * as hardwareInventory from "../hardwareInventory.js";
+import type * as http from "../http.js";
 import type * as monitoring from "../monitoring.js";
 import type * as operations from "../operations.js";
 
@@ -27,7 +29,9 @@ declare const fullApi: ApiFromModules<{
   assets: typeof assets;
   borrowers: typeof borrowers;
   dashboardCalendar: typeof dashboardCalendar;
+  digitalInventory: typeof digitalInventory;
   hardwareInventory: typeof hardwareInventory;
+  http: typeof http;
   monitoring: typeof monitoring;
   operations: typeof operations;
 }>;

@@ -89,12 +89,13 @@ export default function ChecklistSelect({
   multipleSummaryStyle = "text",
   triggerStyle,
 }: ChecklistSelectProps) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
   const [menuPosition, setMenuPosition] = useState<MenuPosition>({ top: 0, left: 0, width: minMenuWidth });
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId();
+  const open = openState && !disabled;
 
   const selectedValues = multiple ? values ?? [] : value ? [value] : [];
   const selectedOptions = options.filter((option) => selectedValues.includes(option.value));
@@ -138,12 +139,12 @@ export default function ChecklistSelect({
       if (containerRef.current?.contains(target) || menuRef.current?.contains(target)) {
         return;
       }
-      setOpen(false);
+      setOpenState(false);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setOpen(false);
+        setOpenState(false);
         triggerRef.current?.focus();
       }
     }
@@ -161,11 +162,6 @@ export default function ChecklistSelect({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [disabled, minMenuWidth, open, options.length]);
-
-  useEffect(() => {
-    if (!disabled) return;
-    setOpen(false);
-  }, [disabled]);
 
   return (
     <div
@@ -187,7 +183,7 @@ export default function ChecklistSelect({
         style={computedTriggerStyle}
         onClick={() => {
           if (!disabled) {
-            setOpen((current) => !current);
+            setOpenState((current) => !current);
           }
         }}
       >
@@ -240,7 +236,7 @@ export default function ChecklistSelect({
                         return;
                       }
                       onChange?.(option.value);
-                      setOpen(false);
+                      setOpenState(false);
                       triggerRef.current?.focus();
                     }}
                     title={option.description}

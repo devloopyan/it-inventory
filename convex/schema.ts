@@ -198,6 +198,8 @@ export default defineSchema({
         }),
       ),
     ),
+    requestedItemsText: v.optional(v.string()),
+    requestedBorrowDate: v.optional(v.number()),
     expectedReturnAt: v.optional(v.number()),
     borrowingItems: v.optional(
       v.array(
@@ -272,5 +274,61 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_status", ["status"])
+    .index("by_updatedAt", ["updatedAt"]),
+  officeSoftwareInventory: defineTable({
+    softwareName: v.string(),
+    vendor: v.optional(v.string()),
+    version: v.optional(v.string()),
+    licenseType: v.optional(v.string()),
+    seatCount: v.optional(v.number()),
+    assignedTo: v.optional(v.string()),
+    department: v.optional(v.string()),
+    purchaseDate: v.optional(v.string()),
+    renewalDate: v.optional(v.string()),
+    status: v.string(),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_renewalDate", ["renewalDate"])
+    .index("by_updatedAt", ["updatedAt"]),
+  accessAccountsInventory: defineTable({
+    systemName: v.string(),
+    accountName: v.string(),
+    accountType: v.optional(v.string()),
+    ownerName: v.optional(v.string()),
+    department: v.optional(v.string()),
+    accessLevel: v.optional(v.string()),
+    mfaEnabled: v.boolean(),
+    lastReviewedDate: v.optional(v.string()),
+    status: v.string(),
+    vaultReference: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_lastReviewedDate", ["lastReviewedDate"])
+    .index("by_updatedAt", ["updatedAt"]),
+  subscriptionsInventory: defineTable({
+    serviceName: v.string(),
+    vendor: v.optional(v.string()),
+    planName: v.optional(v.string()),
+    billingCycle: v.string(),
+    cost: v.optional(v.number()),
+    currency: v.string(),
+    seatCount: v.optional(v.number()),
+    ownerName: v.optional(v.string()),
+    department: v.optional(v.string()),
+    startDate: v.optional(v.string()),
+    renewalDate: v.optional(v.string()),
+    status: v.string(),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_renewalDate", ["renewalDate"])
     .index("by_updatedAt", ["updatedAt"]),
 });

@@ -83,6 +83,18 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         ),
       },
       {
+        href: "/digital-inventory",
+        label: "Digital Inventory",
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="2" />
+            <path d="M8 9H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M8 13H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M8 17H11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        ),
+      },
+      {
         href: "/operations",
         label: "Operations",
         icon: (
@@ -95,37 +107,6 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
           </svg>
         ),
       },
-      {
-        href: "/reports",
-        label: "Reports",
-        icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M7 20V10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M12 20V4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M17 20V14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        ),
-      },
-    ],
-  },
-  {
-    label: "Administration",
-    items: [
-      {
-        href: "/admin",
-        label: "Admin",
-        icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M12 3L14.4 5.2L17.7 5.5L18.5 8.7L21 11L18.5 13.3L17.7 16.5L14.4 16.8L12 19L9.6 16.8L6.3 16.5L5.5 13.3L3 11L5.5 8.7L6.3 5.5L9.6 5.2L12 3Z"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinejoin="round"
-            />
-            <circle cx="12" cy="11" r="2.5" stroke="currentColor" strokeWidth="1.7" />
-          </svg>
-        ),
-      },
     ],
   },
 ] as const;
@@ -134,9 +115,8 @@ const routeLabelMap: Record<string, string> = {
   dashboard: "Dashboard",
   monitoring: "Monitoring",
   operations: "Operations",
-  reports: "Reports",
-  admin: "Admin",
   assets: "Assets",
+  "digital-inventory": "Digital Inventory",
   "hardware-inventory": "Hardware Inventory",
 };
 

@@ -288,9 +288,20 @@ async function releaseMeetingAssetItems(
   }
 }
 
-function buildBorrowingTitle(requesterName: string, items: Array<{ assetTag: string }>) {
+function buildBorrowingTitle(
+  requesterName: string,
+  items: Array<{ assetTag: string }>,
+  requestedItemsText?: string,
+) {
+  const requestedSummary = requestedItemsText?.trim();
   if (!items.length) {
-    return `Borrowing Request - ${requesterName}`;
+    if (!requestedSummary) {
+      return `Borrowing Request - ${requesterName}`;
+    }
+    const compactSummary = requestedSummary.replace(/\s+/g, " ").trim();
+    const truncatedSummary =
+      compactSummary.length > 48 ? `${compactSummary.slice(0, 45).trimEnd()}...` : compactSummary;
+    return `Borrowing Request - ${requesterName} - ${truncatedSummary}`;
   }
   if (items.length === 1) {
     return `Borrowing Request - ${requesterName} - ${items[0].assetTag}`;
@@ -509,6 +520,8 @@ function matchesTicketSearch(ticket: MonitoringTicketDoc, search: string) {
     ticket.category,
     ticket.requestSource,
     ticket.assetTag,
+    ticket.requestedItemsText,
+    ticket.requestedBorrowDate ? new Date(ticket.requestedBorrowDate).toISOString() : undefined,
     ticket.isp,
     ticket.outageArea,
     ticket.meetingLocation,
@@ -758,94 +771,6 @@ export const getOverview = query({
   },
 });
 
-export const getDataSecurityOverview = query({
-  args: {},
-  handler: async (ctx) => {
-    const now = Date.now();
-    const monthStart = officeDateToTimestamp(getOfficeDateParts(now).year, getOfficeDateParts(now).month, 1, 0, 0);
-    const [tickets, approvalHistory] = await Promise.all([
-      ctx.db.query("monitoringTickets").collect().then((rows) => rows.map(normalizeMeetingRequestTicketForRead)),
-      ctx.db.query("monitoringApprovalHistory").collect(),
-    ]);
-
-    const approvalHistoryByTicketId = new Map<string, number>();
-    for (const entry of approvalHistory) {
-      const ticketId = String(entry.ticketId);
-      approvalHistoryByTicketId.set(ticketId, (approvalHistoryByTicketId.get(ticketId) ?? 0) + 1);
-    }
-
-    const sensitiveTickets = tickets.filter((ticket) => ticket.requiresSensitiveAccess);
-    const monthSensitiveTickets = sensitiveTickets.filter(
-      (ticket) => ticket.requestReceivedAt >= monthStart && ticket.requestReceivedAt <= now,
-    );
-
-    const pendingSensitiveApprovals = monthSensitiveTickets.filter(
-      (ticket) =>
-        ticket.approvalStage === "Pending IT Team Leader" || ticket.approvalStage === "Pending OSMD Manager",
-    );
-
-    const ticketsWithAuditTrail = monthSensitiveTickets.filter(
-      (ticket) => (approvalHistoryByTicketId.get(String(ticket._id)) ?? 0) > 0,
-    ).length;
-
-    const approvedSensitiveTickets = monthSensitiveTickets.filter((ticket) => {
-      if (ticket.approvalStage !== "Approved") return false;
-      return Boolean(ticket.osmdManagerApprovalDate ?? ticket.teamLeaderApprovalDate);
-    });
-
-    const totalApprovalTurnaroundMinutes = approvedSensitiveTickets.reduce((total, ticket) => {
-      const approvedAt = ticket.osmdManagerApprovalDate ?? ticket.teamLeaderApprovalDate;
-      if (!approvedAt || approvedAt < ticket.requestReceivedAt) return total;
-      return total + (approvedAt - ticket.requestReceivedAt) / (60 * 1000);
-    }, 0);
-
-    const completedSensitiveThisMonth = sensitiveTickets.filter((ticket) => {
-      const completedAt = ticket.closedAt ?? ticket.fulfilledAt ?? ticket.resolvedAt;
-      return Boolean(completedAt && completedAt >= monthStart && completedAt <= now);
-    });
-
-    const unapprovedCompletionRisk = completedSensitiveThisMonth.filter(
-      (ticket) => ticket.approvalStage !== "Approved",
-    ).length;
-
-    const attentionItems = [...monthSensitiveTickets]
-      .filter(
-        (ticket) =>
-          ticket.approvalStage === "Pending IT Team Leader" ||
-          ticket.approvalStage === "Pending OSMD Manager" ||
-          ticket.approvalStage === "For Revision",
-      )
-      .sort((left, right) => right.updatedAt - left.updatedAt)
-      .slice(0, 6)
-      .map((ticket) => ({
-        _id: ticket._id,
-        ticketNumber: ticket.ticketNumber,
-        title: ticket.title,
-        requesterName: ticket.requesterName,
-        category: ticket.category,
-        approvalStage: ticket.approvalStage,
-        updatedAt: ticket.updatedAt,
-      }));
-
-    return {
-      periodStart: monthStart,
-      periodEnd: now,
-      sensitiveAccessRequests: monthSensitiveTickets.length,
-      pendingSensitiveApprovals: pendingSensitiveApprovals.length,
-      averageApprovalTurnaroundMinutes:
-        approvedSensitiveTickets.length > 0
-          ? totalApprovalTurnaroundMinutes / approvedSensitiveTickets.length
-          : undefined,
-      auditTrailCoveragePercent:
-        monthSensitiveTickets.length > 0 ? (ticketsWithAuditTrail / monthSensitiveTickets.length) * 100 : 0,
-      unapprovedCompletionRisk,
-      approvedSensitiveRequests: approvedSensitiveTickets.length,
-      ticketsWithAuditTrail,
-      attentionItems,
-    };
-  },
-});
-
 export const getMeetingCalendar = query({
   args: {
     rangeStart: v.number(),
@@ -858,8 +783,6 @@ export const getMeetingCalendar = query({
       .filter((row) => {
         const isMeetingRequest =
           row.category === MONITORING_MEETING_REQUEST_CATEGORY || Boolean(row.meetingStartAt || row.meetingLocation);
-        const isBorrowingRequest =
-          row.category === MONITORING_BORROWING_REQUEST_CATEGORY || Boolean(row.borrowingItems?.length);
         const eventStart = isMeetingRequest
           ? row.meetingStartAt
           : row.workflowType === "internetOutage"
@@ -911,7 +834,9 @@ export const getMeetingCalendar = query({
             : isBorrowingRequest
               ? row.borrowingItems?.length
                 ? `${row.borrowingItems.length} linked asset${row.borrowingItems.length === 1 ? "" : "s"}`
-                : "No linked assets"
+                : row.requestedItemsText
+                  ? `Requested: ${row.requestedItemsText}`
+                  : "No linked assets"
               : row.category;
 
         return {
@@ -994,6 +919,8 @@ export const createTicket = mutation({
     meetingAttendeeCount: v.optional(v.string()),
     meetingEquipmentSummary: v.optional(v.string()),
     meetingAssetIds: v.optional(v.array(v.id("hardwareInventory"))),
+    requestedItemsText: v.optional(v.string()),
+    requestedBorrowDate: v.optional(v.number()),
     expectedReturnAt: v.optional(v.number()),
     borrowingItems: v.optional(
       v.array(
@@ -1105,6 +1032,8 @@ export const createTicket = mutation({
     let meetingAttendeeCount = normalizeOptional(args.meetingAttendeeCount);
     let meetingEquipmentSummary = normalizeOptional(args.meetingEquipmentSummary);
     let meetingAssetItems = await resolveMeetingAssetItems(ctx, args.meetingAssetIds);
+    let requestedItemsText = normalizeOptional(args.requestedItemsText);
+    let requestedBorrowDate = args.requestedBorrowDate;
     let expectedReturnAt = args.expectedReturnAt;
     let borrowingItems = await resolveBorrowingItems(ctx, args.borrowingItems);
 
@@ -1183,16 +1112,26 @@ export const createTicket = mutation({
       if (workType !== "Service Request" || workflowType !== "serviceRequest") {
         throw new Error("Borrowing requests must use the Service Request workflow.");
       }
+      if (!requestedItemsText && !borrowingItems.length) {
+        throw new Error("Requested item or linked asset is required for the borrowing request.");
+      }
       if (!expectedReturnAt) {
         throw new Error("Expected return date and time is required.");
       }
-      if (!borrowingItems.length) {
-        throw new Error("Add at least one linked asset to the borrowing request.");
+      if (requestedBorrowDate && expectedReturnAt < requestedBorrowDate) {
+        throw new Error("Expected return date and time must be after the planned borrow date.");
       }
-      assetId = borrowingItems[0].assetId;
-      assetTag = borrowingItems[0].assetTag;
-      title = buildBorrowingTitle(requesterName, borrowingItems);
+      if (borrowingItems.length) {
+        assetId = borrowingItems[0].assetId;
+        assetTag = borrowingItems[0].assetTag;
+      } else {
+        assetId = undefined;
+        assetTag = undefined;
+      }
+      title = buildBorrowingTitle(requesterName, borrowingItems, requestedItemsText);
     } else {
+      requestedItemsText = undefined;
+      requestedBorrowDate = undefined;
       expectedReturnAt = undefined;
       borrowingItems = [];
     }
@@ -1287,6 +1226,8 @@ export const createTicket = mutation({
       meetingAttendeeCount,
       meetingEquipmentSummary,
       meetingAssetItems: meetingAssetItems.length ? meetingAssetItems : undefined,
+      requestedItemsText,
+      requestedBorrowDate,
       expectedReturnAt,
       borrowingItems: borrowingItems.length ? borrowingItems : undefined,
       createdAt: now,
@@ -1354,6 +1295,8 @@ export const updateTicket = mutation({
     timeRestored: v.optional(v.number()),
     operationsBlocked: v.optional(v.boolean()),
     meetingAssetIds: v.optional(v.array(v.id("hardwareInventory"))),
+    requestedItemsText: v.optional(v.string()),
+    requestedBorrowDate: v.optional(v.number()),
     expectedReturnAt: v.optional(v.number()),
     borrowingItems: v.optional(
       v.array(
@@ -1479,6 +1422,8 @@ export const updateTicket = mutation({
       args.meetingAssetIds !== undefined
         ? await resolveMeetingAssetItems(ctx, args.meetingAssetIds)
         : (ticket.meetingAssetItems ?? []);
+    let requestedItemsText = normalizeOptional(args.requestedItemsText) ?? ticket.requestedItemsText;
+    let requestedBorrowDate = args.requestedBorrowDate ?? ticket.requestedBorrowDate;
     let expectedReturnAt = args.expectedReturnAt ?? ticket.expectedReturnAt;
     let borrowingItems =
       args.borrowingItems !== undefined
@@ -1556,18 +1501,26 @@ export const updateTicket = mutation({
     }
 
     if (isBorrowingRequest) {
-      if (args.borrowingItems !== undefined && !borrowingItems.length) {
-        throw new Error("Add at least one linked asset to the borrowing request.");
+      if (!requestedItemsText && !borrowingItems.length) {
+        throw new Error("Requested item or linked asset is required for the borrowing request.");
       }
       if (borrowingItems.length) {
         assetId = borrowingItems[0].assetId;
         assetTag = borrowingItems[0].assetTag;
-        title = buildBorrowingTitle(requesterName, borrowingItems);
+      } else {
+        assetId = undefined;
+        assetTag = undefined;
       }
       if ((args.expectedReturnAt !== undefined || ticket.expectedReturnAt !== undefined) && !expectedReturnAt) {
         throw new Error("Expected return date and time is required.");
       }
+      if (requestedBorrowDate && expectedReturnAt && expectedReturnAt < requestedBorrowDate) {
+        throw new Error("Expected return date and time must be after the planned borrow date.");
+      }
+      title = buildBorrowingTitle(requesterName, borrowingItems, requestedItemsText);
     } else {
+      requestedItemsText = undefined;
+      requestedBorrowDate = undefined;
       expectedReturnAt = undefined;
       borrowingItems = [];
     }
@@ -1686,6 +1639,8 @@ export const updateTicket = mutation({
       meetingEndAt,
       meetingAttendeeCount,
       meetingAssetItems: meetingAssetItems.length ? meetingAssetItems : undefined,
+      requestedItemsText,
+      requestedBorrowDate,
       expectedReturnAt,
       borrowingItems: borrowingItems.length ? borrowingItems : undefined,
       updatedAt: now,
