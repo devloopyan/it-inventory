@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { formatUserRoleLabel, normalizeUserRole, type UserRole } from "@/lib/roles";
 import { CurrentUserProvider, type CurrentUser } from "./current-user-context";
 import TopbarActivityMenu from "./topbar-activity-menu";
+import { ActiveWorkflowProvider } from "./active-workflow-context";
+import ActiveWorkflowBanner from "./active-workflow-banner";
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -304,6 +306,7 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
 
   return (
     <CurrentUserProvider currentUser={currentUser}>
+      <ActiveWorkflowProvider>
       <div className="app-bg">
         <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
         <aside className={`app-sidebar${sidebarOpen ? " open" : ""}${sidebarCollapsed ? " collapsed" : ""}`}>
@@ -566,10 +569,14 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
             </div>
           </header>
 
-          <main className="app-content">{children}</main>
+          <main className="app-content">
+            <ActiveWorkflowBanner />
+            {children}
+          </main>
         </div>
       </div>
     </div>
+      </ActiveWorkflowProvider>
     </CurrentUserProvider>
   );
 }
