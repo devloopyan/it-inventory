@@ -598,8 +598,7 @@ export default function OperationsClient() {
   const visibleTasks = tasks ?? [];
 
   return (
-    <div className="dashboard-page operations-page">
-      <section className="panel dashboard-panel operations-simple-shell operations-planner-shell">
+    <section className="panel dashboard-panel operations-simple-shell operations-planner-shell">
         <div className="operations-simple-header">
           <div className="operations-simple-header-copy">
             <h1 className="operations-simple-title">Inbox</h1>
@@ -1019,6 +1018,5 @@ export default function OperationsClient() {
           })}
         </div>
       </section>
-    </div>
   );
 }

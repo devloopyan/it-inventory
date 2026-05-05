@@ -13868,4 +13868,293 @@ select.status-select optgroup {
   }
 }
 
+.operations-tab-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.operations-tab-btn {
+  min-height: 74px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--interaction-duration) var(--interaction-ease),
+    border-color var(--interaction-duration) var(--interaction-ease),
+    color var(--interaction-duration) var(--interaction-ease);
+}
+
+.operations-tab-btn:hover {
+  background: var(--surface-subtle);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+.operations-tab-btn.active {
+  background: rgba(var(--brand-900-rgb), 0.06);
+  border-color: rgba(var(--brand-900-rgb), 0.32);
+  color: var(--foreground);
+}
+
+.operations-tab-copy {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.operations-tab-label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--foreground);
+}
+
+.operations-tab-description {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .operations-tab-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+.operations-workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.operations-workflow-card {
+  display: grid;
+  gap: 6px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--interaction-duration) var(--interaction-ease),
+    border-color var(--interaction-duration) var(--interaction-ease),
+    transform var(--interaction-duration) var(--interaction-ease);
+}
+
+.operations-workflow-card:hover {
+  background: var(--surface-subtle);
+  border-color: rgba(var(--brand-900-rgb), 0.32);
+  transform: translateY(-1px);
+}
+
+.operations-workflow-card-label {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.operations-workflow-card-description {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.operations-workflow-card-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .operations-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.workflow-picker-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.workflow-picker-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(15, 23, 42, 0.55);
+  cursor: pointer;
+}
+
+.workflow-picker-shell {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 48px);
+  display: flex;
+}
+
+.workflow-picker-card {
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+  width: 100%;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 14px;
+  padding: 20px 22px;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.workflow-picker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workflow-picker-head-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workflow-picker-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.workflow-picker-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.workflow-picker-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.workflow-picker-close {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.workflow-picker-close:hover {
+  background: var(--surface-subtle);
+  color: var(--foreground);
+}
+
+.workflow-picker-search {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.workflow-picker-search:focus {
+  outline: none;
+  border-color: rgba(var(--brand-900-rgb), 0.55);
+}
+
+.workflow-picker-list {
+  display: grid;
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 4px;
+  min-height: 0;
+}
+
+.workflow-picker-empty {
+  padding: 18px 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.workflow-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workflow-picker-row:hover {
+  background: var(--surface-subtle);
+  border-color: rgba(var(--brand-900-rgb), 0.32);
+}
+
+.workflow-picker-row-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workflow-picker-row-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.workflow-picker-row-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.workflow-picker-row-role {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
 
