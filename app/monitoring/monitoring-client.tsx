@@ -25,6 +25,7 @@ import {
   normalizeMeetingRequestStatusValue,
   resolveConnectionRole,
 } from "@/lib/monitoring";
+import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/requestDisplay";
 
 type MonitoringClientProps = {
   actorName: string;
@@ -93,13 +94,6 @@ type MeetingFormState = {
     assetLabel: string;
   }>;
   supportNotes: string;
-};
-
-const textareaStyle = {
-  minHeight: 96,
-  paddingTop: 10,
-  paddingBottom: 10,
-  resize: "vertical" as const,
 };
 
 const defaultIssueForm: IssueFormState = {
@@ -185,11 +179,6 @@ function formatDateTime(value?: number) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function formatPercent(value?: number) {
-  if (value === undefined) return "-";
-  return `${value.toFixed(2)}%`;
 }
 
 function formatMinutes(value?: number) {
@@ -315,7 +304,7 @@ function Chip({ label }: { label: string }) {
 
 function CheckboxRow(props: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return (
-    <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: "var(--type-body-sm)", fontWeight: 600 }}>
+    <label className="monitoring-form-checkbox">
       <input type="checkbox" checked={props.checked} onChange={(event) => props.onChange(event.target.checked)} />
       <span>{props.label}</span>
     </label>
@@ -329,13 +318,13 @@ function FieldGroup(props: {
   children: ReactNode;
 }) {
   return (
-    <label style={{ display: "grid", gap: 6, alignContent: "start" }}>
-      <span style={{ fontSize: "var(--type-label)", fontWeight: 600, color: "var(--muted)" }}>
+    <label className="monitoring-form-field">
+      <span className="monitoring-form-label">
         {props.label}
-        {props.required ? <span style={{ color: "#b91c1c" }}> *</span> : null}
+        {props.required ? <span className="monitoring-form-required"> *</span> : null}
       </span>
       {props.children}
-      {props.helperText ? <span style={{ fontSize: "var(--type-label)", color: "var(--muted)" }}>{props.helperText}</span> : null}
+      {props.helperText ? <span className="monitoring-form-helper">{props.helperText}</span> : null}
     </label>
   );
 }
@@ -385,75 +374,11 @@ function FilterCheckIcon() {
   );
 }
 
-function MonitoringTabIcon(props: { tab: MonitoringTab }) {
-  switch (props.tab) {
-    case "issues":
-      return (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <rect x="2.25" y="2.25" width="9.5" height="9.5" rx="2.25" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M4.5 5H9.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          <path d="M4.5 7H9.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          <path d="M4.5 9H8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-      );
-    case "meetings":
-      return (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <path
-            d="M4.25 2.75V4.25M9.75 2.75V4.25M3.5 5.5H10.5M4 3.5H10C10.8284 3.5 11.5 4.17157 11.5 5V10C11.5 10.8284 10.8284 11.5 10 11.5H4C3.17157 11.5 2.5 10.8284 2.5 10V5C2.5 4.17157 3.17157 3.5 4 3.5Z"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
-    case "borrowing":
-      return (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <path
-            d="M4.5 4.5H9.5C10.0523 4.5 10.5 4.94772 10.5 5.5V9.5C10.5 10.0523 10.0523 10.5 9.5 10.5H4.5C3.94772 10.5 3.5 10.0523 3.5 9.5V5.5C3.5 4.94772 3.94772 4.5 4.5 4.5Z"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <path d="M5 4.5V4C5 2.89543 5.89543 2 7 2C8.10457 2 9 2.89543 9 4V4.5" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      );
-    case "internet":
-      return (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <path
-            d="M2.15 5.05C4.8 2.72 9.2 2.72 11.85 5.05"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M4.1 7.1C5.72 5.66 8.28 5.66 9.9 7.1"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M5.95 9.1C6.52 8.61 7.48 8.61 8.05 9.1"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle cx="7" cy="11.2" r="0.8" fill="currentColor" />
-        </svg>
-      );
-  }
-}
-
-const MONITORING_TABS: ReadonlyArray<{ key: MonitoringTab; label: string }> = [
-  { key: "issues", label: "Tickets" },
-  { key: "meetings", label: "Meeting Requests" },
-  { key: "borrowing", label: "Borrowing Requests" },
-  { key: "internet", label: "Internet Monitoring" },
+const MONITORING_TABS: ReadonlyArray<{ key: MonitoringTab; label: string; description: string }> = [
+  { key: "issues", label: "Tickets", description: "IT issues, approvals, and service requests." },
+  { key: "meetings", label: "Meeting Requests", description: "Teams support, room setup, and reserved assets." },
+  { key: "borrowing", label: "Borrowing Requests", description: "Asset releases, return dates, and borrower records." },
+  { key: "internet", label: "Internet Monitoring", description: "ISP outages, affected areas, and downtime logs." },
 ];
 
 function isMonitoringTab(value: string | null): value is MonitoringTab {
@@ -668,17 +593,7 @@ function BorrowingAssetLookup(props: {
 function FormErrorBanner({ message }: { message: string }) {
   if (!message) return null;
   return (
-    <div
-      style={{
-        border: "1px solid #fecaca",
-        background: "#fff1f2",
-        color: "#9f1239",
-        borderRadius: 12,
-        padding: "10px 12px",
-        fontSize: 13,
-        fontWeight: 600,
-      }}
-    >
+    <div className="monitoring-form-error">
       {message}
     </div>
   );
@@ -693,7 +608,7 @@ function MonitoringFormModal(props: {
   if (!props.open) return null;
 
   return (
-    <div className="reservation-form-overlay" style={{ position: "fixed", inset: 0, zIndex: 120 }}>
+    <div className="reservation-form-overlay">
       <button type="button" className="reservation-form-backdrop" aria-label="Close form" onClick={props.onClose} />
       <div
         className="reservation-form-shell"
@@ -701,7 +616,7 @@ function MonitoringFormModal(props: {
         aria-modal="true"
         style={{ width: `min(${props.width ?? 860}px, 100%)`, zIndex: 1 }}
       >
-        <div style={{ width: "100%", maxHeight: "calc(100vh - 32px)", overflowY: "auto" }}>{props.children}</div>
+        <div className="monitoring-form-scroll">{props.children}</div>
       </div>
     </div>
   );
@@ -710,7 +625,6 @@ function MonitoringFormModal(props: {
 export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const overview = useQuery(api.monitoring.getOverview, {});
   const assets = useQuery(api.hardwareInventory.listAll, {});
   const syncAutoClose = useMutation(api.monitoring.syncAutoClose);
   const createTicket = useMutation(api.monitoring.createTicket);
@@ -1335,40 +1249,24 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
 
   return (
     <div className="monitoring-page" style={{ display: "grid", gap: 18 }}>
-      <section className="panel" style={{ padding: 18, display: "grid", gap: 14 }}>
+      <section
+        className="panel"
+        style={{
+          padding: 18,
+          display: "grid",
+          gap: 14,
+          border: "none",
+          boxShadow: "none",
+          borderRadius: 0,
+          background: "transparent",
+        }}
+      >
         <div style={{ display: "grid", gap: 6 }}>
           <div style={{ display: "grid", gap: 6 }}>
             <h1 className="type-page-title">Monitoring</h1>
             <div className="type-page-subtitle">
               Internal IT monitoring for tickets, meeting requests, borrowing requests, approvals, major incidents, and
               office internet uptime.
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-          <div className="metric-item">
-            <div className="metric-head">Open Tickets</div>
-            <div className="metric-value">
-              <strong>{overview?.openTickets ?? "-"}</strong>
-            </div>
-          </div>
-          <div className="metric-item">
-            <div className="metric-head">Pending Approvals</div>
-            <div className="metric-value">
-              <strong>{overview?.pendingApprovals ?? "-"}</strong>
-            </div>
-          </div>
-          <div className="metric-item">
-            <div className="metric-head">Active Internet Outages</div>
-            <div className="metric-value">
-              <strong>{overview?.activeInternetOutages ?? "-"}</strong>
-            </div>
-          </div>
-          <div className="metric-item">
-            <div className="metric-head">Monthly Uptime</div>
-            <div className="metric-value">
-              <strong>{formatPercent(overview?.monthlyUptime)}</strong>
             </div>
           </div>
         </div>
@@ -1389,22 +1287,22 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               className={`monitoring-tab-btn${activeTab === tab.key ? " active" : ""}`}
               onClick={() => setActiveTab(tab.key)}
             >
-              <span className="monitoring-tab-icon" aria-hidden="true">
-                <MonitoringTabIcon tab={tab.key} />
+              <span className="monitoring-tab-copy">
+                <span className="monitoring-tab-label">{tab.label}</span>
+                <span className="monitoring-tab-description">{tab.description}</span>
               </span>
-              <span className="monitoring-tab-label">{tab.label}</span>
             </button>
           ))}
         </div>
 
         <MonitoringFormModal open={showIssueCreate && activeTab === "issues"} onClose={() => setShowIssueCreate(false)} width={920}>
-          <section className="saas-card" style={{ padding: 16, display: "grid", gap: 12 }}>
-            <div style={{ display: "grid", gap: 4 }}>
+          <section className="saas-card monitoring-form-card">
+            <div className="monitoring-form-head">
               <div className="type-section-title">New Issue / Request</div>
               <div className="type-helper">* Required fields</div>
             </div>
             <FormErrorBanner message={formError} />
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+            <div className="monitoring-form-grid">
               <FieldGroup label="Work Type" required>
                 <select
                   className="input-base"
@@ -1508,8 +1406,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
             </div>
             <FieldGroup label="Issue / Request Details" required>
               <textarea
-                className="input-base"
-                style={textareaStyle}
+                className="input-base monitoring-form-textarea"
                 placeholder="Issue / Request Details"
                 value={issueForm.requestDetails}
                 onChange={(event) => setIssueForm((prev) => ({ ...prev, requestDetails: event.target.value }))}
@@ -1517,14 +1414,13 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
             </FieldGroup>
             <FieldGroup label="Original Teams Form Snapshot" required>
               <textarea
-                className="input-base"
-                style={textareaStyle}
+                className="input-base monitoring-form-textarea"
                 placeholder="Original Teams Form Snapshot"
                 value={issueForm.requestSnapshot}
                 onChange={(event) => setIssueForm((prev) => ({ ...prev, requestSnapshot: event.target.value }))}
               />
             </FieldGroup>
-            <div style={{ display: "grid", gap: 8 }}>
+            <div className="monitoring-form-checklist">
               <CheckboxRow
                 label="Requires Purchase Approval"
                 checked={issueForm.requiresPurchase}
@@ -1546,7 +1442,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                 onChange={(checked) => setIssueForm((prev) => ({ ...prev, majorIncident: checked }))}
               />
             </div>
-            <div style={{ maxWidth: 420 }}>
+            <div className="monitoring-form-file">
               <FileUploadCard
                 label="Attachment"
                 inputRef={issueAttachmentRef}
@@ -1554,14 +1450,15 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                 onFileChange={setIssueAttachmentFile}
                 file={issueAttachmentFile}
                 hasAttachment={Boolean(issueAttachmentFile)}
-                displayName={issueAttachmentFile?.name ?? "Optional supporting file"}
-                helperText="Screenshots, emails, or reference documents."
+                displayName={issueAttachmentFile?.name ?? "No file selected"}
+                helperText="Save to upload."
                 badge="1"
                 ariaLabel="Issue attachment"
                 onRemove={() => setIssueAttachmentFile(null)}
+                compact
               />
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <div className="monitoring-form-actions">
               <button type="button" className="btn-secondary" onClick={() => setShowIssueCreate(false)}>
                 Cancel
               </button>
@@ -1577,13 +1474,13 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           onClose={() => setShowBorrowingCreate(false)}
           width={980}
         >
-          <section className="saas-card" style={{ padding: 16, display: "grid", gap: 12 }}>
-            <div style={{ display: "grid", gap: 4 }}>
+          <section className="saas-card monitoring-form-card">
+            <div className="monitoring-form-head">
               <div className="type-section-title">New Borrowing Request</div>
               <div className="type-helper">* Required fields</div>
             </div>
             <FormErrorBanner message={formError} />
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+            <div className="monitoring-form-grid">
               <FieldGroup label="Requester Name" required>
                 <input
                   className="input-base"
@@ -1622,7 +1519,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               required
               helperText="Search and add one or more registered assets. IT will record the returned condition later on the ticket."
             >
-              <div style={{ display: "grid", gap: 10 }}>
+              <div className="monitoring-form-stack">
                 <BorrowingAssetLookup
                   query={borrowingAssetSearch}
                   onQueryChange={setBorrowingAssetSearch}
@@ -1644,22 +1541,15 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   }}
                 />
                 {borrowingForm.borrowingItems.length ? (
-                  <div style={{ display: "grid", gap: 10 }}>
+                  <div className="monitoring-form-stack">
                     {borrowingForm.borrowingItems.map((item, index) => (
                       <div
                         key={`${item.assetId}-${index}`}
-                        className="saas-card"
-                        style={{
-                          padding: 12,
-                          display: "grid",
-                          gap: 10,
-                          gridTemplateColumns: "minmax(0, 1.6fr) minmax(220px, 0.9fr) auto",
-                          alignItems: "end",
-                        }}
-                        >
-                        <div style={{ display: "grid", gap: 4 }}>
-                          <strong style={{ fontSize: "var(--type-body)" }}>{item.assetTag}</strong>
-                          <span style={{ fontSize: "var(--type-label)", color: "var(--muted)" }}>{item.assetLabel}</span>
+                        className="saas-card monitoring-form-selection-card monitoring-form-selection-card--asset"
+                      >
+                        <div className="monitoring-form-selected-copy">
+                          <strong>{item.assetTag}</strong>
+                          <span>{item.assetLabel}</span>
                         </div>
                         <FieldGroup label="Release Condition" required>
                           <select
@@ -1702,15 +1592,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     ))}
                   </div>
                 ) : (
-                  <div
-                    className="saas-card"
-                    style={{
-                      padding: 12,
-                      borderStyle: "dashed",
-                      color: "var(--muted)",
-                      fontSize: "var(--type-body-sm)",
-                    }}
-                  >
+                  <div className="saas-card monitoring-form-empty-card">
                     No linked assets added yet.
                   </div>
                 )}
@@ -1718,8 +1600,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
             </FieldGroup>
             <FieldGroup label="Borrowing Purpose / Notes" required>
               <textarea
-                className="input-base"
-                style={textareaStyle}
+                className="input-base monitoring-form-textarea"
                 placeholder="Purpose of the borrowing request, usage notes, or handling reminders."
                 value={borrowingForm.requestDetails}
                 onChange={(event) => setBorrowingForm((prev) => ({ ...prev, requestDetails: event.target.value }))}
@@ -1727,29 +1608,29 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
             </FieldGroup>
             <FieldGroup label="Original Borrower's Form Snapshot" required>
               <textarea
-                className="input-base"
-                style={textareaStyle}
+                className="input-base monitoring-form-textarea"
                 placeholder="Paste the Microsoft Form / borrower's form details here."
                 value={borrowingForm.requestSnapshot}
                 onChange={(event) => setBorrowingForm((prev) => ({ ...prev, requestSnapshot: event.target.value }))}
               />
             </FieldGroup>
-            <div style={{ maxWidth: 420 }}>
+            <div className="monitoring-form-file">
               <FileUploadCard
-                label="Attachment"
+                label="Borrowing File"
                 inputRef={borrowingAttachmentRef}
                 accept="*/*"
                 onFileChange={setBorrowingAttachmentFile}
                 file={borrowingAttachmentFile}
                 hasAttachment={Boolean(borrowingAttachmentFile)}
-                displayName={borrowingAttachmentFile?.name ?? "Optional supporting file"}
-                helperText="Borrower's form export, screenshots, or reference documents."
+                displayName={borrowingAttachmentFile?.name ?? "No file selected"}
+                helperText="Save to upload."
                 badge="1"
                 ariaLabel="Borrowing attachment"
                 onRemove={() => setBorrowingAttachmentFile(null)}
+                compact
               />
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <div className="monitoring-form-actions">
               <button type="button" className="btn-secondary" onClick={() => setShowBorrowingCreate(false)}>
                 Cancel
               </button>
@@ -1766,13 +1647,13 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
         </MonitoringFormModal>
 
         <MonitoringFormModal open={activeTab === "meetings" && showMeetingCreate} onClose={() => setShowMeetingCreate(false)} width={920}>
-          <section className="saas-card" style={{ padding: 16, display: "grid", gap: 12 }}>
-            <div style={{ display: "grid", gap: 4 }}>
+          <section className="saas-card monitoring-form-card">
+            <div className="monitoring-form-head">
               <div className="type-section-title">New Meeting Request</div>
               <div className="type-helper">Paste the Teams reservation snapshot, add the meeting details, and reserve any storage assets needed.</div>
             </div>
             <FormErrorBanner message={formError} />
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+            <div className="monitoring-form-grid">
               <FieldGroup label="Requester Name" required>
                 <input
                   className="input-base"
@@ -1864,7 +1745,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               label="Reserved Assets"
               helperText="Select one or more available MAIN STORAGE assets to reserve for this meeting request."
             >
-              <div style={{ display: "grid", gap: 10 }}>
+              <div className="monitoring-form-stack">
                 <BorrowingAssetLookup
                   query={meetingAssetSearch}
                   onQueryChange={setMeetingAssetSearch}
@@ -1885,23 +1766,15 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   }}
                 />
                 {meetingForm.meetingAssets.length ? (
-                  <div style={{ display: "grid", gap: 10 }}>
+                  <div className="monitoring-form-stack">
                     {meetingForm.meetingAssets.map((item, index) => (
                       <div
                         key={`${item.assetId}-${index}`}
-                        className="saas-card"
-                        style={{
-                          padding: 12,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 10,
-                          alignItems: "center",
-                          flexWrap: "wrap",
-                        }}
+                        className="saas-card monitoring-form-selection-card monitoring-form-selection-card--meeting"
                       >
-                        <div style={{ display: "grid", gap: 4 }}>
-                          <strong style={{ fontSize: "var(--type-body)" }}>{item.assetTag}</strong>
-                          <span style={{ fontSize: "var(--type-label)", color: "var(--muted)" }}>{item.assetLabel}</span>
+                        <div className="monitoring-form-selected-copy">
+                          <strong>{item.assetTag}</strong>
+                          <span>{item.assetLabel}</span>
                         </div>
                         <button
                           type="button"
@@ -1919,15 +1792,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     ))}
                   </div>
                 ) : (
-                  <div
-                    className="saas-card"
-                    style={{
-                      padding: 12,
-                      borderStyle: "dashed",
-                      color: "var(--muted)",
-                      fontSize: "var(--type-body-sm)",
-                    }}
-                  >
+                  <div className="saas-card monitoring-form-empty-card">
                     No reserved assets added yet.
                   </div>
                 )}
@@ -1935,8 +1800,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
             </FieldGroup>
             <FieldGroup label="Additional Notes">
               <textarea
-                className="input-base"
-                style={textareaStyle}
+                className="input-base monitoring-form-textarea"
                 placeholder="Meeting agenda, setup timing, presenter needs, or any special handling."
                 value={meetingForm.supportNotes}
                 onChange={(event) => setMeetingForm((prev) => ({ ...prev, supportNotes: event.target.value }))}
@@ -1948,32 +1812,31 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               helperText="Copy and paste the Teams reservation or request snapshot exactly as received."
             >
               <textarea
-                className="input-base"
-                style={textareaStyle}
+                className="input-base monitoring-form-textarea"
                 placeholder="Paste the Teams meeting reservation snapshot here."
                 value={meetingForm.requestSnapshot}
                 onChange={(event) => setMeetingForm((prev) => ({ ...prev, requestSnapshot: event.target.value }))}
               />
             </FieldGroup>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <div className="monitoring-form-actions">
               <button type="button" className="btn-secondary" onClick={() => setShowMeetingCreate(false)}>
                 Cancel
               </button>
               <button type="button" className="btn-primary" disabled={meetingSubmitting} onClick={() => void handleMeetingCreate()}>
-                {meetingSubmitting ? "Creating Request..." : "Create Meeting Request"}
+                {meetingSubmitting ? "Creating..." : "Create"}
               </button>
             </div>
           </section>
         </MonitoringFormModal>
 
         <MonitoringFormModal open={activeTab === "internet" && showInternetCreate} onClose={() => setShowInternetCreate(false)} width={860}>
-          <section className="saas-card" style={{ padding: 16, display: "grid", gap: 12 }}>
-            <div style={{ display: "grid", gap: 4 }}>
+          <section className="saas-card monitoring-form-card">
+            <div className="monitoring-form-head">
               <div className="type-section-title">New Internet Outage</div>
               <div className="type-helper">* Required fields</div>
             </div>
             <FormErrorBanner message={formError} />
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+            <div className="monitoring-form-grid">
               <FieldGroup label="ISP" required>
                 <select
                   className="input-base"
@@ -2049,8 +1912,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
             />
             <FieldGroup label="Outage Details">
               <textarea
-                className="input-base"
-                style={textareaStyle}
+                className="input-base monitoring-form-textarea"
                 placeholder="Outage details"
                 value={internetForm.details}
                 onChange={(event) => setInternetForm((prev) => ({ ...prev, details: event.target.value }))}
@@ -2058,14 +1920,13 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
             </FieldGroup>
             <FieldGroup label="Cause / Action Taken" helperText="Required only when the outage is marked Resolved.">
               <textarea
-                className="input-base"
-                style={textareaStyle}
+                className="input-base monitoring-form-textarea"
                 placeholder="Cause / Action Taken"
                 value={internetForm.causeActionTaken}
                 onChange={(event) => setInternetForm((prev) => ({ ...prev, causeActionTaken: event.target.value }))}
               />
             </FieldGroup>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <div className="monitoring-form-actions">
               <button type="button" className="btn-secondary" onClick={() => setShowInternetCreate(false)}>
                 Cancel
               </button>
@@ -2230,7 +2091,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     setShowMeetingCreate(true);
                   }}
                 >
-                  Create Meeting Request
+                  Create
                 </button>
               ) : null}
               {activeTab === "issues" ? (
@@ -2277,6 +2138,8 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     const displayStatus = getDisplayStatusLabel(row.status, row.category);
                     const requestListTitle =
                       activeTab === "meetings" ? getMeetingRequestListTitle(row.title, row.meetingStartAt) : row.title;
+                    const borrowingRequestType = formatRequesterRequestType(row);
+                    const borrowingAssetLabel = formatRequesterAssetLabel(row);
                     const editableMeetingStatusOptions = Array.from(
                       new Set([
                         ...getMeetingRequestStatusOptions(),
@@ -2319,9 +2182,15 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                           </div>
                         </td>
                         {showRequestTypeColumn ? (
-                          <td>{activeTab === "borrowing" ? "Borrowing Request" : row.workType}</td>
+                          <td>{activeTab === "borrowing" ? borrowingRequestType : row.workType}</td>
                         ) : null}
-                        <td>{activeTab === "meetings" ? row.requesterSection || "-" : row.category}</td>
+                        <td>
+                          {activeTab === "meetings"
+                            ? row.requesterSection || "-"
+                            : activeTab === "borrowing"
+                              ? borrowingAssetLabel
+                              : row.category}
+                        </td>
                         <td>{row.requesterName}</td>
                         <td>
                           {row.meetingStartAt ? (
@@ -2371,7 +2240,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                               ? row.meetingMode || "-"
                               : activeTab === "borrowing"
                                 ? row.borrowingItems?.length
-                                  ? `${row.borrowingItems.length} linked`
+                                  ? `${row.borrowingItems.length} ${borrowingAssetLabel.toLowerCase()} linked`
                                   : row.requestedItemsText
                                     ? "Needs asset matching"
                                     : "-"
@@ -2398,4 +2267,3 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     </div>
   );
 }
-

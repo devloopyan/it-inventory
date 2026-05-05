@@ -4,13 +4,20 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useCurrentUser } from "../current-user-context";
+import FileUploadCard from "../hardware-inventory/file-upload-card";
 import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
 import { HARDWARE_BORROW_CONDITION_OPTIONS } from "@/lib/hardwareBorrowConditions";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
+import { MONITORING_BORROWING_REQUEST_CATEGORY } from "@/lib/monitoring";
+import { normalizeUserRole } from "@/lib/roles";
+import RequesterDashboard from "./requester-dashboard";
+import DashboardStaffDropdown from "./staff-dropdown";
 
 type TabKey = "workstation" | "master" | "storage" | "borrowed" | "available" | "reserved";
 type ReservationStatus = "Reserved" | "Claimed" | "Cancelled" | "Expired";
 type ActivityTone = "blue" | "green" | "amber" | "red" | "slate";
+type ReservationMode = "equipment" | "drone";
 type HardwareActivityRecord = {
   _id: string;
   inventoryId?: string;
@@ -499,133 +506,6 @@ function renderActivityIcon(eventType: string) {
   }
 }
 
-function DashboardFilterChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
-      fill="none"
-      aria-hidden="true"
-      style={{
-        transform: open ? "rotate(180deg)" : undefined,
-        transition: "transform var(--interaction-duration) var(--interaction-ease)",
-      }}
-    >
-      <path
-        d="M2.75 4.5L6 7.75L9.25 4.5"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function DashboardFilterCheckIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-      <path
-        d="M2.5 6.1L4.9 8.5L9.5 3.9"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function DashboardStaffDropdown(props: {
-  value: string[];
-  options: ReadonlyArray<string>;
-  onChange: (next: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const summary = props.value.length
-    ? props.value.length === 1
-      ? props.value[0]
-      : `${props.value.length} selected`
-    : "Select IT staff";
-
-  useEffect(() => {
-    if (!open) return undefined;
-
-    function handlePointerDown(event: MouseEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
-
-  return (
-    <div
-      ref={containerRef}
-      className={`monitoring-filter-dropdown${open ? " is-open" : ""}${props.value.length ? " is-active" : ""}`}
-      style={{ width: "100%", minWidth: 0 }}
-    >
-      <button
-        type="button"
-        className="monitoring-filter-trigger"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Assigned IT staff"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="monitoring-filter-trigger-main">
-          <span className="monitoring-filter-trigger-text">{summary}</span>
-        </span>
-        <span className="monitoring-filter-trigger-icon" aria-hidden="true">
-          <DashboardFilterChevronIcon open={open} />
-        </span>
-      </button>
-      {open ? (
-        <div className="monitoring-filter-menu" role="menu" aria-label="Assigned IT staff options">
-          {props.options.map((option) => {
-            const selected = props.value.includes(option);
-
-            return (
-              <button
-                key={option}
-                type="button"
-                role="menuitemcheckbox"
-                aria-checked={selected}
-                className={`monitoring-filter-option${selected ? " is-selected" : ""}`}
-                onClick={() => {
-                  props.onChange(
-                    selected ? props.value.filter((item) => item !== option) : [...props.value, option],
-                  );
-                }}
-              >
-                <span className="monitoring-filter-check" aria-hidden="true">
-                  {selected ? <DashboardFilterCheckIcon /> : null}
-                </span>
-                <span className="monitoring-filter-option-text">{option}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function DashboardCalendarAgendaCard({ event, compactTimeLabel = false }: { event: DashboardCalendarEvent; compactTimeLabel?: boolean }) {
   const cardContent = (
     <>
@@ -671,6 +551,8 @@ function DashboardCalendarAgendaCard({ event, compactTimeLabel = false }: { even
 }
 
 export default function DashboardPage() {
+  const currentUser = useCurrentUser();
+  const currentRole = normalizeUserRole(currentUser?.role);
   const [calendarMonth, setCalendarMonth] = useState(() => getCalendarMonthStart(new Date()));
   const [selectedMeetingDay, setSelectedMeetingDay] = useState(() => getCalendarDateKey(new Date()));
   const [isCalendarDetailOpen, setIsCalendarDetailOpen] = useState(false);
@@ -683,10 +565,15 @@ export default function DashboardPage() {
   const [supportEventError, setSupportEventError] = useState("");
   const meetingCalendarRange = getCalendarGridRange(calendarMonth);
   const allRows = useQuery(api.hardwareInventory.listAll, {});
+  const openBorrowingRequests = useQuery(api.monitoring.list, {
+    view: "issues",
+    showClosed: false,
+  });
   const monitoringCalendarFeed = useQuery(api.monitoring.getMeetingCalendar, {
     rangeStart: meetingCalendarRange.gridStart.getTime(),
     rangeEnd: meetingCalendarRange.gridEnd.getTime(),
   }) as DashboardCalendarEvent[] | undefined;
+  const monitoringOverview = useQuery(api.monitoring.getOverview, {});
   const supportCalendarFeed = useQuery(api.dashboardCalendar.listSupportEvents, {
     rangeStart: meetingCalendarRange.gridStart.getTime(),
     rangeEnd: meetingCalendarRange.gridEnd.getTime(),
@@ -713,13 +600,24 @@ export default function DashboardPage() {
   const cancelReservation = useMutation(
     (api.hardwareInventory as Record<string, unknown>)["cancelReservation"] as never,
   ) as unknown as (args: { inventoryId: never }) => Promise<unknown>;
+  const generateUploadUrl = useMutation(api.hardwareInventory.generateUploadUrl);
   const returnBorrowedAsset = useMutation(
     (api.hardwareInventory as Record<string, unknown>)["returnBorrowedAsset"] as never,
   ) as unknown as (args: { inventoryId: never; returnCondition: string }) => Promise<unknown>;
+  const returnDronePackage = useMutation(
+    (api.hardwareInventory as Record<string, unknown>)["returnDronePackage"] as never,
+  ) as unknown as (args: {
+    inventoryIds: never[];
+    reportTargetInventoryId: never;
+    droneFlightReportStorageId: never;
+    returnCondition: string;
+  }) => Promise<unknown>;
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("borrowed");
   const [activityExpanded, setActivityExpanded] = useState(false);
-  const [reservationPickerId, setReservationPickerId] = useState("");
+  const [reservationPickerOpen, setReservationPickerOpen] = useState(false);
+  const [requesterBorrowingListIds, setRequesterBorrowingListIds] = useState<string[]>([]);
+  const [reservationMode, setReservationMode] = useState<ReservationMode>("equipment");
   const [reservationTargetIds, setReservationTargetIds] = useState<string[]>([]);
   const [reservationBorrower, setReservationBorrower] = useState("");
   const [reservationDepartment, setReservationDepartment] = useState("");
@@ -735,6 +633,11 @@ export default function DashboardPage() {
   const [returnConditionInventoryId, setReturnConditionInventoryId] = useState("");
   const [returnConditionValue, setReturnConditionValue] = useState<string>(DEFAULT_BORROW_CONDITION);
   const [returnConditionError, setReturnConditionError] = useState("");
+  const [selectedReturnDroneFlightReportFile, setSelectedReturnDroneFlightReportFile] = useState<File | null>(
+    null,
+  );
+  const reservationPickerRef = useRef<HTMLDivElement | null>(null);
+  const returnDroneFlightReportInputRef = useRef<HTMLInputElement | null>(null);
   const migrationRan = useRef(false);
   const workspaceSectionRef = useRef<HTMLElement | null>(null);
   const calendarFeed = useMemo(() => {
@@ -782,7 +685,8 @@ export default function DashboardPage() {
   }, [allRows, migrateLegacy]);
 
   function resetReservationForm() {
-    setReservationPickerId("");
+    setReservationPickerOpen(false);
+    setReservationMode("equipment");
     setReservationTargetIds([]);
     setReservationBorrower("");
     setReservationDepartment("");
@@ -799,12 +703,19 @@ export default function DashboardPage() {
     setReservationTargetIds((current) =>
       current.includes(inventoryId) ? current : [...current, inventoryId],
     );
-    setReservationPickerId("");
+    setReservationPickerOpen(false);
     setReservationError("");
   }
 
   function removeReservationTarget(inventoryId: string) {
     setReservationTargetIds((current) => current.filter((id) => id !== inventoryId));
+    setReservationError("");
+  }
+
+  function toggleReservationMode() {
+    setReservationMode((current) => (current === "equipment" ? "drone" : "equipment"));
+    setReservationPickerOpen(false);
+    setReservationTargetIds([]);
     setReservationError("");
   }
 
@@ -891,23 +802,64 @@ export default function DashboardPage() {
     setReturnConditionInventoryId(inventoryId);
     setReturnConditionValue(DEFAULT_BORROW_CONDITION);
     setReturnConditionError("");
+    setSelectedReturnDroneFlightReportFile(null);
+    if (returnDroneFlightReportInputRef.current) {
+      returnDroneFlightReportInputRef.current.value = "";
+    }
   }
 
   function closeReturnConditionDialog() {
     setReturnConditionInventoryId("");
     setReturnConditionValue(DEFAULT_BORROW_CONDITION);
     setReturnConditionError("");
+    setSelectedReturnDroneFlightReportFile(null);
+    if (returnDroneFlightReportInputRef.current) {
+      returnDroneFlightReportInputRef.current.value = "";
+    }
   }
 
   async function handleReturnBorrowedAsset() {
     if (!returnConditionInventoryId) return;
+    const isDroneReturn = returnConditionTargetRow ? isDroneKitRecord(returnConditionTargetRow) : false;
+    if (isDroneReturn && !selectedReturnDroneFlightReportFile) {
+      setReturnConditionError("Flight report is required before returning this drone kit.");
+      return;
+    }
+
     try {
       setReservationBusyId(returnConditionInventoryId);
       setReturnConditionError("");
-      await returnBorrowedAsset({
-        inventoryId: returnConditionInventoryId as never,
-        returnCondition: returnConditionValue,
-      });
+      if (isDroneReturn && selectedReturnDroneFlightReportFile) {
+        const uploadUrl = await generateUploadUrl();
+        const uploadResult = await fetch(uploadUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": selectedReturnDroneFlightReportFile.type || "application/octet-stream",
+          },
+          body: selectedReturnDroneFlightReportFile,
+        });
+
+        if (!uploadResult.ok) {
+          throw new Error("Drone flight report upload failed.");
+        }
+
+        const uploadData = (await uploadResult.json()) as { storageId?: string };
+        if (!uploadData.storageId) {
+          throw new Error("Drone flight report upload failed.");
+        }
+
+        await returnDronePackage({
+          inventoryIds: [returnConditionInventoryId as never],
+          reportTargetInventoryId: returnConditionInventoryId as never,
+          droneFlightReportStorageId: uploadData.storageId as never,
+          returnCondition: returnConditionValue,
+        });
+      } else {
+        await returnBorrowedAsset({
+          inventoryId: returnConditionInventoryId as never,
+          returnCondition: returnConditionValue,
+        });
+      }
       closeReturnConditionDialog();
     } catch (error) {
       setReturnConditionError(error instanceof Error ? error.message : "Return failed.");
@@ -1050,6 +1002,23 @@ export default function DashboardPage() {
         .filter((row): row is NonNullable<typeof allRows>[number] => Boolean(row)),
     [allRows, reservationTargetIds],
   );
+  const reservationSourceRows = useMemo(
+    () =>
+      reservableMainStorageRows.filter((row) =>
+        reservationMode === "drone" ? isDroneKitRecord(row) : !isDroneKitRecord(row),
+      ),
+    [reservationMode, reservableMainStorageRows],
+  );
+  const reservationPickerOptions = useMemo(
+    () =>
+      reservationSourceRows
+        .filter((row) => !reservationTargetIds.includes(String(row._id)))
+        .map((row) => ({
+          id: String(row._id),
+          label: formatReservationAssetLabel(row),
+        })),
+    [reservationSourceRows, reservationTargetIds],
+  );
   const selectedReservationHasDrone = selectedReservationRows.some((row) => isDroneKitRecord(row));
   const adjustedAvailableCount = useMemo(
     () =>
@@ -1122,6 +1091,65 @@ export default function DashboardPage() {
     [activityFeed, activityExpanded],
   );
   const hasMoreActivity = (activityFeed?.length ?? 0) > 3;
+  const openBorrowingAssetIds = useMemo(
+    () =>
+      new Set(
+        (openBorrowingRequests ?? [])
+          .filter((request) => request.category === MONITORING_BORROWING_REQUEST_CATEGORY)
+          .flatMap((request) => request.borrowingItems ?? [])
+          .map((item) => String(item.assetId)),
+      ),
+    [openBorrowingRequests],
+  );
+  const requesterAvailableEquipment = useMemo(
+    () =>
+      reservableMainStorageRows
+        .filter((row) => !isDroneKitRecord(row))
+        .filter((row) => !openBorrowingAssetIds.has(String(row._id)))
+        .sort((left, right) => left.assetTag.localeCompare(right.assetTag))
+        .slice(0, 8),
+    [openBorrowingAssetIds, reservableMainStorageRows],
+  );
+  const requesterUnavailableEquipment = useMemo(
+    () =>
+      (allRows ?? [])
+        .filter(
+          (row) =>
+            row.status === "Borrowed" ||
+            isReservedRecord(row as Record<string, unknown>) ||
+            openBorrowingAssetIds.has(String(row._id)),
+        )
+        .sort((left, right) => {
+          const leftName =
+            left.borrower ||
+            getReservationBorrower(left as Record<string, unknown>) ||
+            left.turnoverTo ||
+            "";
+          const rightName =
+            right.borrower ||
+            getReservationBorrower(right as Record<string, unknown>) ||
+            right.turnoverTo ||
+            "";
+          return leftName.localeCompare(rightName);
+        })
+        .slice(0, 8),
+    [allRows, openBorrowingAssetIds],
+  );
+  const requesterUpcomingMeetings = useMemo(
+    () =>
+      (calendarFeed ?? [])
+        .filter((event) => event.eventStartAt >= Date.now())
+        .sort((left, right) => left.eventStartAt - right.eventStartAt)
+        .slice(0, 5),
+    [calendarFeed],
+  );
+  const requesterBorrowingListRows = useMemo(
+    () =>
+      requesterBorrowingListIds
+        .map((inventoryId) => requesterAvailableEquipment.find((row) => String(row._id) === inventoryId))
+        .filter((row): row is NonNullable<typeof requesterAvailableEquipment>[number] => Boolean(row)),
+    [requesterAvailableEquipment, requesterBorrowingListIds],
+  );
 
   const activeTabSummary: Record<TabKey, string> = {
     master: "Full inventory register with department drilldown and signed-turnover filtering.",
@@ -1133,6 +1161,24 @@ export default function DashboardPage() {
   };
   const borrowingCardReadyCount = reservableMainStorageRows.length;
   const borrowingCardSaveBusy = reservationFormBusy;
+  const reservationModeCopy =
+    reservationMode === "drone"
+      ? {
+          badge: "DRONE BORROWING",
+          assetLabel: "Drone Kits from Main Storage",
+          trigger: "Select drone kit to add",
+          empty: "No drone kits available",
+          purposePlaceholder: "Enter drone borrowing purpose",
+          submit: "Log Drone Borrower",
+        }
+      : {
+          badge: "BORROWING FORM",
+          assetLabel: "Assets from Main Storage",
+          trigger: "Select asset to add",
+          empty: "No assets available",
+          purposePlaceholder: "Enter borrowing purpose",
+          submit: "Log Borrower",
+        };
   const claimConditionTargetRow = useMemo(
     () => allRows?.find((row) => String(row._id) === claimConditionInventoryId),
     [allRows, claimConditionInventoryId],
@@ -1141,6 +1187,33 @@ export default function DashboardPage() {
     () => allRows?.find((row) => String(row._id) === returnConditionInventoryId),
     [allRows, returnConditionInventoryId],
   );
+  const returnConditionTargetIsDrone = useMemo(
+    () => (returnConditionTargetRow ? isDroneKitRecord(returnConditionTargetRow) : false),
+    [returnConditionTargetRow],
+  );
+
+  useEffect(() => {
+    if (!reservationPickerOpen) return undefined;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (reservationPickerRef.current?.contains(event.target as Node)) return;
+      setReservationPickerOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setReservationPickerOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [reservationPickerOpen]);
 
   const renderTable = (
     rows: typeof tabRows,
@@ -1331,10 +1404,27 @@ export default function DashboardPage() {
   }
 
   async function handleCreateSupportEvent() {
+    const title = supportEventForm.title.trim();
+    const neededItems = supportEventForm.neededItems.trim();
+    const requestedBy = supportEventForm.requestedBy.trim();
+    const location = supportEventForm.location.trim();
+    const notes = supportEventForm.notes.trim();
     const assignedStaff = supportEventForm.assignedStaff.map((value) => value.trim()).filter(Boolean);
     const startAt = toTimestamp(supportEventForm.startAt);
     const endAt = toTimestamp(supportEventForm.endAt);
 
+    if (!title) {
+      setSupportEventError("Event title is required.");
+      return;
+    }
+    if (!neededItems) {
+      setSupportEventError("Needed things are required.");
+      return;
+    }
+    if (!assignedStaff.length) {
+      setSupportEventError("Assigned IT staff is required.");
+      return;
+    }
     if (!startAt) {
       setSupportEventError("Schedule start is required.");
       return;
@@ -1344,12 +1434,12 @@ export default function DashboardPage() {
       setSupportEventSaving(true);
       setSupportEventError("");
       await createSupportEvent({
-        title: supportEventForm.title,
-        requestedBy: supportEventForm.requestedBy || undefined,
+        title,
+        requestedBy: requestedBy || undefined,
         assignedStaff,
-        neededItems: supportEventForm.neededItems,
-        location: supportEventForm.location || undefined,
-        notes: supportEventForm.notes || undefined,
+        neededItems,
+        location: location || undefined,
+        notes: notes || undefined,
         startAt,
         endAt,
         createdBy: "Dashboard",
@@ -1362,6 +1452,34 @@ export default function DashboardPage() {
     } finally {
       setSupportEventSaving(false);
     }
+  }
+
+  function addRequesterBorrowingListItem(inventoryId: string) {
+    setRequesterBorrowingListIds((current) =>
+      current.includes(inventoryId) ? current : [...current, inventoryId],
+    );
+  }
+
+  function removeRequesterBorrowingListItem(inventoryId: string) {
+    setRequesterBorrowingListIds((current) => current.filter((id) => id !== inventoryId));
+  }
+
+  if (currentRole === "requester") {
+    return (
+      <RequesterDashboard
+        equipmentLoading={allRows === undefined || openBorrowingRequests === undefined}
+        unavailableLoading={allRows === undefined || openBorrowingRequests === undefined}
+        meetingsLoading={calendarFeed === undefined}
+        availableEquipment={requesterAvailableEquipment}
+        unavailableEquipment={requesterUnavailableEquipment}
+        upcomingMeetings={requesterUpcomingMeetings}
+        borrowingListRows={requesterBorrowingListRows}
+        borrowingListIds={requesterBorrowingListIds}
+        openBorrowingAssetIds={openBorrowingAssetIds}
+        onAddBorrowingItem={addRequesterBorrowingListItem}
+        onRemoveBorrowingItem={removeRequesterBorrowingListItem}
+      />
+    );
   }
 
   return (
@@ -1388,6 +1506,18 @@ export default function DashboardPage() {
               </div>
             </div>
           ))}
+          <div className="dashboard-top-card-metric">
+            <div className="metric-head">Active Internet Outages</div>
+            <div className="metric-value">
+              <strong>{monitoringOverview?.activeInternetOutages ?? "-"}</strong>
+            </div>
+          </div>
+          <div className="dashboard-top-card-metric">
+            <div className="metric-head">Monthly Uptime</div>
+            <div className="metric-value">
+              <strong>{formatPercent(monitoringOverview?.monthlyUptime)}</strong>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1503,40 +1633,75 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="dashboard-side-stack">
-          <div className="dashboard-reminder-card dashboard-borrowing-card">
+          <div
+            className={`dashboard-reminder-card dashboard-borrowing-card${
+              reservationMode === "drone" ? " is-drone-mode" : ""
+            }`}
+          >
             <div className="dashboard-borrowing-head">
-              <span className="dashboard-reminder-badge">BORROWING FORM</span>
+              <button
+                type="button"
+                className={`dashboard-reminder-badge dashboard-borrowing-mode-toggle${
+                  reservationMode === "drone" ? " is-drone" : ""
+                }`}
+                onClick={toggleReservationMode}
+              >
+                {reservationModeCopy.badge}
+              </button>
             </div>
             <div className="dashboard-borrowing-fields">
               <div className="reservation-form-field dashboard-borrowing-field-span">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Assets from Main Storage</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
+                  {reservationModeCopy.assetLabel}
+                </div>
                 <div className="dashboard-borrowing-picker-row">
-                  <select
-                    className="input-base reservation-input"
-                    value={reservationPickerId}
-                    onChange={(event) => {
-                      setReservationPickerId(event.target.value);
-                      setReservationError("");
-                    }}
-                    aria-label="Assets from main storage"
+                  <div
+                    ref={reservationPickerRef}
+                    className={`dashboard-borrowing-picker${reservationPickerOpen ? " is-open" : ""}`}
                   >
-                    <option value="">Select asset to add</option>
-                    {reservableMainStorageRows
-                      .filter((row) => !reservationTargetIds.includes(String(row._id)))
-                      .map((row) => (
-                        <option key={String(row._id)} value={String(row._id)}>
-                          {formatReservationAssetLabel(row)}
-                        </option>
-                      ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => addReservationTarget(reservationPickerId)}
-                    disabled={!reservationPickerId}
-                  >
-                    Add Asset
-                  </button>
+                    <button
+                      type="button"
+                      className="input-base reservation-input dashboard-borrowing-picker-trigger"
+                      aria-haspopup="listbox"
+                      aria-expanded={reservationPickerOpen}
+                      aria-label="Assets from main storage"
+                      disabled={!reservationPickerOptions.length}
+                      onClick={() => {
+                        setReservationPickerOpen((current) => !current);
+                        setReservationError("");
+                      }}
+                    >
+                      <span className="dashboard-borrowing-picker-trigger-text">
+                        {reservationPickerOptions.length ? reservationModeCopy.trigger : reservationModeCopy.empty}
+                      </span>
+                      <span className="dashboard-borrowing-picker-trigger-icon" aria-hidden="true">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                          <path
+                            d="M7 10L12 15L17 10"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                    </button>
+                    {reservationPickerOpen ? (
+                      <div className="dashboard-borrowing-picker-menu" role="listbox" aria-label="Assets from main storage">
+                        {reservationPickerOptions.map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            className="dashboard-borrowing-picker-option"
+                            onClick={() => addReservationTarget(option.id)}
+                          >
+                            <span className="dashboard-borrowing-picker-option-label">{option.label}</span>
+                            <span className="dashboard-borrowing-picker-option-action">Add</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
               <div className="reservation-form-field">
@@ -1592,7 +1757,7 @@ export default function DashboardPage() {
                 className="input-base reservation-input"
                 value={reservationPurpose}
                 onChange={(event) => setReservationPurpose(event.target.value)}
-                placeholder="Enter borrowing purpose"
+                placeholder={reservationModeCopy.purposePlaceholder}
                 aria-label="Purpose"
               />
             </div>
@@ -1645,7 +1810,7 @@ export default function DashboardPage() {
                   onClick={() => void handleReserveSubmit()}
                   disabled={borrowingCardSaveBusy || !reservationTargetIds.length}
                 >
-                  {borrowingCardSaveBusy ? "Saving..." : "Log Borrower"}
+                  {borrowingCardSaveBusy ? "Saving..." : reservationModeCopy.submit}
                 </button>
               </div>
             </div>
@@ -2006,7 +2171,9 @@ export default function DashboardPage() {
                     <div className="dashboard-calendar-agenda-eyebrow">Borrower Check-In</div>
                     <h4 className="dashboard-calendar-agenda-title">Confirm Returned Condition</h4>
                     <p className="dashboard-calendar-agenda-copy" style={{ margin: 0 }}>
-                      Record the equipment condition after it comes back from the borrower.
+                      {returnConditionTargetIsDrone
+                        ? "Record the drone condition and attach the flight report before returning it."
+                        : "Record the equipment condition after it comes back from the borrower."}
                     </p>
                   </div>
                 </div>
@@ -2058,6 +2225,42 @@ export default function DashboardPage() {
                     ))}
                   </select>
                 </div>
+
+                {returnConditionTargetIsDrone ? (
+                  <FileUploadCard
+                    label="Flight Report"
+                    inputRef={returnDroneFlightReportInputRef}
+                    accept=".pdf,image/*"
+                    onFileChange={(file) => {
+                      setSelectedReturnDroneFlightReportFile(file);
+                      if (file) {
+                        setReturnConditionError("");
+                      }
+                    }}
+                    file={selectedReturnDroneFlightReportFile}
+                    hasAttachment={Boolean(selectedReturnDroneFlightReportFile)}
+                    displayName={
+                      selectedReturnDroneFlightReportFile
+                        ? selectedReturnDroneFlightReportFile.name
+                        : "No file selected"
+                    }
+                    helperText={
+                      selectedReturnDroneFlightReportFile
+                        ? "Flight report selected. Confirm return to finish."
+                        : "Required before returning this drone kit."
+                    }
+                    badge="PDF"
+                    ariaLabel="Drone flight report upload"
+                    onRemove={() => {
+                      setSelectedReturnDroneFlightReportFile(null);
+                      setReturnConditionError("");
+                      if (returnDroneFlightReportInputRef.current) {
+                        returnDroneFlightReportInputRef.current.value = "";
+                      }
+                    }}
+                    compact
+                  />
+                ) : null}
               </div>
 
               {returnConditionError ? <div className="reservation-error">{returnConditionError}</div> : null}
@@ -2077,7 +2280,11 @@ export default function DashboardPage() {
                   onClick={() => void handleReturnBorrowedAsset()}
                   disabled={reservationBusyId === returnConditionInventoryId}
                 >
-                  {reservationBusyId === returnConditionInventoryId ? "Returning..." : "Confirm Return"}
+                  {reservationBusyId === returnConditionInventoryId
+                    ? "Returning..."
+                    : returnConditionTargetIsDrone
+                      ? "Upload Report & Return"
+                      : "Confirm Return"}
                 </button>
               </div>
             </div>

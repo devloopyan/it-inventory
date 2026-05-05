@@ -28,6 +28,7 @@ type ChecklistSelectProps = {
   ariaLabel: string;
   disabled?: boolean;
   minMenuWidth?: number;
+  maxMenuHeight?: number;
   compact?: boolean;
   multiple?: boolean;
   multipleSummaryLabel?: string;
@@ -83,6 +84,7 @@ export default function ChecklistSelect({
   ariaLabel,
   disabled = false,
   minMenuWidth = 180,
+  maxMenuHeight = 260,
   compact = false,
   multiple = false,
   multipleSummaryLabel = "Selected",
@@ -120,12 +122,12 @@ export default function ChecklistSelect({
 
       const rect = trigger.getBoundingClientRect();
       const nextWidth = Math.max(Math.round(rect.width), minMenuWidth);
-      const estimatedHeight = Math.min(options.length * 48 + 20, 260);
-      const roomBelow = window.innerHeight - rect.bottom;
-      const openUpward = roomBelow < estimatedHeight + 12 && rect.top > roomBelow;
-      const maxTop = Math.max(12, window.innerHeight - estimatedHeight - 12);
-      const nextTop = openUpward ? Math.max(12, rect.top - estimatedHeight - 8) : Math.min(maxTop, rect.bottom + 8);
-      const nextLeft = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - nextWidth - 12));
+        const estimatedHeight = Math.min(options.length * 48 + 20, maxMenuHeight);
+        const roomBelow = window.innerHeight - rect.bottom;
+        const openUpward = roomBelow < estimatedHeight + 12 && rect.top > roomBelow;
+        const maxTop = Math.max(12, window.innerHeight - estimatedHeight - 12);
+        const nextTop = openUpward ? Math.max(12, rect.top - estimatedHeight - 8) : Math.min(maxTop, rect.bottom + 8);
+        const nextLeft = Math.min(Math.max(12, rect.left), Math.max(12, window.innerWidth - nextWidth - 12));
 
       setMenuPosition({
         top: nextTop,
@@ -161,7 +163,7 @@ export default function ChecklistSelect({
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [disabled, minMenuWidth, open, options.length]);
+  }, [disabled, maxMenuHeight, minMenuWidth, open, options.length]);
 
   return (
     <div
@@ -212,6 +214,7 @@ export default function ChecklistSelect({
                 top: menuPosition.top,
                 left: menuPosition.left,
                 width: menuPosition.width,
+                maxHeight: maxMenuHeight,
               }}
             >
               {options.map((option) => {

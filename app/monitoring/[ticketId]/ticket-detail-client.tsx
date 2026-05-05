@@ -24,6 +24,7 @@ import {
   normalizeMeetingRequestStatusValue,
   type MonitoringApprovalReference,
 } from "@/lib/monitoring";
+import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/requestDisplay";
 
 type TicketDetailClientProps = {
   ticketId: Id<"monitoringTickets">;
@@ -384,11 +385,11 @@ function FieldBlock(props: { label: string; children: ReactNode }) {
   );
 }
 
-function DetailCard(props: { label: string; value?: ReactNode }) {
+function DetailTextRow(props: { label: string; value?: ReactNode }) {
   return (
-    <div className="monitoring-detail-card">
-      <div className="monitoring-detail-card-label">{props.label}</div>
-      <div className="monitoring-detail-card-value">{props.value ?? "-"}</div>
+    <div className="monitoring-detail-text-row">
+      <div className="monitoring-detail-text-row-label">{props.label}</div>
+      <div className="monitoring-detail-text-row-value">{props.value ?? "-"}</div>
     </div>
   );
 }
@@ -1145,11 +1146,13 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const isBorrowingRequest =
     ticket.category === MONITORING_BORROWING_REQUEST_CATEGORY || Boolean(ticket.borrowingItems?.length);
   const isInternetLog = ticket.workflowType === "internetOutage";
-  const ticketTypeLabel = isMeetingRequest ? "Meeting Request" : isBorrowingRequest ? "Borrowing Request" : ticket.workType;
+  const borrowingTypeLabel = formatRequesterRequestType(ticket);
+  const borrowingAssetLabel = formatRequesterAssetLabel(ticket);
+  const ticketTypeLabel = isMeetingRequest ? "Meeting Request" : isBorrowingRequest ? borrowingTypeLabel : ticket.workType;
   const detailSectionTitle = isMeetingRequest
     ? "Meeting Request"
     : isBorrowingRequest
-      ? "Borrowing Request"
+      ? borrowingTypeLabel
       : isInternetLog
         ? "Internet Log"
         : "Work Ticket";
@@ -1163,7 +1166,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     : getMonitoringStatusOptions(workflowType);
   const detailMetaItems = isMeetingRequest
     ? [`Updated ${formatDateTime(ticket.updatedAt)}`]
-    : [ticketTypeLabel, ticket.category, `Updated ${formatDateTime(ticket.updatedAt)}`];
+    : [ticketTypeLabel, isBorrowingRequest ? borrowingAssetLabel : ticket.category, `Updated ${formatDateTime(ticket.updatedAt)}`];
   const snapshotTitle = isInternetLog ? "Log Summary" : "Request Snapshot";
   const selectedMeetingAssetIds = new Set(meetingAssets.map((item) => item.assetId));
   const meetingAssetSearchTerm = meetingAssetSearch.trim().toLowerCase();
@@ -1436,7 +1439,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                   </FieldBlock>
                 ) : null}
                 {isBorrowingRequest ? (
-                  <FieldBlock label="Requested Item / Equipment">
+                  <FieldBlock label={`Requested ${borrowingAssetLabel}`}>
                     <textarea
                       className="input-base"
                       style={{ minHeight: 88, resize: "vertical" }}
@@ -1635,12 +1638,12 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               <section className="monitoring-detail-section monitoring-detail-section-compact">
                 <div className="type-section-title">Record Summary</div>
                 <div className="monitoring-detail-stack">
-                  <DetailCard label="Requester" value={ticket.requesterName} />
-                  <DetailCard label="Section" value={ticket.requesterSection} />
-                  <DetailCard label="Department" value={ticket.requesterDepartment} />
-                  <DetailCard label="Request Source" value={ticket.requestSource} />
-                  <DetailCard label="Approval Stage" value={<Chip label={ticket.approvalStage} />} />
-                  <DetailCard label="Created" value={formatDateTime(ticket.createdAt)} />
+                  <DetailTextRow label="Requester" value={ticket.requesterName} />
+                  <DetailTextRow label="Section" value={ticket.requesterSection} />
+                  <DetailTextRow label="Department" value={ticket.requesterDepartment} />
+                  <DetailTextRow label="Request Source" value={ticket.requestSource} />
+                  <DetailTextRow label="Approval Stage" value={<Chip label={ticket.approvalStage} />} />
+                  <DetailTextRow label="Created" value={formatDateTime(ticket.createdAt)} />
                 </div>
               </section>
             ) : null}
@@ -1771,19 +1774,19 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                     Open Incident Report
                   </a>
                 ) : null}
-                <FileUploadCard
-                  label="Upload Incident Report"
-                  inputRef={incidentReportRef}
-                  accept=".pdf,.doc,.docx"
-                  onFileChange={setIncidentReportFile}
-                  file={incidentReportFile}
-                  hasAttachment={Boolean(incidentReportFile)}
-                  displayName={incidentReportFile?.name ?? "Attach the incident report file"}
-                  helperText="Required for major incidents."
-                  badge="IR"
-                  ariaLabel="Incident report file"
-                  onRemove={() => setIncidentReportFile(null)}
-                />
+                  <FileUploadCard
+                    label="Upload File"
+                    inputRef={incidentReportRef}
+                    accept=".pdf,.doc,.docx"
+                    onFileChange={setIncidentReportFile}
+                    file={incidentReportFile}
+                    hasAttachment={Boolean(incidentReportFile)}
+                    displayName={incidentReportFile?.name ?? "No file selected"}
+                    helperText="Required for major incidents."
+                    badge="IR"
+                    ariaLabel="Incident report file"
+                    onRemove={() => setIncidentReportFile(null)}
+                  />
               </div>
             ) : null}
 
@@ -1809,17 +1812,17 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               </div>
             ) : null}
 
-            <div className="monitoring-detail-upload-block">
-              <FileUploadCard
-                label="Add Supporting Attachment"
-                inputRef={attachmentRef}
-                accept="*/*"
-                onFileChange={setAttachmentFile}
-                file={attachmentFile}
-                hasAttachment={Boolean(attachmentFile)}
-                displayName={attachmentFile?.name ?? "Optional screenshot or supporting file"}
-                helperText={`Use ${isMeetingRequest || isBorrowingRequest ? "Save Request" : "Save Ticket"} after selecting a file.`}
-                badge="1"
+              <div className="monitoring-detail-upload-block">
+                <FileUploadCard
+                  label="Engineer's Report"
+                  inputRef={attachmentRef}
+                  accept="*/*"
+                  onFileChange={setAttachmentFile}
+                  file={attachmentFile}
+                  hasAttachment={Boolean(attachmentFile)}
+                  displayName={attachmentFile?.name ?? "No file selected"}
+                  helperText="Save to upload."
+                  badge="1"
                   ariaLabel="Supporting attachment"
                   onRemove={() => setAttachmentFile(null)}
                 />
@@ -2010,18 +2013,18 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
           </section>
           {isBorrowingRequest ? (
             <section className="monitoring-detail-section monitoring-detail-section-compact">
-              <div className="type-section-title">Borrowing Request</div>
+              <div className="type-section-title">{borrowingTypeLabel}</div>
               <div className="monitoring-detail-stack">
-                <DetailCard
-                  label="Requested Item / Equipment"
+                <DetailTextRow
+                  label={`Requested ${borrowingAssetLabel}`}
                   value={requestedItemsText || ticket.requestedItemsText || "No requested item saved yet"}
                 />
-                <DetailCard
+                <DetailTextRow
                   label="Planned Borrow"
                   value={formatDateTime(toTimestamp(requestedBorrowDate) ?? ticket.requestedBorrowDate)}
                 />
-                <DetailCard label="Expected Return" value={formatDateTime(toTimestamp(expectedReturnAt) ?? ticket.expectedReturnAt)} />
-                <DetailCard label="Linked Assets" value={borrowingItems.length ? String(borrowingItems.length) : "No linked assets saved yet"} />
+                <DetailTextRow label="Expected Return" value={formatDateTime(toTimestamp(expectedReturnAt) ?? ticket.expectedReturnAt)} />
+                <DetailTextRow label={`Linked ${borrowingAssetLabel}`} value={borrowingItems.length ? String(borrowingItems.length) : "No linked assets saved yet"} />
               </div>
               <div style={{ display: "grid", gap: 10 }}>
                 <div className="type-helper">
@@ -2138,13 +2141,13 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
             <section className="monitoring-detail-section monitoring-detail-section-compact">
               <div className="type-section-title">Internet Monitoring</div>
               <div className="monitoring-detail-stack">
-                <DetailCard label="ISP" value={ticket.isp} />
-                <DetailCard label="Connection Role" value={ticket.connectionRole} />
-                <DetailCard label="Area" value={ticket.outageArea} />
-                <DetailCard label="Time Detected" value={formatDateTime(ticket.timeDetected)} />
-                <DetailCard label="Time Restored" value={formatDateTime(ticket.timeRestored)} />
-                <DetailCard label="Total Downtime" value={ticket.totalDowntimeMinutes ? `${ticket.totalDowntimeMinutes} minutes` : "-"} />
-                <DetailCard label="Impacted Uptime" value={ticket.impactedUptime ? "Yes" : "No"} />
+                <DetailTextRow label="ISP" value={ticket.isp} />
+                <DetailTextRow label="Connection Role" value={ticket.connectionRole} />
+                <DetailTextRow label="Area" value={ticket.outageArea} />
+                <DetailTextRow label="Time Detected" value={formatDateTime(ticket.timeDetected)} />
+                <DetailTextRow label="Time Restored" value={formatDateTime(ticket.timeRestored)} />
+                <DetailTextRow label="Total Downtime" value={ticket.totalDowntimeMinutes ? `${ticket.totalDowntimeMinutes} minutes` : "-"} />
+                <DetailTextRow label="Impacted Uptime" value={ticket.impactedUptime ? "Yes" : "No"} />
               </div>
             </section>
           ) : null}

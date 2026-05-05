@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { resolveSafeRedirectPath, SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
+import { canAccessAppPath } from "@/lib/roles";
 
 const PUBLIC_FILE_PATTERN = /\.[^/]+$/;
 
@@ -26,8 +27,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(destination);
   }
 
-  if (session) {
+  if (session && canAccessAppPath(session.role, pathname)) {
     return NextResponse.next();
+  }
+
+  if (session) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   const loginUrl = new URL("/login", request.url);

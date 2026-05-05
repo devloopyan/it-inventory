@@ -220,14 +220,14 @@ const assetMasterStatusStyles: Record<
   HardwareStatus,
   { background: string; color: string; borderColor: string }
 > = {
-  Available: { background: "#dcfce7", color: "#15803d", borderColor: "#dcfce7" },
-  Working: { background: "#dbeafe", color: "#2563eb", borderColor: "#dbeafe" },
-  Borrowed: { background: "#ffedd5", color: "#ea580c", borderColor: "#ffedd5" },
-  Assigned: { background: "#e0f2fe", color: "#0284c7", borderColor: "#e0f2fe" },
-  "For Repair": { background: "#fee2e2", color: "#dc2626", borderColor: "#fee2e2" },
-  Retired: { background: "#e5e7eb", color: "#4b5563", borderColor: "#e5e7eb" },
-  NEW: { background: "#dbeafe", color: "#2563eb", borderColor: "#dbeafe" },
-  "Pre-owned": { background: "#fef3c7", color: "#b45309", borderColor: "#fef3c7" },
+  Available: { background: "#def7e5", color: "#15803d", borderColor: "#def7e5" },
+  Working: { background: "#e6f0ff", color: "#2563eb", borderColor: "#e6f0ff" },
+  Borrowed: { background: "#fff1e4", color: "#f97316", borderColor: "#fff1e4" },
+  Assigned: { background: "#e3f2ff", color: "#2563eb", borderColor: "#e3f2ff" },
+  "For Repair": { background: "#ffe8ea", color: "#ef4444", borderColor: "#ffe8ea" },
+  Retired: { background: "#eef2f6", color: "#6b7280", borderColor: "#eef2f6" },
+  NEW: { background: "#e3f2ff", color: "#2563eb", borderColor: "#e3f2ff" },
+  "Pre-owned": { background: "#fdf3d6", color: "#b45309", borderColor: "#fdf3d6" },
 };
 
 function buildStatusSelectOptions(styleMap: Record<HardwareStatus, { background: string; color: string; borderColor: string }>) {
@@ -1954,20 +1954,24 @@ export default function HardwareInventoryPage() {
                 </button>
               </div>
               {registerMode === "workstation" ? (
-                <div className="operations-reference-view-switch register-subtabs">
-                  {workstationTypes.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      className={`operations-reference-view-btn register-subtab ${workstationType === type ? "is-active active" : ""}`}
-                      onClick={() => {
-                        setWorkstationType(type);
-                        setForm((prev) => ({ ...prev, assetType: type }));
-                      }}
-                    >
-                      {type}
-                    </button>
-                  ))}
+                <div className="asset-master-view-filters" aria-label="Workstation type">
+                  {workstationTypes.map((type) => {
+                    const active = workstationType === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        aria-pressed={active}
+                        className={`asset-master-view-filter${active ? " active" : ""}`}
+                        onClick={() => {
+                          setWorkstationType(type);
+                          setForm((prev) => ({ ...prev, assetType: type }));
+                        }}
+                      >
+                        {type}
+                      </button>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>
@@ -2530,6 +2534,7 @@ export default function HardwareInventoryPage() {
                 ariaLabel="Filter by status"
                 compact
                 minMenuWidth={156}
+                maxMenuHeight={520}
                 onChange={(value) => {
                   setStatusFilter(value);
                   setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
@@ -2659,6 +2664,7 @@ export default function HardwareInventoryPage() {
                             disabled={isSaving}
                             compact
                             minMenuWidth={140}
+                            maxMenuHeight={420}
                             triggerStyle={{ minHeight: 28 }}
                             onChange={(value) => {
                               const nextStatus = value as HardwareStatus;

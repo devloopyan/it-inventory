@@ -17,6 +17,7 @@ import type * as hardwareInventory from "../hardwareInventory.js";
 import type * as http from "../http.js";
 import type * as monitoring from "../monitoring.js";
 import type * as operations from "../operations.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   monitoring: typeof monitoring;
   operations: typeof operations;
+  users: typeof users;
 }>;
 
 /**

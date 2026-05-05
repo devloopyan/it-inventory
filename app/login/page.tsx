@@ -12,9 +12,9 @@ function pickFirst(value?: string | string[]) {
 function getErrorMessage(error?: string) {
   switch (error) {
     case "invalid":
-      return "Incorrect IT username or password.";
+      return "Incorrect username or password.";
     case "config":
-      return "Set IT_LOGIN_USERNAME, IT_LOGIN_PASSWORD, and IT_LOGIN_SECRET in the deployment environment before signing in.";
+      return "Set IT_LOGIN_SECRET before signing in. The old shared IT login also needs IT_LOGIN_USERNAME and IT_LOGIN_PASSWORD.";
     default:
       return "";
   }
