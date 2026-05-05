@@ -3,18 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { formatUserRoleLabel, normalizeUserRole, type UserRole } from "@/lib/roles";
+import { CurrentUserProvider, type CurrentUser } from "./current-user-context";
 import TopbarActivityMenu from "./topbar-activity-menu";
 
 type AppShellProps = {
   children: React.ReactNode;
+  currentUser: AppShellUser | null;
 };
 
 type ThemeMode = "light" | "dark";
+type AppShellUser = CurrentUser;
+
 type NavItem = {
   href: string;
   label: string;
   icon: React.ReactNode;
   matchPrefixes?: readonly string[];
+  allowedRoles?: readonly UserRole[];
 };
 
 const THEME_STORAGE_KEY = "it-inventory-theme";
@@ -63,6 +69,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/monitoring",
         label: "Monitoring",
+        allowedRoles: ["admin", "it_staff", "approver"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M4 16L8.5 10.5L12 14L16 6L20 10" stroke="currentColor" strokeWidth="2" />
@@ -71,9 +78,33 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         ),
       },
       {
+        href: "/requests/new",
+        label: "New Request",
+        allowedRoles: ["requester"],
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 5V19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        ),
+      },
+      {
+        href: "/requests/my",
+        label: "My Requests",
+        allowedRoles: ["requester"],
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M7 5H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M7 12H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path d="M7 19H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        ),
+      },
+      {
         href: "/assets",
         label: "Assets",
         matchPrefixes: ["/assets", "/hardware-inventory"],
+        allowedRoles: ["admin", "it_staff"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="2" />
@@ -85,6 +116,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/digital-inventory",
         label: "Digital Inventory",
+        allowedRoles: ["admin", "it_staff"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="2" />
@@ -97,13 +129,53 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/operations",
         label: "Operations",
+        allowedRoles: ["admin", "it_staff"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
-            <path d="M12 2V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M12 19V22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M2 12H5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M19 12H22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <path
+              d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5 2.5-2.5z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          </svg>
+        ),
+      },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      {
+        href: "/users",
+        label: "Users",
+        allowedRoles: ["admin"],
+        icon: (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M16 11C17.6569 11 19 9.65685 19 8C19 6.34315 17.6569 5 16 5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+            <path
+              d="M8 12C10.2091 12 12 10.2091 12 8C12 5.79086 10.2091 4 8 4C5.79086 4 4 5.79086 4 8C4 10.2091 5.79086 12 8 12Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            />
+            <path
+              d="M3 20C3 16.6863 5.23858 14 8 14C10.7614 14 13 16.6863 13 20"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+            <path
+              d="M14.5 14.5C17.2614 14.5 19.5 16.7386 19.5 19.5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
           </svg>
         ),
       },
@@ -118,6 +190,10 @@ const routeLabelMap: Record<string, string> = {
   assets: "Assets",
   "digital-inventory": "Digital Inventory",
   "hardware-inventory": "Hardware Inventory",
+  users: "Users",
+  requests: "Requests",
+  new: "New Request",
+  my: "My Requests",
 };
 
 function formatBreadcrumbLabel(segment: string, index: number, segments: string[]) {
@@ -131,13 +207,35 @@ function formatBreadcrumbLabel(segment: string, index: number, segments: string[
     .join(" ");
 }
 
-export default function AppShell({ children }: AppShellProps) {
+function getInitials(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const initials = words.slice(0, 2).map((word) => word.charAt(0).toUpperCase()).join("");
+  return initials || "IT";
+}
+
+function canShowNavItem(role: UserRole, item: NavItem) {
+  return !item.allowedRoles || item.allowedRoles.includes(role);
+}
+
+export default function AppShell({ children, currentUser }: AppShellProps) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(resolveInitialTheme);
   const [accountMenuPath, setAccountMenuPath] = useState<string | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const showAppChrome = pathname !== "/login";
+  const currentRole = normalizeUserRole(currentUser?.role);
+  const accountName = currentUser?.displayName || "IT Operations";
+  const accountUsername = currentUser?.username ? `@${currentUser.username}` : "Hub Console";
+  const accountRoleLabel = formatUserRoleLabel(currentRole);
+  const accountInitials = getInitials(accountName);
+  const visibleNavSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => canShowNavItem(currentRole, item)),
+    }))
+    .filter((section) => section.items.length > 0);
   const pathnameSegments = pathname?.split("/").filter(Boolean) ?? [];
   const accountMenuOpen = Boolean(pathname && accountMenuPath === pathname);
   const breadcrumbs = [
@@ -189,14 +287,26 @@ export default function AppShell({ children }: AppShellProps) {
     return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   }
 
+  function handleSidebarToggle() {
+    setAccountMenuPath(null);
+
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1024px)").matches) {
+      setSidebarOpen((prev) => !prev);
+      return;
+    }
+
+    setSidebarCollapsed((prev) => !prev);
+  }
+
   if (!showAppChrome) {
     return <div className="auth-shell">{children}</div>;
   }
 
   return (
-    <div className="app-bg">
-      <div className="app-shell">
-        <aside className={`app-sidebar ${sidebarOpen ? "open" : ""}`}>
+    <CurrentUserProvider currentUser={currentUser}>
+      <div className="app-bg">
+        <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+        <aside className={`app-sidebar${sidebarOpen ? " open" : ""}${sidebarCollapsed ? " collapsed" : ""}`}>
           <div className="logo-box">
             <div className="logo-mark" aria-hidden="true">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -214,7 +324,7 @@ export default function AppShell({ children }: AppShellProps) {
               <small>Hub Console</small>
             </div>
           </div>
-          {navSections.map((section) => (
+          {visibleNavSections.map((section) => (
             <div key={section.label} className="sidebar-section">
               <div className="sidebar-section-label">{section.label}</div>
               <nav className="side-nav" aria-label={`${section.label} navigation`}>
@@ -226,6 +336,7 @@ export default function AppShell({ children }: AppShellProps) {
                       href={item.href}
                       className={`side-link ${active ? "active" : ""}`}
                       aria-label={item.label}
+                      title={sidebarCollapsed ? item.label : undefined}
                       onClick={() => setSidebarOpen(false)}
                     >
                       {item.icon}
@@ -242,10 +353,10 @@ export default function AppShell({ children }: AppShellProps) {
               {accountMenuOpen ? (
                 <div className="account-dropdown sidebar-account-dropdown" role="menu" aria-label="Account menu">
                   <div className="account-dropdown-summary">
-                    <div className="avatar-dot account-dropdown-avatar">IT</div>
+                    <div className="avatar-dot account-dropdown-avatar">{accountInitials}</div>
                     <div className="avatar-copy">
-                      <div className="avatar-text">IT Operations</div>
-                      <div className="avatar-subtext">Hub Console</div>
+                      <div className="avatar-text">{accountName}</div>
+                      <div className="avatar-subtext">{accountUsername}</div>
                     </div>
                   </div>
 
@@ -337,10 +448,10 @@ export default function AppShell({ children }: AppShellProps) {
                   setAccountMenuPath((prev) => (pathname && prev !== pathname ? pathname : null))
                 }
               >
-                <span className="avatar-dot sidebar-account-avatar">IT</span>
+                <span className="avatar-dot sidebar-account-avatar">{accountInitials}</span>
                 <span className="sidebar-account-copy">
-                  <span className="sidebar-account-name">IT Operations</span>
-                  <span className="sidebar-account-role">Hub Console</span>
+                  <span className="sidebar-account-name">{accountName}</span>
+                  <span className="sidebar-account-role">{accountRoleLabel}</span>
                 </span>
                 <span className="sidebar-account-chevron" aria-hidden="true">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -358,19 +469,27 @@ export default function AppShell({ children }: AppShellProps) {
           </div>
         </aside>
 
-        <div className="app-main">
-          <header className="app-topbar">
+        <div className={`app-main${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+          <header className={`app-topbar${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
             <div className="topbar-left">
               <button
-                className="mobile-menu-btn"
-                onClick={() => setSidebarOpen((prev) => !prev)}
-                aria-label="Toggle sidebar"
+                className="sidebar-toggle-btn"
+                onClick={handleSidebarToggle}
+                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                aria-pressed={sidebarCollapsed}
                 type="button"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M4 7H20" stroke="currentColor" strokeWidth="2" />
-                  <path d="M4 12H20" stroke="currentColor" strokeWidth="2" />
-                  <path d="M4 17H20" stroke="currentColor" strokeWidth="2" />
+                  <rect
+                    x="4"
+                    y="5"
+                    width="16"
+                    height="14"
+                    rx="2"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  />
+                  <path d="M9 5V19" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                 </svg>
               </button>
               <nav className="top-breadcrumbs" aria-label="Breadcrumb">
@@ -451,5 +570,6 @@ export default function AppShell({ children }: AppShellProps) {
         </div>
       </div>
     </div>
+    </CurrentUserProvider>
   );
 }

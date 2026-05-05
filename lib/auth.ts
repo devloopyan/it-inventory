@@ -14,9 +14,20 @@ type SessionToken = {
   expiresAt: number;
 };
 
-type SessionPayload = {
+export type SessionPayload = {
   username: string;
   expiresAt: number;
+  userId?: string;
+  displayName?: string;
+  role?: string;
+  email?: string;
+  department?: string;
+  section?: string;
+  authSource?: "user" | "fallback";
+};
+
+type SessionUser = Partial<Omit<SessionPayload, "expiresAt">> & {
+  username?: string;
 };
 
 function normalizeEnvValue(value?: string) {
@@ -50,10 +61,32 @@ async function signPayload(payload: string, secret: string) {
   return toHex(new Uint8Array(signature));
 }
 
+function encodeSessionPayload(payload: SessionPayload) {
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function decodeSessionPayload(payload: string): SessionPayload | null {
+  try {
+    const decoded = Buffer.from(payload, "base64url").toString("utf8");
+    const parsed = JSON.parse(decoded) as Partial<SessionPayload>;
+
+    if (!parsed.username || typeof parsed.username !== "string") return null;
+    if (!parsed.expiresAt || typeof parsed.expiresAt !== "number") return null;
+
+    return {
+      ...parsed,
+      username: parsed.username,
+      expiresAt: parsed.expiresAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function getItAuthConfig(): ItAuthConfig | null {
   const username = normalizeEnvValue(process.env.IT_LOGIN_USERNAME);
   const password = process.env.IT_LOGIN_PASSWORD ?? "";
-  const secret = normalizeEnvValue(process.env.IT_LOGIN_SECRET);
+  const secret = getSessionSecret();
 
   if (!username || !password || !secret) {
     return null;
@@ -66,6 +99,10 @@ export function getItAuthConfig(): ItAuthConfig | null {
   };
 }
 
+export function getSessionSecret() {
+  return normalizeEnvValue(process.env.IT_LOGIN_SECRET);
+}
+
 export function isValidItCredentials(username: string, password: string) {
   const config = getItAuthConfig();
   if (!config) return false;
@@ -73,13 +110,26 @@ export function isValidItCredentials(username: string, password: string) {
   return username.trim().toLowerCase() === config.username.toLowerCase() && password === config.password;
 }
 
-export async function createSessionToken(): Promise<SessionToken | null> {
-  const config = getItAuthConfig();
-  if (!config) return null;
+export async function createSessionToken(user?: SessionUser): Promise<SessionToken | null> {
+  const secret = getSessionSecret();
+  const fallbackConfig = getItAuthConfig();
+  const username = user?.username?.trim() || fallbackConfig?.username;
+  if (!secret || !username) return null;
 
   const expiresAt = Date.now() + SESSION_MAX_AGE_SECONDS * 1000;
-  const payload = String(expiresAt);
-  const signature = await signPayload(payload, config.secret);
+  const sessionPayload: SessionPayload = {
+    username,
+    expiresAt,
+    userId: user?.userId,
+    displayName: user?.displayName,
+    role: user?.role,
+    email: user?.email,
+    department: user?.department,
+    section: user?.section,
+    authSource: user?.authSource ?? "user",
+  };
+  const payload = encodeSessionPayload(sessionPayload);
+  const signature = await signPayload(payload, secret);
 
   return {
     token: `${payload}.${signature}`,
@@ -88,26 +138,41 @@ export async function createSessionToken(): Promise<SessionToken | null> {
 }
 
 export async function verifySessionToken(token?: string | null): Promise<SessionPayload | null> {
-  const config = getItAuthConfig();
-  if (!config || !token) return null;
+  const secret = getSessionSecret();
+  if (!secret || !token) return null;
 
-  const [expiresAtRaw, signature] = token.split(".");
-  if (!expiresAtRaw || !signature) return null;
+  const [payload, signature] = token.split(".");
+  if (!payload || !signature) return null;
 
-  const expiresAt = Number(expiresAtRaw);
-  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-    return null;
-  }
-
-  const expectedSignature = await signPayload(expiresAtRaw, config.secret);
+  const expectedSignature = await signPayload(payload, secret);
   if (!timingSafeEqual(signature, expectedSignature)) {
     return null;
   }
 
-  return {
-    username: config.username,
-    expiresAt,
-  };
+  if (/^\d+$/.test(payload)) {
+    const config = getItAuthConfig();
+    if (!config) return null;
+
+    const expiresAt = Number(payload);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      return null;
+    }
+
+    return {
+      username: config.username,
+      displayName: "IT Operations",
+      role: "admin",
+      authSource: "fallback",
+      expiresAt,
+    };
+  }
+
+  const session = decodeSessionPayload(payload);
+  if (!session || session.expiresAt <= Date.now()) {
+    return null;
+  }
+
+  return session;
 }
 
 export function resolveSafeRedirectPath(path?: string | null) {

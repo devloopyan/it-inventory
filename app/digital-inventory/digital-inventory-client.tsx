@@ -808,17 +808,24 @@ export default function DigitalInventoryClient() {
 
   return (
     <div className="dashboard-page digital-inventory-page">
-      <section className="digital-hero panel dashboard-panel">
-        <div>
-          <p className="digital-eyebrow">Digital Inventory</p>
-          <h1>Software, access, and subscriptions in one clean tracker.</h1>
-          <p>
+      <section
+        className="panel digital-hero"
+        style={{
+          padding: 18,
+          display: "grid",
+          gap: 14,
+          border: "none",
+          boxShadow: "none",
+          borderRadius: 0,
+          background: "transparent",
+        }}
+      >
+        <div style={{ display: "grid", gap: 6 }}>
+          <h1 className="type-page-title">Digital Inventory</h1>
+          <div className="type-page-subtitle">
             Keep digital records separate from physical hardware so renewals, accounts, and licenses stay easy to audit.
-          </p>
+          </div>
         </div>
-        <button className="btn-primary" type="button" onClick={openCreateForm}>
-          Add {getActiveTabLabel(activeTab)}
-        </button>
       </section>
 
       <section className="digital-metrics">

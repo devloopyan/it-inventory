@@ -2,6 +2,23 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  users: defineTable({
+    displayName: v.string(),
+    username: v.string(),
+    email: v.optional(v.string()),
+    role: v.string(),
+    department: v.optional(v.string()),
+    section: v.optional(v.string()),
+    active: v.boolean(),
+    passwordHash: v.optional(v.string()),
+    passwordUpdatedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdBy: v.optional(v.string()),
+  })
+    .index("by_username", ["username"])
+    .index("by_role", ["role"])
+    .index("by_active", ["active"]),
   assets: defineTable({
     assetTag: v.string(),
     category: v.string(),
