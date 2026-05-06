@@ -328,6 +328,20 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_lastReviewedDate", ["lastReviewedDate"])
     .index("by_updatedAt", ["updatedAt"]),
+  workflowRuns: defineTable({
+    workflowId: v.string(),
+    employeeId: v.id("users"),
+    employeeName: v.string(),
+    startedBy: v.string(),
+    startedAt: v.number(),
+    completedAt: v.number(),
+    status: v.string(),
+    completedStepIds: v.array(v.string()),
+    skippedStepIds: v.array(v.string()),
+  })
+    .index("by_startedAt", ["startedAt"])
+    .index("by_workflowId", ["workflowId"])
+    .index("by_employeeId", ["employeeId"]),
   subscriptionsInventory: defineTable({
     serviceName: v.string(),
     vendor: v.optional(v.string()),

@@ -2,7 +2,7 @@ export type WorkflowStep = {
   id: string;
   label: string;
   description: string;
-  targetPath: string;
+  targetPath?: string;
 };
 
 export type Workflow = {
@@ -47,31 +47,58 @@ export const WORKFLOWS: Workflow[] = [
   {
     id: "offboarding",
     label: "Offboarding",
-    description: "Walk through removing access for a departing employee.",
+    description: "Walk through the IT clearance process for a departing employee.",
     steps: [
       {
-        id: "recover-hardware",
-        label: "Recover hardware",
-        description: "Mark assigned assets as returned.",
+        id: "issue-clearance-form",
+        label: "Issue IT Clearance Form (manual)",
+        description:
+          "Provide the IT Clearance Form to the resignee. Ask them to organize files: company files in one folder, files to be deleted.",
+      },
+      {
+        id: "file-transfer",
+        label: "File transfer / cleanup (manual)",
+        description:
+          "Coordinate with supervisor: transfer to external drive or leave on PC. For online files (Drive/OneDrive), transfer ownership to a designated account. Delete personal files. Verify completion and sign off.",
+      },
+      {
+        id: "hardware-return",
+        label: "Hardware return inspection",
+        description:
+          "Inspect all equipment listed under the resignee (system unit, monitor, keyboard, mouse, headset, accessories). Mark each as returned and note any damage.",
         targetPath: "/hardware-inventory",
       },
       {
         id: "revoke-digital",
         label: "Revoke digital accounts",
-        description: "Disable email, licenses, and system access.",
+        description:
+          "Disable Outlook, OneDrive, Teams/SharePoint, Google accounts, Admin Portals, and internal system access.",
         targetPath: "/digital-inventory",
       },
       {
-        id: "close-tickets",
-        label: "Close open tickets",
-        description: "Resolve anything assigned to the employee.",
-        targetPath: "/monitoring",
+        id: "building-access",
+        label: "Remove building access (manual)",
+        description:
+          "Log in to WAM portal as IT Head. ENROLLMENT > DEACTIVATION. Enter employee credentials, submit. Update BIOMETRIX database, mark as Removed.",
+      },
+      {
+        id: "system-access-audit",
+        label: "System Access Audit Checklist (manual)",
+        description:
+          "Fill out the System Access Audit Checklist. Verify all access is revoked. Have the resignee sign as acknowledgment. If audit fails, address issues before continuing.",
       },
       {
         id: "archive-user",
         label: "Archive user",
-        description: "Deactivate the account.",
+        description: "Deactivate the employee's user account.",
         targetPath: "/users",
+      },
+      {
+        id: "log-offboarding",
+        label: "Review offboarding log",
+        description:
+          "Confirm the offboarding record will be saved to the audit log. Click Mark Done & Finish to complete and view the entry.",
+        targetPath: "/operations?tab=log",
       },
     ],
   },

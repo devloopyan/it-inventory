@@ -4,6 +4,7 @@ export type ActiveWorkflow = {
   workflowId: string;
   employeeId: string;
   employeeName: string;
+  startedBy: string;
   currentStepIndex: number;
   completedStepIds: string[];
   skippedStepIds: string[];
@@ -20,6 +21,7 @@ export function readActiveWorkflow(): ActiveWorkflow | null {
       typeof parsed.workflowId === "string" &&
       typeof parsed.employeeId === "string" &&
       typeof parsed.employeeName === "string" &&
+      typeof parsed.startedBy === "string" &&
       typeof parsed.currentStepIndex === "number" &&
       Array.isArray(parsed.completedStepIds) &&
       Array.isArray(parsed.skippedStepIds) &&

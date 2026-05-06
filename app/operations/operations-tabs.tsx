@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useCallback } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import OperationsClient from "./operations-client";
 import WorkflowsPanel from "./workflows-panel";
+import WorkflowLogPanel from "./workflow-log-panel";
 
 const OPERATIONS_TABS = [
   {
@@ -15,12 +17,39 @@ const OPERATIONS_TABS = [
     label: "Workflows",
     description: "Guided processes like Onboarding and Offboarding.",
   },
+  {
+    key: "log",
+    label: "Log",
+    description: "Audit record of completed workflows.",
+  },
 ] as const;
 
 type OperationsTabKey = (typeof OPERATIONS_TABS)[number]["key"];
 
-export default function OperationsTabs() {
-  const [activeTab, setActiveTab] = useState<OperationsTabKey>("planner");
+function isOperationsTabKey(value: string | null): value is OperationsTabKey {
+  return OPERATIONS_TABS.some((tab) => tab.key === value);
+}
+
+function OperationsTabsInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const activeTab: OperationsTabKey = isOperationsTabKey(tabParam) ? tabParam : "planner";
+
+  const setActiveTab = useCallback(
+    (key: OperationsTabKey) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (key === "planner") {
+        params.delete("tab");
+      } else {
+        params.set("tab", key);
+      }
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
 
   return (
     <div className="dashboard-page operations-page">
@@ -59,7 +88,21 @@ export default function OperationsTabs() {
         </div>
       </section>
 
-      {activeTab === "planner" ? <OperationsClient /> : <WorkflowsPanel />}
+      {activeTab === "planner" ? (
+        <OperationsClient />
+      ) : activeTab === "workflows" ? (
+        <WorkflowsPanel />
+      ) : (
+        <WorkflowLogPanel />
+      )}
     </div>
+  );
+}
+
+export default function OperationsTabs() {
+  return (
+    <Suspense fallback={null}>
+      <OperationsTabsInner />
+    </Suspense>
   );
 }

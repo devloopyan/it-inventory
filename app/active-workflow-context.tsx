@@ -59,6 +59,7 @@ type StartInput = {
   workflowId: string;
   employeeId: string;
   employeeName: string;
+  startedBy: string;
 };
 
 type ActiveWorkflowContextValue = {
@@ -81,6 +82,7 @@ export function ActiveWorkflowProvider({ children }: { children: ReactNode }) {
       workflowId: input.workflowId,
       employeeId: input.employeeId,
       employeeName: input.employeeName,
+      startedBy: input.startedBy,
       currentStepIndex: 0,
       completedStepIds: [],
       skippedStepIds: [],

@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useActiveWorkflow } from "@/app/active-workflow-context";
+import { useCurrentUser } from "@/app/current-user-context";
 import { WORKFLOWS, type Workflow } from "@/lib/workflows";
 import WorkflowEmployeePicker, { type SelectedEmployee } from "./workflow-employee-picker";
 
 export default function WorkflowsPanel() {
   const router = useRouter();
+  const currentUser = useCurrentUser();
   const { activeWorkflow, start } = useActiveWorkflow();
   const [pickerWorkflow, setPickerWorkflow] = useState<Workflow | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -31,9 +33,12 @@ export default function WorkflowsPanel() {
       workflowId: pickerWorkflow.id,
       employeeId: employee.id,
       employeeName: employee.displayName,
+      startedBy: currentUser?.displayName ?? "Unknown",
     });
     setPickerWorkflow(null);
-    router.push(firstStep.targetPath);
+    if (firstStep.targetPath) {
+      router.push(firstStep.targetPath);
+    }
   }
 
   return (
