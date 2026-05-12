@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActiveWorkflow } from "@/app/active-workflow-context";
 import { useCurrentUser } from "@/app/current-user-context";
@@ -54,6 +55,12 @@ export default function WorkflowsPanel() {
         </div>
 
         {warning ? <div className="operations-simple-alert">{warning}</div> : null}
+
+        <div className="operations-workflow-shortcuts">
+          <Link href="/operations/clearance-forms" className="operations-workflow-shortcut-link">
+            Open offboarding IT clearance forms
+          </Link>
+        </div>
 
         <div className="operations-workflow-grid">
           {WORKFLOWS.map((workflow) => (

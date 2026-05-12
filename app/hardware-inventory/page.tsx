@@ -423,6 +423,19 @@ function collectReservedAssetTags(
   return tags;
 }
 
+function isReservedInventoryRow(row: Record<string, unknown>) {
+  return row.reservationStatus === "Reserved";
+}
+
+function getReservationAssignee(row: Record<string, unknown>) {
+  return (
+    (typeof row.reservationBorrower === "string" && row.reservationBorrower.trim()) ||
+    (typeof row.borrower === "string" && row.borrower.trim()) ||
+    (typeof row.turnoverTo === "string" && row.turnoverTo.trim()) ||
+    ""
+  );
+}
+
 function buildDesktopGeneratedTags(existingTags: string[], extraComponents: ExtraComponent[]) {
   const reservedTags = [...existingTags];
   const nextTag = (assetType: string) => {
@@ -2649,9 +2662,22 @@ export default function HardwareInventoryPage() {
                       >
                         {formatValue(row.assignedTo ?? row.turnoverTo ?? "Unassigned")}
                       </div>
-                    </td>
+                  </td>
                   <td>
                     {(() => {
+                      const isReserved = isReservedInventoryRow(row as Record<string, unknown>);
+                      if (isReserved) {
+                        const reservationAssignee = getReservationAssignee(row as Record<string, unknown>);
+                        return (
+                          <div className="hardware-master-reservation-state">
+                            <span className="hardware-master-reserved-pill">Reserved</span>
+                            <span className="hardware-master-reserved-copy">
+                              {reservationAssignee ? `For ${reservationAssignee}` : "Waiting for pickup"}
+                            </span>
+                          </div>
+                        );
+                      }
+
                       const editState = getInlineRowState(row);
                       const isSaving = inlineSavingId === String(row._id);
                       return (
@@ -2690,6 +2716,16 @@ export default function HardwareInventoryPage() {
                   </td>
                   <td>
                     {(() => {
+                      const isReserved = isReservedInventoryRow(row as Record<string, unknown>);
+                      if (isReserved) {
+                        const reservationAssignee = getReservationAssignee(row as Record<string, unknown>);
+                        return (
+                          <div className="hardware-master-borrower-cell hardware-master-borrower-cell--readonly">
+                            {reservationAssignee || "Reserved"}
+                          </div>
+                        );
+                      }
+
                       const editState = getInlineRowState(row);
                       const isBorrowed = editState.status === "Borrowed";
                       const isSaving = inlineSavingId === String(row._id);
@@ -2752,5 +2788,3 @@ export default function HardwareInventoryPage() {
     </div>
   );
 }
-
-

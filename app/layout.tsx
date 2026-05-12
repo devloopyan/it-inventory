@@ -21,6 +21,8 @@ async function getCurrentUser() {
     displayName: session.displayName ?? session.username,
     username: session.username,
     role: session.role,
+    department: session.department,
+    section: session.section,
   };
 }
 

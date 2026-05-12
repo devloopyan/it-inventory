@@ -1627,6 +1627,13 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               </div>
             </section>
 
+            {!isMeetingRequest ? (
+              <section className="monitoring-detail-section">
+                <div className="type-subsection-title">Request Details</div>
+                <p className="monitoring-detail-copy">{ticket.requestDetails}</p>
+              </section>
+            ) : null}
+
             <section className="monitoring-detail-section">
               <div className="type-subsection-title">{snapshotTitle}</div>
               <p className="monitoring-detail-copy">{ticket.requestSnapshot}</p>

@@ -13,38 +13,16 @@ import {
   MONITORING_TICKET_CATEGORIES,
 } from "@/lib/monitoring";
 
-const IT_SUPPORT_CATEGORY_EXAMPLES: Record<string, string> = {
-  "Network & Connectivity": "No internet, slow connection, Wi-Fi issue, VPN problem.",
-  "Accounts & Access": "Forgot password, cannot log in, locked account, access suddenly stopped.",
-  "Microsoft 365": "Outlook, Teams, OneDrive, SharePoint, or Microsoft app issue.",
-  "Hardware & Peripherals": "PC, laptop, monitor, printer, mouse, keyboard, or headset issue.",
-  "Software & Applications": "Application error, app not opening, installation problem, system bug.",
-  "Procurement & Replacement": "Broken device that may need replacement or purchase review.",
-  "Security & Sensitive Access": "Suspicious email, possible malware, sensitive access issue.",
-  Other: "Use this when the issue does not match the listed categories.",
-};
-
-const WORK_STATUS_OPTIONS = [
-  "I can still work",
-  "Work is slowed",
-  "I cannot do my work",
-  "A team or operation is blocked",
+const IT_REQUEST_TYPES = [
+  "New service",
+  "Access request",
+  "Data / record request",
+  "Recording request",
+  "Setup",
+  "Change",
 ] as const;
 
-function resolveUrgencyFromWorkStatus(workStatus: string) {
-  switch (workStatus) {
-    case "I cannot do my work":
-      return "Same Day";
-    case "A team or operation is blocked":
-      return "Immediate";
-    case "Work is slowed":
-    case "I can still work":
-    default:
-      return "Can Wait";
-  }
-}
-
-export default function ItIncidentRequestClient() {
+export default function ItRequestClient() {
   const router = useRouter();
   const currentUser = useCurrentUser();
   const createTicket = useMutation(api.monitoring.createTicket);
@@ -53,15 +31,21 @@ export default function ItIncidentRequestClient() {
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
   const [department, setDepartment] = useState(currentUser?.department ?? "");
   const [section, setSection] = useState(currentUser?.section ?? "");
-  const [category, setCategory] = useState("Hardware & Peripherals");
+  const [requestType, setRequestType] = useState<(typeof IT_REQUEST_TYPES)[number]>("New service");
+  const [category, setCategory] = useState("Software & Applications");
   const [impact, setImpact] = useState("Single User");
-  const [workStatus, setWorkStatus] = useState<(typeof WORK_STATUS_OPTIONS)[number]>("I can still work");
   const [title, setTitle] = useState("");
-  const [details, setDetails] = useState("");
+  const [systemResource, setSystemResource] = useState("");
+  const [businessPurpose, setBusinessPurpose] = useState("");
+  const [desiredOutcome, setDesiredOutcome] = useState("");
+  const [additionalNotes, setAdditionalNotes] = useState("");
+  const [neededBy, setNeededBy] = useState("");
+  const [requiresPurchase, setRequiresPurchase] = useState(false);
+  const [requiresReplacement, setRequiresReplacement] = useState(false);
+  const [requiresSensitiveAccess, setRequiresSensitiveAccess] = useState(false);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const categoryExamples = IT_SUPPORT_CATEGORY_EXAMPLES[category];
   const missingDepartment = !department.trim();
 
   useEffect(() => {
@@ -111,7 +95,10 @@ export default function ItIncidentRequestClient() {
       const trimmedDepartment = department.trim();
       const trimmedSection = section.trim();
       const trimmedTitle = title.trim();
-      const trimmedDetails = details.trim();
+      const trimmedSystemResource = systemResource.trim();
+      const trimmedBusinessPurpose = businessPurpose.trim();
+      const trimmedDesiredOutcome = desiredOutcome.trim();
+      const trimmedAdditionalNotes = additionalNotes.trim();
       const actorName = currentUser?.displayName ?? trimmedRequesterName;
 
       if (!trimmedRequesterName) {
@@ -121,35 +108,54 @@ export default function ItIncidentRequestClient() {
         throw new Error("Department is required.");
       }
       if (!trimmedTitle) {
-        throw new Error("Issue title is required.");
+        throw new Error("Request title is required.");
       }
-      if (!trimmedDetails) {
-        throw new Error("Issue details are required.");
+      if (!trimmedSystemResource) {
+        throw new Error("System or resource is required.");
+      }
+      if (!trimmedBusinessPurpose) {
+        throw new Error("Business purpose is required.");
+      }
+      if (!trimmedDesiredOutcome) {
+        throw new Error("Desired outcome is required.");
       }
 
       setSubmitting(true);
 
-      const urgency = resolveUrgencyFromWorkStatus(workStatus);
+      const neededByText = neededBy ? new Date(neededBy).toLocaleString() : "";
+      const approvalSignals = [
+        requiresPurchase ? "Purchase needed" : "",
+        requiresReplacement ? "Replacement needed" : "",
+        requiresSensitiveAccess ? "Sensitive access involved" : "",
+      ].filter(Boolean);
       const attachmentStorageId = await uploadAttachment();
       const requestDetails = [
-        trimmedDetails,
-        `Work status: ${workStatus}`,
+        `Request type: ${requestType}`,
+        `System / resource: ${trimmedSystemResource}`,
+        `Business purpose: ${trimmedBusinessPurpose}`,
+        `Desired outcome: ${trimmedDesiredOutcome}`,
+        neededByText ? `Needed by: ${neededByText}` : "",
+        approvalSignals.length ? `Approval signals: ${approvalSignals.join(", ")}` : "",
+        trimmedAdditionalNotes ? `Additional notes: ${trimmedAdditionalNotes}` : "",
         trimmedSection ? `Section: ${trimmedSection}` : "",
       ].filter(Boolean).join("\n");
       const requestSnapshot = [
-        "Request type: IT Support",
+        "Request type: IT Request",
+        `Request action: ${requestType}`,
         `Requester: ${trimmedRequesterName}`,
         `Department: ${trimmedDepartment}`,
         trimmedSection ? `Section: ${trimmedSection}` : "",
         `Category: ${category}`,
-        `Impact: ${impact}`,
-        `Work status: ${workStatus}`,
-        `Triage urgency: ${urgency}`,
+        `Scope: ${impact}`,
+        `System / resource: ${trimmedSystemResource}`,
+        "Nature: Planned / non-urgent",
+        neededByText ? `Needed by: ${neededByText}` : "",
+        approvalSignals.length ? `Approval signals: ${approvalSignals.join(", ")}` : "",
       ].filter(Boolean).join("\n");
 
       await createTicket({
-        workType: "Incident",
-        workflowType: "incident",
+        workType: "Service Request",
+        workflowType: "serviceRequest",
         category,
         title: trimmedTitle,
         requestDetails,
@@ -159,11 +165,14 @@ export default function ItIncidentRequestClient() {
         requesterDepartment: trimmedDepartment,
         requesterSection: trimmedSection || undefined,
         impact,
-        urgency,
+        urgency: "Can Wait",
+        requiresPurchase,
+        requiresReplacement,
+        requiresSensitiveAccess,
         attachments: attachmentStorageId
           ? [
               {
-                kind: "Screenshot",
+                kind: "Reference",
                 label: "Supporting file",
                 fileName: attachmentFile?.name ?? "Attachment",
                 contentType: attachmentFile?.type || undefined,
@@ -177,7 +186,7 @@ export default function ItIncidentRequestClient() {
 
       router.push("/requests/my");
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "IT support request submission failed.");
+      setFormError(error instanceof Error ? error.message : "IT request submission failed.");
       setSubmitting(false);
     }
   }
@@ -187,9 +196,9 @@ export default function ItIncidentRequestClient() {
       <section className="panel request-page-panel">
         <div className="request-page-head">
           <div>
-            <h1 className="request-page-title">IT Support</h1>
+            <h1 className="request-page-title">IT Request</h1>
             <p className="request-page-subtitle">
-              Use this when something is broken, blocked, or not working normally.
+              Use this when IT needs to create, change, retrieve, grant, or set up something.
             </p>
           </div>
           <button type="button" className="btn-secondary" onClick={handleBack}>
@@ -234,6 +243,23 @@ export default function ItIncidentRequestClient() {
           </label>
 
           <label className="request-form-field">
+            <span>Request Type</span>
+            <select
+              className="input-base"
+              value={requestType}
+              onChange={(event) =>
+                setRequestType(event.target.value as (typeof IT_REQUEST_TYPES)[number])
+              }
+            >
+              {IT_REQUEST_TYPES.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="request-form-field">
             <span>Category</span>
             <select
               className="input-base"
@@ -241,22 +267,15 @@ export default function ItIncidentRequestClient() {
               onChange={(event) => setCategory(event.target.value)}
             >
               {MONITORING_TICKET_CATEGORIES.map((option) => (
-                <option
-                  key={option}
-                  value={option}
-                  title={IT_SUPPORT_CATEGORY_EXAMPLES[option]}
-                >
+                <option key={option} value={option}>
                   {option}
                 </option>
               ))}
             </select>
-            {categoryExamples ? (
-              <small className="request-form-help">Examples: {categoryExamples}</small>
-            ) : null}
           </label>
 
           <label className="request-form-field">
-            <span>Impact</span>
+            <span>Scope</span>
             <select
               className="input-base"
               value={impact}
@@ -270,43 +289,93 @@ export default function ItIncidentRequestClient() {
             </select>
           </label>
 
-          <label className="request-form-field">
-            <span>How affected are you?</span>
-            <select
-              className="input-base"
-              value={workStatus}
-              onChange={(event) =>
-                setWorkStatus(event.target.value as (typeof WORK_STATUS_OPTIONS)[number])
-              }
-            >
-              {WORK_STATUS_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-            <small className="request-form-help">
-              IT will use this during triage to set the final urgency.
-            </small>
-          </label>
-
           <label className="request-form-field request-form-field-wide">
-            <span>Issue Title</span>
+            <span>Request Title</span>
             <input
               className="input-base"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="Short summary of the issue"
+              placeholder="Short summary of what you need"
+            />
+          </label>
+
+          <label className="request-form-field">
+            <span>System / Resource</span>
+            <input
+              className="input-base"
+              value={systemResource}
+              onChange={(event) => setSystemResource(event.target.value)}
+              placeholder="System, app, account, hardware, or access"
+            />
+          </label>
+
+          <label className="request-form-field">
+            <span>Needed By</span>
+            <input
+              className="input-base"
+              type="datetime-local"
+              value={neededBy}
+              onChange={(event) => setNeededBy(event.target.value)}
+            />
+          </label>
+
+          <div className="request-form-field">
+            <span>Approval Flags</span>
+            <div className="request-form-checkboxes">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={requiresPurchase}
+                  onChange={(event) => setRequiresPurchase(event.target.checked)}
+                />
+                Purchase
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={requiresReplacement}
+                  onChange={(event) => setRequiresReplacement(event.target.checked)}
+                />
+                Replacement
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={requiresSensitiveAccess}
+                  onChange={(event) => setRequiresSensitiveAccess(event.target.checked)}
+                />
+                Sensitive access
+              </label>
+            </div>
+          </div>
+
+          <label className="request-form-field request-form-field-wide">
+            <span>Business Purpose</span>
+            <textarea
+              className="input-base request-form-textarea"
+              value={businessPurpose}
+              onChange={(event) => setBusinessPurpose(event.target.value)}
+              placeholder="Explain why the new service, access, setup, or change is needed."
             />
           </label>
 
           <label className="request-form-field request-form-field-wide">
-            <span>Issue Details</span>
+            <span>Desired Outcome</span>
             <textarea
               className="input-base request-form-textarea"
-              value={details}
-              onChange={(event) => setDetails(event.target.value)}
-              placeholder="Describe what happened, when it started, and what is affected."
+              value={desiredOutcome}
+              onChange={(event) => setDesiredOutcome(event.target.value)}
+              placeholder="Describe what should be created, changed, configured, or granted."
+            />
+          </label>
+
+          <label className="request-form-field request-form-field-wide">
+            <span>Additional Notes</span>
+            <textarea
+              className="input-base request-form-textarea"
+              value={additionalNotes}
+              onChange={(event) => setAdditionalNotes(event.target.value)}
+              placeholder="Add links, reference accounts, affected users, location, or schedule notes."
             />
           </label>
 
@@ -319,7 +388,7 @@ export default function ItIncidentRequestClient() {
               file={attachmentFile}
               hasAttachment={Boolean(attachmentFile)}
               displayName="No file selected"
-              helperText="Optional screenshot or supporting file."
+              helperText="Optional reference, approval, screenshot, or supporting file."
               badge="FILE"
               ariaLabel="Upload supporting file"
               onRemove={() => setAttachmentFile(null)}
@@ -333,7 +402,7 @@ export default function ItIncidentRequestClient() {
           <button type="button" className="btn-primary" disabled={submitting || missingDepartment} onClick={() => void handleSubmit()}>
             {submitting ? "Submitting..." : "Submit Request"}
           </button>
-          <span>This will create a support ticket for IT staff.</span>
+          <span>This will create a planned service request ticket for IT staff.</span>
         </div>
       </section>
     </div>

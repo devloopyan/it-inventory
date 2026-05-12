@@ -328,6 +328,44 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_lastReviewedDate", ["lastReviewedDate"])
     .index("by_updatedAt", ["updatedAt"]),
+  clearanceForms: defineTable({
+    employeeId: v.id("users"),
+    employeeName: v.string(),
+    section: v.optional(v.string()),
+    division: v.optional(v.string()),
+    formDate: v.string(),
+    accountsAccess: v.array(
+      v.object({
+        item: v.string(),
+        label: v.string(),
+        checked: v.boolean(),
+        remarks: v.string(),
+      }),
+    ),
+    itEquipment: v.array(
+      v.object({
+        item: v.string(),
+        label: v.string(),
+        checked: v.boolean(),
+        remarks: v.string(),
+      }),
+    ),
+    remarks: v.string(),
+    recommendation: v.string(),
+    checkedByName: v.optional(v.string()),
+    checkedByRole: v.optional(v.string()),
+    preApprovedByName: v.optional(v.string()),
+    preApprovedByRole: v.optional(v.string()),
+    approvedByName: v.optional(v.string()),
+    approvedByRole: v.optional(v.string()),
+    filledBy: v.string(),
+    filledByUsername: v.string(),
+    signedPdfStorageId: v.optional(v.id("_storage")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_employeeId", ["employeeId"])
+    .index("by_updatedAt", ["updatedAt"]),
   workflowRuns: defineTable({
     workflowId: v.string(),
     employeeId: v.id("users"),

@@ -896,6 +896,9 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const borrowingAssetSearchTerm = deferredBorrowingAssetSearch.trim().toLowerCase();
   const borrowingAssetOptions = (assets ?? [])
     .filter((asset) => !selectedBorrowingAssetIds.has(String(asset._id)))
+    .filter((asset) => (asset.locationPersonAssigned ?? asset.location ?? "") === "MAIN STORAGE")
+    .filter((asset) => ["Available", "Working"].includes(String(asset.status ?? "")))
+    .filter((asset) => asset.reservationStatus !== "Reserved")
     .filter((asset) => {
       if (!borrowingAssetSearchTerm) return true;
       return [

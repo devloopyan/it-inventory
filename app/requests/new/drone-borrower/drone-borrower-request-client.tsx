@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -59,13 +59,14 @@ export default function DroneBorrowerRequestClient() {
   });
   const createTicket = useMutation(api.monitoring.createTicket);
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
-  const [department, setDepartment] = useState("");
+  const [department, setDepartment] = useState(currentUser?.department ?? "");
   const [requestedDate, setRequestedDate] = useState("");
   const [expectedReturnAt, setExpectedReturnAt] = useState("");
   const [purpose, setPurpose] = useState("");
   const [selectedDroneId, setSelectedDroneId] = useState("");
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const missingDepartment = !department.trim();
 
   const openBorrowingAssetIds = useMemo(
     () =>
@@ -89,6 +90,12 @@ export default function DroneBorrowerRequestClient() {
     () => availableDroneKits.find((asset) => String(asset._id) === selectedDroneId),
     [availableDroneKits, selectedDroneId],
   );
+
+  useEffect(() => {
+    if (!requesterName.trim() && currentUser?.displayName) {
+      setRequesterName(currentUser.displayName);
+    }
+  }, [currentUser?.displayName, requesterName]);
 
   function handleBack() {
     if (window.history.length > 1) {
@@ -246,7 +253,7 @@ export default function DroneBorrowerRequestClient() {
             <input
               className="input-base"
               value={requesterName}
-              onChange={(event) => setRequesterName(event.target.value)}
+              readOnly
               placeholder="Enter requester name"
             />
           </label>
@@ -256,9 +263,14 @@ export default function DroneBorrowerRequestClient() {
             <input
               className="input-base"
               value={department}
-              onChange={(event) => setDepartment(event.target.value)}
+              readOnly
               placeholder="Enter department"
             />
+            {missingDepartment ? (
+              <small className="request-form-help is-warning">
+                Department is missing from your account. Please contact IT/admin.
+              </small>
+            ) : null}
           </label>
 
           <label className="request-form-field">
@@ -302,7 +314,7 @@ export default function DroneBorrowerRequestClient() {
         {formError ? <div className="request-form-error">{formError}</div> : null}
 
         <div className="request-form-actions">
-          <button type="button" className="btn-primary" disabled={submitting} onClick={() => void handleSubmit()}>
+          <button type="button" className="btn-primary" disabled={submitting || missingDepartment} onClick={() => void handleSubmit()}>
             {submitting ? "Submitting..." : "Submit Request"}
           </button>
           <span>This will create a drone borrowing ticket for IT staff.</span>

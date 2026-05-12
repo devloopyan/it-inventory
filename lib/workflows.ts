@@ -51,9 +51,10 @@ export const WORKFLOWS: Workflow[] = [
     steps: [
       {
         id: "issue-clearance-form",
-        label: "Issue IT Clearance Form (manual)",
+        label: "Issue IT Clearance Form",
         description:
-          "Provide the IT Clearance Form to the resignee. Ask them to organize files: company files in one folder, files to be deleted.",
+          "Create the IT Clearance Form for the departing employee. Ask them to organize company files for transfer and identify files to be deleted.",
+        targetPath: "/operations/clearance-forms",
       },
       {
         id: "file-transfer",

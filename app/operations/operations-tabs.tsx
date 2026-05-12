@@ -34,21 +34,22 @@ function OperationsTabsInner() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab");
+  const currentPathname = pathname ?? "/operations";
+  const tabParam = searchParams?.get("tab") ?? null;
   const activeTab: OperationsTabKey = isOperationsTabKey(tabParam) ? tabParam : "planner";
 
   const setActiveTab = useCallback(
     (key: OperationsTabKey) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
       if (key === "planner") {
         params.delete("tab");
       } else {
         params.set("tab", key);
       }
       const query = params.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname);
+      router.replace(query ? `${currentPathname}?${query}` : currentPathname);
     },
-    [pathname, router, searchParams],
+    [currentPathname, router, searchParams],
   );
 
   return (

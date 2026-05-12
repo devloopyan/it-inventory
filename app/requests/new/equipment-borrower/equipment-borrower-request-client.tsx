@@ -17,18 +17,44 @@ function toTimestamp(value: string) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+function isReserved(row: { reservationStatus?: string }) {
+  return row.reservationStatus === "Reserved";
+}
+
+function isBorrowableEquipment(row: {
+  assetType?: string;
+  locationPersonAssigned?: string;
+  location?: string;
+  registerMode?: string;
+  reservationStatus?: string;
+  status: string;
+}) {
+  const location = row.locationPersonAssigned ?? row.location ?? "";
+  return (
+    location === "MAIN STORAGE" &&
+    row.registerMode !== "droneKit" &&
+    (row.status === "Available" || row.status === "Working") &&
+    !isReserved(row)
+  );
+}
+
 export default function EquipmentBorrowerRequestClient() {
   const router = useRouter();
   const currentUser = useCurrentUser();
   const searchParams = useSearchParams();
   const assets = useQuery(api.hardwareInventory.listAll, {});
+  const openRequests = useQuery(api.monitoring.list, {
+    view: "issues",
+    showClosed: false,
+  });
   const createTicket = useMutation(api.monitoring.createTicket);
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
-  const [department, setDepartment] = useState("");
+  const department = currentUser?.department ?? "";
   const [expectedReturnAt, setExpectedReturnAt] = useState("");
   const [purpose, setPurpose] = useState("");
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const missingDepartment = !department.trim();
   const selectedAssetIds = useMemo(
     () =>
       (searchParams?.get("assets") ?? "")
@@ -37,13 +63,42 @@ export default function EquipmentBorrowerRequestClient() {
         .filter(Boolean),
     [searchParams],
   );
-  const selectedAssets = useMemo(
+  const openBorrowingAssetIds = useMemo(
+    () =>
+      new Set(
+        (openRequests ?? [])
+          .filter((request) => request.category === MONITORING_BORROWING_REQUEST_CATEGORY)
+          .flatMap((request) => request.borrowingItems ?? [])
+          .map((item) => String(item.assetId)),
+      ),
+    [openRequests],
+  );
+  const allSelectedAssets = useMemo(
     () =>
       selectedAssetIds
         .map((assetId) => assets?.find((asset) => String(asset._id) === assetId))
         .filter((asset): asset is NonNullable<typeof assets>[number] => Boolean(asset)),
     [assets, selectedAssetIds],
   );
+  const selectedAssets = useMemo(
+    () =>
+      allSelectedAssets.filter(
+        (asset) =>
+          isBorrowableEquipment(asset) &&
+          !openBorrowingAssetIds.has(String(asset._id)),
+      ),
+    [allSelectedAssets, openBorrowingAssetIds],
+  );
+  const unavailableSelectedAssets = useMemo(
+    () =>
+      allSelectedAssets.filter(
+        (asset) =>
+          !isBorrowableEquipment(asset) ||
+          openBorrowingAssetIds.has(String(asset._id)),
+      ),
+    [allSelectedAssets, openBorrowingAssetIds],
+  );
+  const availabilityLoading = assets === undefined || openRequests === undefined;
 
   useEffect(() => {
     if (!requesterName.trim() && currentUser?.displayName) {
@@ -79,6 +134,12 @@ export default function EquipmentBorrowerRequestClient() {
       }
       if (!trimmedPurpose) {
         throw new Error("Purpose is required.");
+      }
+      if (availabilityLoading) {
+        throw new Error("Please wait while equipment availability is checked.");
+      }
+      if (unavailableSelectedAssets.length) {
+        throw new Error("One or more selected equipment items are no longer available. Go back to Dashboard and choose another item.");
       }
       if (!selectedAssets.length) {
         throw new Error("Add at least one equipment item.");
@@ -152,7 +213,7 @@ export default function EquipmentBorrowerRequestClient() {
             <input
               className="input-base"
               value={requesterName}
-              onChange={(event) => setRequesterName(event.target.value)}
+              readOnly
               placeholder="Enter requester name"
             />
           </label>
@@ -162,9 +223,14 @@ export default function EquipmentBorrowerRequestClient() {
             <input
               className="input-base"
               value={department}
-              onChange={(event) => setDepartment(event.target.value)}
+              readOnly
               placeholder="Enter department"
             />
+            {missingDepartment ? (
+              <small className="request-form-help is-warning">
+                Department is missing from your account. Please contact IT/admin.
+              </small>
+            ) : null}
           </label>
 
           <label className="request-form-field">
@@ -194,7 +260,7 @@ export default function EquipmentBorrowerRequestClient() {
             <span className="request-type-status">{selectedAssets.length}</span>
           </div>
 
-          {assets === undefined ? (
+          {availabilityLoading ? (
             <div className="request-empty-state">
               <div className="request-empty-title">Loading selected equipment...</div>
             </div>
@@ -215,10 +281,35 @@ export default function EquipmentBorrowerRequestClient() {
           )}
         </section>
 
+        {unavailableSelectedAssets.length ? (
+          <section className="request-selected-assets">
+            <div className="request-selected-assets-head">
+              <h2>No Longer Available</h2>
+              <span className="request-type-status">{unavailableSelectedAssets.length}</span>
+            </div>
+            <div className="request-form-help is-warning">
+              These items were removed from this request because they are reserved, borrowed, pending in another request, or no longer in MAIN STORAGE.
+            </div>
+            <div className="request-selected-asset-list">
+              {unavailableSelectedAssets.map((asset) => (
+                <div key={String(asset._id)} className="request-selected-asset-row">
+                  <strong>{asset.assetNameDescription || asset.assetTag}</strong>
+                  <span>{[asset.assetTag, asset.assetType, asset.status].filter(Boolean).join(" - ")}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {formError ? <div className="request-form-error">{formError}</div> : null}
 
         <div className="request-form-actions">
-          <button type="button" className="btn-primary" disabled={submitting} onClick={() => void handleSubmit()}>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={submitting || missingDepartment || availabilityLoading || unavailableSelectedAssets.length > 0}
+            onClick={() => void handleSubmit()}
+          >
             {submitting ? "Submitting..." : "Submit Request"}
           </button>
           <span>This will create a borrowing ticket for IT staff.</span>
