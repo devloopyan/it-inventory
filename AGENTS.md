@@ -19,24 +19,11 @@
 
 ## Tech Stack
 
-
-- **Language:** TypeScript (JavaScript with type-checking) + TSX (TypeScript + React UI files)
-- **Frontend Framework:** Next.js 16 with App Router (uses the `app/` folder structure)
-- **UI Library:** React 19 — builds all screens, forms, dashboards, and interactive parts
-- **Database & Backend:** Convex — handles both the database and backend logic
-  - `convex/schema.ts` — defines all database tables
-  - `convex/hardwareInventory.ts`, `convex/monitoring.ts`, `convex/users.ts` — backend queries and mutations
-  - Frontend connects via `ConvexProvider` in `app/providers.tsx`
-- **Styling:** Tailwind CSS v4 (via PostCSS) + custom styles in `app/globals.css`
-- **Auth:** Custom login system using Web Crypto APIs — no third-party auth library
-- **Package Manager:** npm
-- **Commands to run the app:**
-  - `npm run dev` — start local development server
-  - `npm run build` — build for production
-  - `npm run start` — run the production build
-- **Code checks to run after changes:**
-  - `npm run lint` — checks for code style issues (ESLint)
-  - `npx tsc --noEmit` — checks for TypeScript type errors
+> Fill this in once you know it — for example:
+> - Language: JavaScript / TypeScript / Python
+> - Framework: Express / Next.js / Django
+> - Database: PostgreSQL / MySQL / SQLite
+> - Other tools: Prisma / Sequelize / etc.
 
 ---
 
@@ -52,6 +39,7 @@ Before touching anything, always do all of these steps in order:
 6. **Short plan** — break the work into small steps before starting. Show me the plan.
 7. **Risk level** — tell me if this change is: `low risk`, `medium risk`, or `high risk` — and explain why.
 8. **Warn me about problems** — point out anything that could lead to messy code, unsafe changes, or things I might regret later.
+9. **Dependency check** — if this task requires a new package, tell me the package name, what it does, who maintains it, and why we need it. Wait for my approval before installing anything.
 
 > ⛔ Do NOT edit any file until I say **"go"**.
 
@@ -73,8 +61,14 @@ Before touching anything, always do all of these steps in order:
 - ❌ Never use `eval()` — it runs arbitrary code and is dangerous
 - ❌ Never build database queries by joining strings — use parameterized queries or an ORM to prevent SQL injection
 - ❌ Never skip input validation — always check that user input is what you expect before using it
+- ❌ Never install a new package without telling me first, explaining what it does, and waiting for my approval
+- ❌ Never add code that makes external network requests without explaining where the data is being sent and why
+- ❌ Never disable or bypass security rules such as ESLint rules or TypeScript strict checks
+- ❌ Never add tracking scripts, analytics, or third-party embeds without asking me first
 - ✅ Always handle errors — never leave a function that can fail without a `try/catch` or error handler
 - ✅ Always use the least amount of access needed — don't give a function more power than it needs
+- ✅ Keep dependencies minimal — only add a new package if there is no simple way to do it with what is already installed
+- ✅ If you see anything in the existing code that looks suspicious, unsafe, or out of place, point it out immediately even if I did not ask
 
 ---
 
@@ -112,6 +106,8 @@ After any change is made, always do all of these:
 - **Git status** — shows which files have been changed since the last commit
 - **SQL injection** — a type of attack where someone puts code into a form field to manipulate your database. Parameterized queries prevent this.
 - **Linting** — a tool that checks your code for common mistakes and style issues before you run it
+- **Dependencies / packages** — external code libraries your project uses. Each one is a potential security risk if it is unmaintained, unknown, or malicious. Always know what you are installing and why.
+- **npm install** — the command that installs a new package. Never let this run without knowing what package is being added and why.
 
 ---
 
