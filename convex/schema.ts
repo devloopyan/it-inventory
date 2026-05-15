@@ -7,6 +7,8 @@ export default defineSchema({
     username: v.string(),
     email: v.optional(v.string()),
     role: v.string(),
+    serviceGroups: v.optional(v.array(v.string())),
+    approvalScopes: v.optional(v.array(v.string())),
     department: v.optional(v.string()),
     section: v.optional(v.string()),
     active: v.boolean(),

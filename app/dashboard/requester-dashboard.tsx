@@ -227,7 +227,7 @@ export default function RequesterDashboard({
         <section className="panel requester-dashboard-section">
           <div className="requester-section-head">
             <div>
-              <h2>Reserved / Borrowed Equipment</h2>
+              <h2>Requested / Reserved / Borrowed Equipment</h2>
               <p>Items that are not available to request right now.</p>
             </div>
           </div>

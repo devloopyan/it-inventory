@@ -9,59 +9,39 @@ import { useCurrentUser } from "@/app/current-user-context";
 import FileUploadCard from "@/app/hardware-inventory/file-upload-card";
 import {
   MONITORING_IMPACT_OPTIONS,
-  MONITORING_REQUEST_SOURCE,
-  MONITORING_TICKET_CATEGORIES,
+  MONITORING_IT_EXEMPTION_CATEGORY,
 } from "@/lib/monitoring";
 
-const IT_SUPPORT_CATEGORY_EXAMPLES: Record<string, string> = {
-  "Network & Connectivity": "No internet, slow connection, Wi-Fi issue, VPN problem.",
-  "Accounts & Access": "Forgot password, cannot log in, locked account, access suddenly stopped.",
-  "Microsoft 365": "Outlook, Teams, OneDrive, SharePoint, or Microsoft app issue.",
-  "Hardware & Peripherals": "PC, laptop, monitor, printer, mouse, keyboard, or headset issue.",
-  "Software & Applications": "Application error, app not opening, installation problem, system bug.",
-  "Procurement & Replacement": "Broken device that may need replacement or purchase review.",
-  "Security & Sensitive Access": "Suspicious email, possible malware, sensitive access issue.",
-  Other: "Use this when the issue does not match the listed categories.",
-};
-
-const WORK_STATUS_OPTIONS = [
-  "I can still work",
-  "Work is slowed",
-  "I cannot do my work",
-  "A team or operation is blocked",
+const REQUEST_SOURCE = "Requests Portal";
+const EXEMPTION_TYPES = [
+  "Temporary policy exception",
+  "Access exception",
+  "Device / software exception",
+  "Security control exception",
+  "Other",
 ] as const;
 
-function resolveUrgencyFromWorkStatus(workStatus: string) {
-  switch (workStatus) {
-    case "I cannot do my work":
-      return "Same Day";
-    case "A team or operation is blocked":
-      return "Immediate";
-    case "Work is slowed":
-    case "I can still work":
-    default:
-      return "Can Wait";
-  }
-}
-
-export default function ItIncidentRequestClient() {
+export default function ItExemptionRequestClient() {
   const router = useRouter();
   const currentUser = useCurrentUser();
   const createTicket = useMutation(api.monitoring.createTicket);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
   const department = currentUser?.department ?? "";
   const [section, setSection] = useState(currentUser?.section ?? "");
-  const [category, setCategory] = useState("Hardware & Peripherals");
-  const [impact, setImpact] = useState("Single User");
-  const [workStatus, setWorkStatus] = useState<(typeof WORK_STATUS_OPTIONS)[number]>("I can still work");
+  const [exemptionType, setExemptionType] = useState<(typeof EXEMPTION_TYPES)[number]>(EXEMPTION_TYPES[0]);
   const [title, setTitle] = useState("");
-  const [details, setDetails] = useState("");
+  const [policyOrSystem, setPolicyOrSystem] = useState("");
+  const [reason, setReason] = useState("");
+  const [businessJustification, setBusinessJustification] = useState("");
+  const [requestedDuration, setRequestedDuration] = useState("");
+  const [riskControls, setRiskControls] = useState("");
+  const [impact, setImpact] = useState("Single User");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const categoryExamples = IT_SUPPORT_CATEGORY_EXAMPLES[category];
   const missingDepartment = !department.trim();
 
   useEffect(() => {
@@ -69,6 +49,12 @@ export default function ItIncidentRequestClient() {
       setRequesterName(currentUser.displayName);
     }
   }, [currentUser?.displayName, requesterName]);
+
+  useEffect(() => {
+    if (!section.trim() && currentUser?.section) {
+      setSection(currentUser.section);
+    }
+  }, [currentUser?.section, section]);
 
   function handleBack() {
     if (window.history.length > 1) {
@@ -111,7 +97,11 @@ export default function ItIncidentRequestClient() {
       const trimmedDepartment = department.trim();
       const trimmedSection = section.trim();
       const trimmedTitle = title.trim();
-      const trimmedDetails = details.trim();
+      const trimmedPolicyOrSystem = policyOrSystem.trim();
+      const trimmedReason = reason.trim();
+      const trimmedBusinessJustification = businessJustification.trim();
+      const trimmedRequestedDuration = requestedDuration.trim();
+      const trimmedRiskControls = riskControls.trim();
       const actorName = currentUser?.displayName ?? trimmedRequesterName;
 
       if (!trimmedRequesterName) {
@@ -121,49 +111,66 @@ export default function ItIncidentRequestClient() {
         throw new Error("Department is required.");
       }
       if (!trimmedTitle) {
-        throw new Error("Issue title is required.");
+        throw new Error("Exemption title is required.");
       }
-      if (!trimmedDetails) {
-        throw new Error("Issue details are required.");
+      if (!trimmedPolicyOrSystem) {
+        throw new Error("Policy, system, or control is required.");
+      }
+      if (!trimmedReason) {
+        throw new Error("Exception reason is required.");
+      }
+      if (!trimmedBusinessJustification) {
+        throw new Error("Business justification is required.");
+      }
+      if (!trimmedRequestedDuration) {
+        throw new Error("Requested duration is required.");
+      }
+      if (!trimmedRiskControls) {
+        throw new Error("Risk controls are required.");
       }
 
       setSubmitting(true);
 
-      const urgency = resolveUrgencyFromWorkStatus(workStatus);
       const attachmentStorageId = await uploadAttachment();
       const requestDetails = [
-        trimmedDetails,
-        `Work status: ${workStatus}`,
+        `Exemption type: ${exemptionType}`,
+        `Policy / system / control: ${trimmedPolicyOrSystem}`,
+        `Reason: ${trimmedReason}`,
+        `Business justification: ${trimmedBusinessJustification}`,
+        `Requested duration: ${trimmedRequestedDuration}`,
+        `Risk controls: ${trimmedRiskControls}`,
         trimmedSection ? `Section: ${trimmedSection}` : "",
       ].filter(Boolean).join("\n");
       const requestSnapshot = [
-        "Request type: IT Support",
+        "Request type: IT Exemption Form",
         `Requester: ${trimmedRequesterName}`,
         `Department: ${trimmedDepartment}`,
         trimmedSection ? `Section: ${trimmedSection}` : "",
-        `Category: ${category}`,
-        `Impact: ${impact}`,
-        `Work status: ${workStatus}`,
-        `Triage urgency: ${urgency}`,
+        `Exemption type: ${exemptionType}`,
+        `Scope: ${impact}`,
+        `Policy / system / control: ${trimmedPolicyOrSystem}`,
+        `Requested duration: ${trimmedRequestedDuration}`,
+        "Approval required: Yes",
       ].filter(Boolean).join("\n");
 
       await createTicket({
-        workType: "Incident",
-        workflowType: "incident",
-        category,
+        workType: "Service Request",
+        workflowType: "serviceRequest",
+        category: MONITORING_IT_EXEMPTION_CATEGORY,
         title: trimmedTitle,
         requestDetails,
         requestSnapshot,
-        requestSource: MONITORING_REQUEST_SOURCE,
+        requestSource: REQUEST_SOURCE,
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
         requesterSection: trimmedSection || undefined,
         impact,
-        urgency,
+        urgency: "Can Wait",
+        requiresSensitiveAccess: true,
         attachments: attachmentStorageId
           ? [
               {
-                kind: "Screenshot",
+                kind: "Approval Proof",
                 label: "Supporting file",
                 fileName: attachmentFile?.name ?? "Attachment",
                 contentType: attachmentFile?.type || undefined,
@@ -177,7 +184,7 @@ export default function ItIncidentRequestClient() {
 
       router.push("/requests/my");
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "IT support request submission failed.");
+      setFormError(error instanceof Error ? error.message : "IT exemption submission failed.");
       setSubmitting(false);
     }
   }
@@ -187,10 +194,8 @@ export default function ItIncidentRequestClient() {
       <section className="panel request-page-panel">
         <div className="request-page-head">
           <div>
-            <h1 className="request-page-title">IT Support</h1>
-            <p className="request-page-subtitle">
-              Use this when something is broken, blocked, or not working normally.
-            </p>
+            <h1 className="request-page-title">IT Exemption Form</h1>
+            <p className="request-page-subtitle">Request approval for an exception from a normal IT rule or control.</p>
           </div>
           <button type="button" className="btn-secondary" onClick={handleBack}>
             Back
@@ -200,22 +205,12 @@ export default function ItIncidentRequestClient() {
         <div className="request-form-grid">
           <label className="request-form-field">
             <span>Requester</span>
-            <input
-              className="input-base"
-              value={requesterName}
-              readOnly
-              placeholder="Enter requester name"
-            />
+            <input className="input-base" value={requesterName} readOnly placeholder="Enter requester name" />
           </label>
 
           <label className="request-form-field">
             <span>Department</span>
-            <input
-              className="input-base"
-              value={department}
-              readOnly
-              placeholder="Enter department"
-            />
+            <input className="input-base" value={department} readOnly placeholder="Enter department" />
             {missingDepartment ? (
               <small className="request-form-help is-warning">
                 Department is missing from your account. Please contact IT/admin.
@@ -234,34 +229,43 @@ export default function ItIncidentRequestClient() {
           </label>
 
           <label className="request-form-field">
-            <span>Category</span>
+            <span>Exemption Type</span>
             <select
               className="input-base"
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
+              value={exemptionType}
+              onChange={(event) => setExemptionType(event.target.value as (typeof EXEMPTION_TYPES)[number])}
             >
-              {MONITORING_TICKET_CATEGORIES.map((option) => (
-                <option
-                  key={option}
-                  value={option}
-                  title={IT_SUPPORT_CATEGORY_EXAMPLES[option]}
-                >
+              {EXEMPTION_TYPES.map((option) => (
+                <option key={option} value={option}>
                   {option}
                 </option>
               ))}
             </select>
-            {categoryExamples ? (
-              <small className="request-form-help">Examples: {categoryExamples}</small>
-            ) : null}
+          </label>
+
+          <label className="request-form-field request-form-field-wide">
+            <span>Exemption Title</span>
+            <input
+              className="input-base"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Short summary of the requested exception"
+            />
           </label>
 
           <label className="request-form-field">
-            <span>Impact</span>
-            <select
+            <span>Policy / System / Control</span>
+            <input
               className="input-base"
-              value={impact}
-              onChange={(event) => setImpact(event.target.value)}
-            >
+              value={policyOrSystem}
+              onChange={(event) => setPolicyOrSystem(event.target.value)}
+              placeholder="Policy, system, app, device, or access control"
+            />
+          </label>
+
+          <label className="request-form-field">
+            <span>Scope</span>
+            <select className="input-base" value={impact} onChange={(event) => setImpact(event.target.value)}>
               {MONITORING_IMPACT_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {option}
@@ -270,43 +274,43 @@ export default function ItIncidentRequestClient() {
             </select>
           </label>
 
-          <label className="request-form-field">
-            <span>How affected are you?</span>
-            <select
-              className="input-base"
-              value={workStatus}
-              onChange={(event) =>
-                setWorkStatus(event.target.value as (typeof WORK_STATUS_OPTIONS)[number])
-              }
-            >
-              {WORK_STATUS_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-            <small className="request-form-help">
-              IT will use this during triage to set the final urgency.
-            </small>
-          </label>
-
           <label className="request-form-field request-form-field-wide">
-            <span>Issue Title</span>
-            <input
-              className="input-base"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Short summary of the issue"
+            <span>Exception Reason</span>
+            <textarea
+              className="input-base request-form-textarea"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Explain what normal rule or process cannot be followed."
             />
           </label>
 
           <label className="request-form-field request-form-field-wide">
-            <span>Issue Details</span>
+            <span>Business Justification</span>
             <textarea
               className="input-base request-form-textarea"
-              value={details}
-              onChange={(event) => setDetails(event.target.value)}
-              placeholder="Describe what happened, when it started, and what is affected."
+              value={businessJustification}
+              onChange={(event) => setBusinessJustification(event.target.value)}
+              placeholder="Explain why the exception is needed for work."
+            />
+          </label>
+
+          <label className="request-form-field">
+            <span>Requested Duration</span>
+            <input
+              className="input-base"
+              value={requestedDuration}
+              onChange={(event) => setRequestedDuration(event.target.value)}
+              placeholder="Example: Until May 31, 2026"
+            />
+          </label>
+
+          <label className="request-form-field request-form-field-wide">
+            <span>Risk Controls</span>
+            <textarea
+              className="input-base request-form-textarea"
+              value={riskControls}
+              onChange={(event) => setRiskControls(event.target.value)}
+              placeholder="Explain how risk will be reduced while the exception is active."
             />
           </label>
 
@@ -319,7 +323,7 @@ export default function ItIncidentRequestClient() {
               file={attachmentFile}
               hasAttachment={Boolean(attachmentFile)}
               displayName="No file selected"
-              helperText="Optional screenshot or supporting file."
+              helperText="Optional approval, email, screenshot, or supporting document."
               badge="FILE"
               ariaLabel="Upload supporting file"
               onRemove={() => setAttachmentFile(null)}
@@ -330,10 +334,15 @@ export default function ItIncidentRequestClient() {
         {formError ? <div className="request-form-error">{formError}</div> : null}
 
         <div className="request-form-actions">
-          <button type="button" className="btn-primary" disabled={submitting || missingDepartment} onClick={() => void handleSubmit()}>
-            {submitting ? "Submitting..." : "Submit Request"}
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={submitting || missingDepartment}
+            onClick={() => void handleSubmit()}
+          >
+            {submitting ? "Submitting..." : "Submit Exemption"}
           </button>
-          <span>This will create a support ticket for IT staff.</span>
+          <span>This will create an approval-required IT exemption request.</span>
         </div>
       </section>
     </div>

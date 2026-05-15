@@ -5,6 +5,7 @@ import {
   AUTO_CLOSE_BUSINESS_DAYS,
   buildInternetOutageTitle,
   formatTicketNumber,
+  getApprovalRouteForCategory,
   getMeetingRequestStatusOptions,
   getMonitoringStatusOptions,
   getPriorityFromImpactUrgency,
@@ -23,10 +24,13 @@ import {
   isMonitoringMeetingMode,
   isMonitoringPendingReason,
   isMonitoringWorkflowType,
+  isPendingApprovalStage,
   isMonitoringUrgency,
   isOpenMonitoringStatus,
   MONITORING_MEETING_REQUEST_CATEGORY,
   MONITORING_BORROWING_REQUEST_CATEGORY,
+  MONITORING_TRAVEL_ORDER_CATEGORY,
+  MONITORING_IT_EXEMPTION_CATEGORY,
   MONITORING_APPROVAL_DECISIONS,
   MONITORING_APPROVERS,
   MONITORING_WORK_TYPES,
@@ -538,8 +542,8 @@ async function getHolidaySet(ctx: Pick<QueryCtx | MutationCtx, "db">) {
   return new Set(rows.filter((row) => row.active).map((row) => row.holidayDate));
 }
 
-async function generateNextTicketNumber(ctx: MutationCtx, workType: MonitoringWorkType) {
-  const prefix = resolveTicketPrefix(workType);
+async function generateNextTicketNumber(ctx: MutationCtx, workType: MonitoringWorkType, category: string) {
+  const prefix = resolveTicketPrefix(workType, category);
   const year = getOfficeDateParts(Date.now()).year;
   const existing = await ctx.db
     .query("monitoringSequences")
@@ -734,10 +738,7 @@ export const getOverview = query({
         (ticket.workflowType === "incident" || ticket.workflowType === "serviceRequest") &&
         isOpenMonitoringStatus(ticket.status),
     ).length;
-    const pendingApprovals = tickets.filter(
-      (ticket) =>
-        ticket.approvalStage === "Pending IT Team Leader" || ticket.approvalStage === "Pending OSMD Manager",
-    ).length;
+    const pendingApprovals = tickets.filter((ticket) => isPendingApprovalStage(ticket.approvalStage)).length;
     const activeInternetOutages = tickets.filter(
       (ticket) => ticket.workflowType === "internetOutage" && ticket.status !== "Resolved",
     ).length;
@@ -948,6 +949,8 @@ export const createTicket = mutation({
     const workflowType = rawWorkflowType;
     const isMeetingRequest = args.category === MONITORING_MEETING_REQUEST_CATEGORY;
     const isBorrowingRequest = args.category === MONITORING_BORROWING_REQUEST_CATEGORY;
+    const isTravelOrderRequest = args.category === MONITORING_TRAVEL_ORDER_CATEGORY;
+    const isItExemptionRequest = args.category === MONITORING_IT_EXEMPTION_CATEGORY;
     const requestSource = normalizeOptional(args.requestSource) ?? MONITORING_REQUEST_SOURCE;
     const requestDetailsInput = normalizeOptional(args.requestDetails);
     const requestSnapshotInput = normalizeOptional(args.requestSnapshot);
@@ -957,7 +960,7 @@ export const createTicket = mutation({
     const createdBy = normalizeRequired(args.createdBy, "Created by");
 
     ensureCategory(args.category);
-    if (!isMeetingRequest && !isBorrowingRequest) {
+    if (!isMeetingRequest && !isBorrowingRequest && !isTravelOrderRequest && !isItExemptionRequest) {
       ensureTicketCategory(args.category);
     }
     const requiresPurchase = isMeetingRequest ? false : Boolean(args.requiresPurchase);
@@ -966,11 +969,12 @@ export const createTicket = mutation({
     const approvalRequired =
       workflowType === "serviceRequest" &&
       !isMeetingRequest &&
-      isApprovalRequired({
-        requiresPurchase,
-        requiresReplacement,
-        requiresSensitiveAccess,
-      });
+      (isTravelOrderRequest ||
+        isApprovalRequired({
+          requiresPurchase,
+          requiresReplacement,
+          requiresSensitiveAccess,
+        }));
     const status = resolveWorkflowStatus({
       workflowType,
       status: normalizeOptional(args.status),
@@ -1163,7 +1167,7 @@ export const createTicket = mutation({
           })
         : undefined;
 
-    const ticketNumber = await generateNextTicketNumber(ctx, workType);
+    const ticketNumber = await generateNextTicketNumber(ctx, workType, args.category);
 
     return await ctx.db.insert("monitoringTickets", {
       ticketNumber,
@@ -1190,6 +1194,7 @@ export const createTicket = mutation({
       approvalRequired,
       approvalStage: resolveApprovalStage({
         approvalRequired,
+        category: args.category,
       }),
       teamLeaderApprovalStatus: undefined,
       teamLeaderApprovalDate: undefined,
@@ -1326,13 +1331,21 @@ export const updateTicket = mutation({
       ticket.category === MONITORING_MEETING_REQUEST_CATEGORY || Boolean(ticket.meetingStartAt || ticket.meetingLocation);
     const ticketIsBorrowingRequest =
       ticket.category === MONITORING_BORROWING_REQUEST_CATEGORY || Boolean(ticket.borrowingItems?.length);
+    const ticketIsTravelOrderRequest = ticket.category === MONITORING_TRAVEL_ORDER_CATEGORY;
+    const ticketIsItExemptionRequest = ticket.category === MONITORING_IT_EXEMPTION_CATEGORY;
     if (ticketIsMeetingRequest && nextCategory !== MONITORING_MEETING_REQUEST_CATEGORY) {
       throw new Error("Meeting requests must stay under Meeting & Event Support.");
     }
     if (ticketIsBorrowingRequest && nextCategory !== MONITORING_BORROWING_REQUEST_CATEGORY) {
       throw new Error("Borrowing requests must stay under Borrowing Requests.");
     }
-    if (!ticketIsMeetingRequest && !ticketIsBorrowingRequest) {
+    if (ticketIsTravelOrderRequest && nextCategory !== MONITORING_TRAVEL_ORDER_CATEGORY) {
+      throw new Error("Travel orders must stay under Travel Order.");
+    }
+    if (ticketIsItExemptionRequest && nextCategory !== MONITORING_IT_EXEMPTION_CATEGORY) {
+      throw new Error("IT exemption requests must stay under IT Exemption.");
+    }
+    if (!ticketIsMeetingRequest && !ticketIsBorrowingRequest && !ticketIsTravelOrderRequest && !ticketIsItExemptionRequest) {
       ensureTicketCategory(nextCategory);
     }
     const isMeetingRequest = ticketIsMeetingRequest;
@@ -1780,10 +1793,11 @@ export const submitForApproval = mutation({
       .collect();
     const decision = history.length ? "Resubmitted" : "Submitted";
     const now = Date.now();
+    const approvalRoute = getApprovalRouteForCategory(ticket.category);
 
     await ctx.db.patch(ticket._id, {
       status: "Pending Approval",
-      approvalStage: "Pending IT Team Leader",
+      approvalStage: approvalRoute.firstPendingStage,
       teamLeaderApprovalStatus: undefined,
       teamLeaderApprovalDate: undefined,
       teamLeaderApprovalReference: undefined,
@@ -1799,7 +1813,7 @@ export const submitForApproval = mutation({
 
     await ctx.db.insert("monitoringApprovalHistory", {
       ticketId: ticket._id,
-      approver: "IT Team Leader",
+      approver: approvalRoute.firstApprover,
       decision,
       reference: undefined,
       note: decision === "Submitted" ? "Submitted for approval." : "Resubmitted after revision.",
@@ -1844,14 +1858,19 @@ export const recordApprovalDecision = mutation({
     ensureApprovalReference(reference);
 
     const now = Date.now();
-    if (args.approver === "IT Team Leader") {
+    const approvalRoute = getApprovalRouteForCategory(ticket.category);
+    if (args.approver !== approvalRoute.firstApprover && args.approver !== approvalRoute.secondApprover) {
+      throw new Error(`Use ${approvalRoute.firstApprover} or ${approvalRoute.secondApprover} for this request.`);
+    }
+
+    if (args.approver === approvalRoute.firstApprover) {
       if (args.decision === "Approved") {
         await ctx.db.patch(ticket._id, {
           teamLeaderApprovalStatus: "Approved",
           teamLeaderApprovalDate: now,
           teamLeaderApprovalReference: reference,
           teamLeaderApprovalNote: note,
-          approvalStage: "Pending OSMD Manager",
+          approvalStage: approvalRoute.secondPendingStage,
           status: "Pending Approval",
           updatedAt: now,
           updatedBy: actorName,
@@ -1869,11 +1888,11 @@ export const recordApprovalDecision = mutation({
           updatedBy: actorName,
         });
       } else {
-        throw new Error("Unsupported team leader decision.");
+        throw new Error(`Unsupported ${approvalRoute.firstApprover} decision.`);
       }
     } else {
       if (ticket.teamLeaderApprovalStatus !== "Approved") {
-        throw new Error("IT Team Leader approval must be recorded first.");
+        throw new Error(`${approvalRoute.firstApprover} approval must be recorded first.`);
       }
       if (args.decision === "Approved") {
         await ctx.db.patch(ticket._id, {
@@ -1899,7 +1918,7 @@ export const recordApprovalDecision = mutation({
           updatedBy: actorName,
         });
       } else {
-        throw new Error("Unsupported OSMD Manager decision.");
+        throw new Error(`Unsupported ${approvalRoute.secondApprover} decision.`);
       }
     }
 

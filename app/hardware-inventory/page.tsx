@@ -613,11 +613,6 @@ export default function HardwareInventoryPage() {
     scrollToSection(formSectionRef);
   }
 
-  function minimizeRegisterForm() {
-    setIsRegisterCollapsed(true);
-    scrollToSection(masterPanelRef);
-  }
-
   function toggleRegisterAccordion() {
     if (isRegisterCollapsed) {
       openRegisterForm();

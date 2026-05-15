@@ -29,7 +29,7 @@ export default function ItRequestClient() {
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
-  const [department, setDepartment] = useState(currentUser?.department ?? "");
+  const department = currentUser?.department ?? "";
   const [section, setSection] = useState(currentUser?.section ?? "");
   const [requestType, setRequestType] = useState<(typeof IT_REQUEST_TYPES)[number]>("New service");
   const [category, setCategory] = useState("Software & Applications");

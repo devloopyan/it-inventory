@@ -4,8 +4,8 @@ import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-
-type UserRole = "admin" | "it_staff" | "approver" | "requester";
+import { APPROVAL_SCOPES, USER_ROLES, type ApprovalScope, type UserRole } from "@/lib/roles";
+import { SERVICE_GROUPS, type ServiceGroup } from "@/lib/serviceGroups";
 
 type UserAccount = {
   _id: Id<"users">;
@@ -14,6 +14,8 @@ type UserAccount = {
   username: string;
   email?: string;
   role: string;
+  serviceGroups: string[];
+  approvalScopes: string[];
   department?: string;
   section?: string;
   active: boolean;
@@ -30,14 +32,17 @@ type UserFormState = {
   email: string;
   temporaryPassword: string;
   role: UserRole;
+  serviceGroups: ServiceGroup[];
+  approvalScopes: ApprovalScope[];
   department: string;
   section: string;
 };
 
 const roleOptions: Array<{ value: UserRole; label: string; description: string }> = [
-  { value: "admin", label: "Admin", description: "Can manage system setup later." },
-  { value: "it_staff", label: "IT Staff", description: "Handles requests and inventory work." },
-  { value: "approver", label: "Approver", description: "Reviews requests that need approval." },
+  { value: "admin", label: "Admin", description: "Full system access across users, assets, and workflows." },
+  { value: "service_staff", label: "Service Staff", description: "Handles requests for assigned service groups." },
+  { value: "it_staff", label: "IT Staff (legacy)", description: "Old IT staff role. Keep existing users working while we migrate." },
+  { value: "approver", label: "Approver", description: "Reviews requests for assigned approval scopes." },
   { value: "requester", label: "Requester", description: "Submits and tracks their own requests." },
 ];
 
@@ -47,9 +52,23 @@ const defaultFormState: UserFormState = {
   email: "",
   temporaryPassword: "",
   role: "requester",
+  serviceGroups: [],
+  approvalScopes: [],
   department: "",
   section: "",
 };
+
+function isUserRole(value: string): value is UserRole {
+  return (USER_ROLES as readonly string[]).includes(value);
+}
+
+function toggleListValue<T extends string>(values: T[], value: T) {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
+function normalizeRoleForSelect(role: string): UserRole {
+  return isUserRole(role) ? role : "requester";
+}
 
 function formatDate(value: number) {
   return new Intl.DateTimeFormat("en-US", {
@@ -88,8 +107,8 @@ export default function UsersClient() {
     return {
       total: rows.length,
       active: rows.filter((user) => user.active).length,
+      serviceStaff: rows.filter((user) => (user.role === "service_staff" || user.role === "it_staff") && user.active).length,
       approvers: rows.filter((user) => user.role === "approver" && user.active).length,
-      requesters: rows.filter((user) => user.role === "requester" && user.active).length,
     };
   }, [users]);
 
@@ -106,9 +125,23 @@ export default function UsersClient() {
 
       return {
         ...current,
-        [name]: value,
+        [name]: name === "role" ? normalizeRoleForSelect(value) : value,
       };
     });
+  }
+
+  function toggleFormServiceGroup(serviceGroup: ServiceGroup) {
+    setForm((current) => ({
+      ...current,
+      serviceGroups: toggleListValue(current.serviceGroups, serviceGroup),
+    }));
+  }
+
+  function toggleFormApprovalScope(approvalScope: ApprovalScope) {
+    setForm((current) => ({
+      ...current,
+      approvalScopes: toggleListValue(current.approvalScopes, approvalScope),
+    }));
   }
 
   async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
@@ -123,6 +156,8 @@ export default function UsersClient() {
         email: form.email || undefined,
         temporaryPassword: form.temporaryPassword,
         role: form.role,
+        serviceGroups: form.serviceGroups,
+        approvalScopes: form.approvalScopes,
         department: form.department || undefined,
         section: form.section || undefined,
         createdBy: "IT Operations",
@@ -169,15 +204,51 @@ export default function UsersClient() {
     }
   }
 
-  async function handleRoleChange(userId: Id<"users">, role: UserRole) {
+  async function handleRoleChange(user: UserAccount, role: UserRole) {
     try {
-      setBusyUserId(userId);
+      setBusyUserId(user._id);
       setErrorMessage("");
       setSuccessMessage("");
-      await updateRole({ userId, role });
+      await updateRole({
+        userId: user._id,
+        role,
+        serviceGroups: user.serviceGroups,
+        approvalScopes: user.approvalScopes,
+      });
       setSuccessMessage("User role updated.");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to update role.");
+    } finally {
+      setBusyUserId("");
+    }
+  }
+
+  async function handleAccessToggle(user: UserAccount, type: "serviceGroups", value: ServiceGroup): Promise<void>;
+  async function handleAccessToggle(user: UserAccount, type: "approvalScopes", value: ApprovalScope): Promise<void>;
+  async function handleAccessToggle(
+    user: UserAccount,
+    type: "serviceGroups" | "approvalScopes",
+    value: ServiceGroup | ApprovalScope,
+  ) {
+    try {
+      setBusyUserId(user._id);
+      setErrorMessage("");
+      setSuccessMessage("");
+      await updateRole({
+        userId: user._id,
+        role: normalizeRoleForSelect(user.role),
+        serviceGroups:
+          type === "serviceGroups"
+            ? toggleListValue(user.serviceGroups as ServiceGroup[], value as ServiceGroup)
+            : user.serviceGroups,
+        approvalScopes:
+          type === "approvalScopes"
+            ? toggleListValue(user.approvalScopes as ApprovalScope[], value as ApprovalScope)
+            : user.approvalScopes,
+      });
+      setSuccessMessage("Workflow access updated.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to update workflow access.");
     } finally {
       setBusyUserId("");
     }
@@ -220,12 +291,12 @@ export default function UsersClient() {
           <strong>{summary.active}</strong>
         </div>
         <div className="panel users-summary-card">
-          <span>Approvers</span>
-          <strong>{summary.approvers}</strong>
+          <span>Service Staff</span>
+          <strong>{summary.serviceStaff}</strong>
         </div>
         <div className="panel users-summary-card">
-          <span>Requesters</span>
-          <strong>{summary.requesters}</strong>
+          <span>Approvers</span>
+          <strong>{summary.approvers}</strong>
         </div>
       </div>
 
@@ -324,6 +395,44 @@ export default function UsersClient() {
               />
             </label>
 
+            <div className="users-scope-panel">
+              <div>
+                <strong>Service Groups</strong>
+                <span>Requests this user can help process.</span>
+              </div>
+              <div className="users-scope-options">
+                {SERVICE_GROUPS.map((serviceGroup) => (
+                  <label key={serviceGroup} className="users-scope-option">
+                    <input
+                      type="checkbox"
+                      checked={form.serviceGroups.includes(serviceGroup)}
+                      onChange={() => toggleFormServiceGroup(serviceGroup)}
+                    />
+                    <span>{serviceGroup}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="users-scope-panel">
+              <div>
+                <strong>Approval Scopes</strong>
+                <span>Requests this user can approve.</span>
+              </div>
+              <div className="users-scope-options">
+                {APPROVAL_SCOPES.map((approvalScope) => (
+                  <label key={approvalScope} className="users-scope-option">
+                    <input
+                      type="checkbox"
+                      checked={form.approvalScopes.includes(approvalScope)}
+                      onChange={() => toggleFormApprovalScope(approvalScope)}
+                    />
+                    <span>{approvalScope}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {errorMessage ? <div className="reservation-error">{errorMessage}</div> : null}
             {successMessage ? <div className="users-success">{successMessage}</div> : null}
 
@@ -383,6 +492,7 @@ export default function UsersClient() {
                 <tr>
                   <th>User</th>
                   <th>Role</th>
+                  <th>Workflow Access</th>
                   <th>Department</th>
                   <th>Status</th>
                   <th>Password</th>
@@ -393,7 +503,7 @@ export default function UsersClient() {
               <tbody>
                 {users === undefined ? (
                   <tr>
-                    <td colSpan={7}>Loading users...</td>
+                    <td colSpan={8}>Loading users...</td>
                   </tr>
                 ) : users.length ? (
                   users.map((user) => (
@@ -408,8 +518,8 @@ export default function UsersClient() {
                       <td>
                         <select
                           className="input-base users-role-select"
-                          value={user.role}
-                          onChange={(event) => void handleRoleChange(user._id, event.target.value as UserRole)}
+                          value={normalizeRoleForSelect(user.role)}
+                          onChange={(event) => void handleRoleChange(user, normalizeRoleForSelect(event.target.value))}
                           disabled={busyUserId === user._id}
                           aria-label={`Role for ${user.displayName}`}
                         >
@@ -419,6 +529,42 @@ export default function UsersClient() {
                             </option>
                           ))}
                         </select>
+                      </td>
+                      <td>
+                        <div className="users-access-cell">
+                          <div className="users-access-group">
+                            <span>Service</span>
+                            <div className="users-access-options">
+                              {SERVICE_GROUPS.map((serviceGroup) => (
+                                <label key={serviceGroup} className="users-access-option">
+                                  <input
+                                    type="checkbox"
+                                    checked={user.serviceGroups.includes(serviceGroup)}
+                                    onChange={() => void handleAccessToggle(user, "serviceGroups", serviceGroup)}
+                                    disabled={busyUserId === user._id}
+                                  />
+                                  <span>{serviceGroup}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="users-access-group">
+                            <span>Approve</span>
+                            <div className="users-access-options">
+                              {APPROVAL_SCOPES.map((approvalScope) => (
+                                <label key={approvalScope} className="users-access-option">
+                                  <input
+                                    type="checkbox"
+                                    checked={user.approvalScopes.includes(approvalScope)}
+                                    onChange={() => void handleAccessToggle(user, "approvalScopes", approvalScope)}
+                                    disabled={busyUserId === user._id}
+                                  />
+                                  <span>{approvalScope}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
                       </td>
                       <td>
                         <div className="users-name-cell">
@@ -465,7 +611,7 @@ export default function UsersClient() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7}>No user accounts yet.</td>
+                    <td colSpan={8}>No user accounts yet.</td>
                   </tr>
                 )}
               </tbody>

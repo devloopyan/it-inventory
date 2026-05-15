@@ -71,7 +71,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/monitoring",
         label: "Monitoring",
-        allowedRoles: ["admin", "it_staff", "approver"],
+        allowedRoles: ["admin", "service_staff", "it_staff", "approver"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M4 16L8.5 10.5L12 14L16 6L20 10" stroke="currentColor" strokeWidth="2" />
@@ -82,7 +82,6 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/requests/new",
         label: "New Request",
-        allowedRoles: ["requester"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 5V19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -93,7 +92,6 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/requests/my",
         label: "My Requests",
-        allowedRoles: ["requester"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M7 5H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -106,7 +104,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         href: "/assets",
         label: "Assets",
         matchPrefixes: ["/assets", "/hardware-inventory"],
-        allowedRoles: ["admin", "it_staff"],
+        allowedRoles: ["admin", "service_staff", "it_staff"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="2" />
@@ -118,7 +116,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/digital-inventory",
         label: "Digital Inventory",
-        allowedRoles: ["admin", "it_staff"],
+        allowedRoles: ["admin", "service_staff", "it_staff"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="2" />
@@ -131,7 +129,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/operations",
         label: "Operations",
-        allowedRoles: ["admin", "it_staff"],
+        allowedRoles: ["admin", "service_staff", "it_staff"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path

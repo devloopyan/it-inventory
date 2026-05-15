@@ -7,61 +7,34 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentUser } from "@/app/current-user-context";
 import FileUploadCard from "@/app/hardware-inventory/file-upload-card";
-import {
-  MONITORING_IMPACT_OPTIONS,
-  MONITORING_REQUEST_SOURCE,
-  MONITORING_TICKET_CATEGORIES,
-} from "@/lib/monitoring";
 
-const IT_SUPPORT_CATEGORY_EXAMPLES: Record<string, string> = {
-  "Network & Connectivity": "No internet, slow connection, Wi-Fi issue, VPN problem.",
-  "Accounts & Access": "Forgot password, cannot log in, locked account, access suddenly stopped.",
-  "Microsoft 365": "Outlook, Teams, OneDrive, SharePoint, or Microsoft app issue.",
-  "Hardware & Peripherals": "PC, laptop, monitor, printer, mouse, keyboard, or headset issue.",
-  "Software & Applications": "Application error, app not opening, installation problem, system bug.",
-  "Procurement & Replacement": "Broken device that may need replacement or purchase review.",
-  "Security & Sensitive Access": "Suspicious email, possible malware, sensitive access issue.",
-  Other: "Use this when the issue does not match the listed categories.",
-};
+const TRAVEL_ORDER_CATEGORY = "Travel Order";
+const REQUEST_SOURCE = "Requests Portal";
 
-const WORK_STATUS_OPTIONS = [
-  "I can still work",
-  "Work is slowed",
-  "I cannot do my work",
-  "A team or operation is blocked",
-] as const;
-
-function resolveUrgencyFromWorkStatus(workStatus: string) {
-  switch (workStatus) {
-    case "I cannot do my work":
-      return "Same Day";
-    case "A team or operation is blocked":
-      return "Immediate";
-    case "Work is slowed":
-    case "I can still work":
-    default:
-      return "Can Wait";
-  }
+function toTimestamp(value: string) {
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-export default function ItIncidentRequestClient() {
+export default function TravelOrderRequestClient() {
   const router = useRouter();
   const currentUser = useCurrentUser();
   const createTicket = useMutation(api.monitoring.createTicket);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
   const department = currentUser?.department ?? "";
   const [section, setSection] = useState(currentUser?.section ?? "");
-  const [category, setCategory] = useState("Hardware & Peripherals");
-  const [impact, setImpact] = useState("Single User");
-  const [workStatus, setWorkStatus] = useState<(typeof WORK_STATUS_OPTIONS)[number]>("I can still work");
-  const [title, setTitle] = useState("");
-  const [details, setDetails] = useState("");
+  const [destination, setDestination] = useState("");
+  const [travelPurpose, setTravelPurpose] = useState("");
+  const [departureAt, setDepartureAt] = useState("");
+  const [returnAt, setReturnAt] = useState("");
+  const [transportationDetails, setTransportationDetails] = useState("");
+  const [additionalNotes, setAdditionalNotes] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const categoryExamples = IT_SUPPORT_CATEGORY_EXAMPLES[category];
   const missingDepartment = !department.trim();
 
   useEffect(() => {
@@ -69,6 +42,12 @@ export default function ItIncidentRequestClient() {
       setRequesterName(currentUser.displayName);
     }
   }, [currentUser?.displayName, requesterName]);
+
+  useEffect(() => {
+    if (!section.trim() && currentUser?.section) {
+      setSection(currentUser.section);
+    }
+  }, [currentUser?.section, section]);
 
   function handleBack() {
     if (window.history.length > 1) {
@@ -110,8 +89,10 @@ export default function ItIncidentRequestClient() {
       const trimmedRequesterName = requesterName.trim();
       const trimmedDepartment = department.trim();
       const trimmedSection = section.trim();
-      const trimmedTitle = title.trim();
-      const trimmedDetails = details.trim();
+      const trimmedDestination = destination.trim();
+      const trimmedTravelPurpose = travelPurpose.trim();
+      const trimmedTransportationDetails = transportationDetails.trim();
+      const trimmedAdditionalNotes = additionalNotes.trim();
       const actorName = currentUser?.displayName ?? trimmedRequesterName;
 
       if (!trimmedRequesterName) {
@@ -120,50 +101,72 @@ export default function ItIncidentRequestClient() {
       if (!trimmedDepartment) {
         throw new Error("Department is required.");
       }
-      if (!trimmedTitle) {
-        throw new Error("Issue title is required.");
+      if (!trimmedDestination) {
+        throw new Error("Destination is required.");
       }
-      if (!trimmedDetails) {
-        throw new Error("Issue details are required.");
+      if (!trimmedTravelPurpose) {
+        throw new Error("Purpose of travel is required.");
+      }
+      if (!departureAt) {
+        throw new Error("Departure date and time is required.");
+      }
+      if (!returnAt) {
+        throw new Error("Return date and time is required.");
+      }
+
+      const departureTimestamp = toTimestamp(departureAt);
+      const returnTimestamp = toTimestamp(returnAt);
+      if (!departureTimestamp) {
+        throw new Error("Departure date and time is invalid.");
+      }
+      if (!returnTimestamp) {
+        throw new Error("Return date and time is invalid.");
+      }
+      if (returnTimestamp < departureTimestamp) {
+        throw new Error("Return date and time must be after departure.");
       }
 
       setSubmitting(true);
 
-      const urgency = resolveUrgencyFromWorkStatus(workStatus);
+      const departureText = new Date(departureTimestamp).toLocaleString();
+      const returnText = new Date(returnTimestamp).toLocaleString();
       const attachmentStorageId = await uploadAttachment();
       const requestDetails = [
-        trimmedDetails,
-        `Work status: ${workStatus}`,
+        `Destination: ${trimmedDestination}`,
+        `Purpose of travel: ${trimmedTravelPurpose}`,
+        `Departure: ${departureText}`,
+        `Return: ${returnText}`,
+        trimmedTransportationDetails ? `Transportation details: ${trimmedTransportationDetails}` : "",
+        trimmedAdditionalNotes ? `Additional notes: ${trimmedAdditionalNotes}` : "",
         trimmedSection ? `Section: ${trimmedSection}` : "",
       ].filter(Boolean).join("\n");
       const requestSnapshot = [
-        "Request type: IT Support",
+        "Request type: Travel Order",
         `Requester: ${trimmedRequesterName}`,
         `Department: ${trimmedDepartment}`,
         trimmedSection ? `Section: ${trimmedSection}` : "",
-        `Category: ${category}`,
-        `Impact: ${impact}`,
-        `Work status: ${workStatus}`,
-        `Triage urgency: ${urgency}`,
+        `Destination: ${trimmedDestination}`,
+        `Departure: ${departureText}`,
+        `Return: ${returnText}`,
       ].filter(Boolean).join("\n");
 
       await createTicket({
-        workType: "Incident",
-        workflowType: "incident",
-        category,
-        title: trimmedTitle,
+        workType: "Service Request",
+        workflowType: "serviceRequest",
+        category: TRAVEL_ORDER_CATEGORY,
+        title: `${TRAVEL_ORDER_CATEGORY} - ${trimmedDestination}`,
         requestDetails,
         requestSnapshot,
-        requestSource: MONITORING_REQUEST_SOURCE,
+        requestSource: REQUEST_SOURCE,
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
         requesterSection: trimmedSection || undefined,
-        impact,
-        urgency,
+        impact: "Single User",
+        urgency: "Can Wait",
         attachments: attachmentStorageId
           ? [
               {
-                kind: "Screenshot",
+                kind: "Reference",
                 label: "Supporting file",
                 fileName: attachmentFile?.name ?? "Attachment",
                 contentType: attachmentFile?.type || undefined,
@@ -177,7 +180,7 @@ export default function ItIncidentRequestClient() {
 
       router.push("/requests/my");
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "IT support request submission failed.");
+      setFormError(error instanceof Error ? error.message : "Travel order submission failed.");
       setSubmitting(false);
     }
   }
@@ -187,10 +190,8 @@ export default function ItIncidentRequestClient() {
       <section className="panel request-page-panel">
         <div className="request-page-head">
           <div>
-            <h1 className="request-page-title">IT Support</h1>
-            <p className="request-page-subtitle">
-              Use this when something is broken, blocked, or not working normally.
-            </p>
+            <h1 className="request-page-title">Travel Order</h1>
+            <p className="request-page-subtitle">Submit travel details for HR/Admin processing.</p>
           </div>
           <button type="button" className="btn-secondary" onClick={handleBack}>
             Back
@@ -218,7 +219,7 @@ export default function ItIncidentRequestClient() {
             />
             {missingDepartment ? (
               <small className="request-form-help is-warning">
-                Department is missing from your account. Please contact IT/admin.
+                Department is missing from your account. Please contact HR/Admin.
               </small>
             ) : null}
           </label>
@@ -234,79 +235,62 @@ export default function ItIncidentRequestClient() {
           </label>
 
           <label className="request-form-field">
-            <span>Category</span>
-            <select
-              className="input-base"
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
-            >
-              {MONITORING_TICKET_CATEGORIES.map((option) => (
-                <option
-                  key={option}
-                  value={option}
-                  title={IT_SUPPORT_CATEGORY_EXAMPLES[option]}
-                >
-                  {option}
-                </option>
-              ))}
-            </select>
-            {categoryExamples ? (
-              <small className="request-form-help">Examples: {categoryExamples}</small>
-            ) : null}
-          </label>
-
-          <label className="request-form-field">
-            <span>Impact</span>
-            <select
-              className="input-base"
-              value={impact}
-              onChange={(event) => setImpact(event.target.value)}
-            >
-              {MONITORING_IMPACT_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="request-form-field">
-            <span>How affected are you?</span>
-            <select
-              className="input-base"
-              value={workStatus}
-              onChange={(event) =>
-                setWorkStatus(event.target.value as (typeof WORK_STATUS_OPTIONS)[number])
-              }
-            >
-              {WORK_STATUS_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-            <small className="request-form-help">
-              IT will use this during triage to set the final urgency.
-            </small>
-          </label>
-
-          <label className="request-form-field request-form-field-wide">
-            <span>Issue Title</span>
+            <span>Destination</span>
             <input
               className="input-base"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Short summary of the issue"
+              value={destination}
+              onChange={(event) => setDestination(event.target.value)}
+              placeholder="City, branch, client site, or location"
+            />
+          </label>
+
+          <label className="request-form-field">
+            <span>Departure Date / Time</span>
+            <input
+              className="input-base"
+              type="datetime-local"
+              value={departureAt}
+              onChange={(event) => setDepartureAt(event.target.value)}
+            />
+          </label>
+
+          <label className="request-form-field">
+            <span>Return Date / Time</span>
+            <input
+              className="input-base"
+              type="datetime-local"
+              value={returnAt}
+              onChange={(event) => setReturnAt(event.target.value)}
             />
           </label>
 
           <label className="request-form-field request-form-field-wide">
-            <span>Issue Details</span>
+            <span>Purpose of Travel</span>
             <textarea
               className="input-base request-form-textarea"
-              value={details}
-              onChange={(event) => setDetails(event.target.value)}
-              placeholder="Describe what happened, when it started, and what is affected."
+              value={travelPurpose}
+              onChange={(event) => setTravelPurpose(event.target.value)}
+              placeholder="Explain the official purpose of the travel."
+            />
+          </label>
+
+          <label className="request-form-field request-form-field-wide">
+            <span>Transportation Details</span>
+            <textarea
+              className="input-base request-form-textarea"
+              value={transportationDetails}
+              onChange={(event) => setTransportationDetails(event.target.value)}
+              placeholder="Add vehicle, route, driver, booking, or reimbursement details if known."
+            />
+          </label>
+
+          <label className="request-form-field request-form-field-wide">
+            <span>Additional Notes</span>
+            <textarea
+              className="input-base request-form-textarea"
+              value={additionalNotes}
+              onChange={(event) => setAdditionalNotes(event.target.value)}
+              placeholder="Add schedule notes, contact person, reference number, or special instructions."
             />
           </label>
 
@@ -319,7 +303,7 @@ export default function ItIncidentRequestClient() {
               file={attachmentFile}
               hasAttachment={Boolean(attachmentFile)}
               displayName="No file selected"
-              helperText="Optional screenshot or supporting file."
+              helperText="Optional invitation, itinerary, approval, or supporting document."
               badge="FILE"
               ariaLabel="Upload supporting file"
               onRemove={() => setAttachmentFile(null)}
@@ -330,10 +314,15 @@ export default function ItIncidentRequestClient() {
         {formError ? <div className="request-form-error">{formError}</div> : null}
 
         <div className="request-form-actions">
-          <button type="button" className="btn-primary" disabled={submitting || missingDepartment} onClick={() => void handleSubmit()}>
-            {submitting ? "Submitting..." : "Submit Request"}
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={submitting || missingDepartment}
+            onClick={() => void handleSubmit()}
+          >
+            {submitting ? "Submitting..." : "Submit Travel Order"}
           </button>
-          <span>This will create a support ticket for IT staff.</span>
+          <span>This will create a travel order request for HR/Admin.</span>
         </div>
       </section>
     </div>

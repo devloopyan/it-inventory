@@ -17,6 +17,11 @@ function toTimestamp(value: string) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+function toStartOfDayTimestamp(value: string) {
+  const timestamp = new Date(`${value}T00:00`).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 function isReserved(row: { reservationStatus?: string }) {
   return row.reservationStatus === "Reserved";
 }
@@ -38,6 +43,42 @@ function isBorrowableEquipment(row: {
   );
 }
 
+function getEquipmentThumbnailLabel(assetType?: string) {
+  const words = assetType?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const initials = words
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("");
+
+  return initials || "IT";
+}
+
+function EquipmentThumbnail({
+  storageId,
+  assetType,
+  label,
+}: {
+  storageId?: Id<"_storage">;
+  assetType?: string;
+  label: string;
+}) {
+  const imageUrl = useQuery(
+    api.hardwareInventory.getImageUrl,
+    storageId ? { storageId } : "skip",
+  );
+
+  return (
+    <div className="request-equipment-thumb" aria-hidden={!imageUrl}>
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageUrl} alt={`${label} image`} />
+      ) : (
+        <span>{getEquipmentThumbnailLabel(assetType)}</span>
+      )}
+    </div>
+  );
+}
+
 export default function EquipmentBorrowerRequestClient() {
   const router = useRouter();
   const currentUser = useCurrentUser();
@@ -50,12 +91,14 @@ export default function EquipmentBorrowerRequestClient() {
   const createTicket = useMutation(api.monitoring.createTicket);
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
   const department = currentUser?.department ?? "";
+  const [requestedDate, setRequestedDate] = useState("");
   const [expectedReturnAt, setExpectedReturnAt] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [equipmentSearch, setEquipmentSearch] = useState("");
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const missingDepartment = !department.trim();
-  const selectedAssetIds = useMemo(
+  const selectedAssetIdsFromUrl = useMemo(
     () =>
       (searchParams?.get("assets") ?? "")
         .split(",")
@@ -63,6 +106,7 @@ export default function EquipmentBorrowerRequestClient() {
         .filter(Boolean),
     [searchParams],
   );
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const openBorrowingAssetIds = useMemo(
     () =>
       new Set(
@@ -73,6 +117,21 @@ export default function EquipmentBorrowerRequestClient() {
       ),
     [openRequests],
   );
+
+  useEffect(() => {
+    if (!selectedAssetIdsFromUrl.length) return;
+
+    setSelectedAssetIds((current) => {
+      const next = [...current];
+      for (const assetId of selectedAssetIdsFromUrl) {
+        if (!next.includes(assetId)) {
+          next.push(assetId);
+        }
+      }
+      return next.length === current.length ? current : next;
+    });
+  }, [selectedAssetIdsFromUrl]);
+
   const allSelectedAssets = useMemo(
     () =>
       selectedAssetIds
@@ -98,6 +157,36 @@ export default function EquipmentBorrowerRequestClient() {
       ),
     [allSelectedAssets, openBorrowingAssetIds],
   );
+  const equipmentSearchTerm = equipmentSearch.trim();
+  const availableEquipmentBaseOptions = useMemo(
+    () =>
+      (assets ?? [])
+        .filter((asset) => isBorrowableEquipment(asset))
+        .filter((asset) => !openBorrowingAssetIds.has(String(asset._id)))
+        .filter((asset) => !selectedAssetIds.includes(String(asset._id)))
+        .sort((left, right) => left.assetTag.localeCompare(right.assetTag)),
+    [assets, openBorrowingAssetIds, selectedAssetIds],
+  );
+  const availableEquipmentOptions = useMemo(
+    () => {
+      const search = equipmentSearchTerm.toLowerCase();
+
+      return availableEquipmentBaseOptions
+        .filter((asset) => {
+          if (!search) return true;
+
+          return [
+            asset.assetTag,
+            asset.assetNameDescription,
+            asset.assetType,
+            asset.specifications,
+          ]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(search));
+        });
+    },
+    [availableEquipmentBaseOptions, equipmentSearchTerm],
+  );
   const availabilityLoading = assets === undefined || openRequests === undefined;
 
   useEffect(() => {
@@ -115,6 +204,14 @@ export default function EquipmentBorrowerRequestClient() {
     router.push("/requests/new");
   }
 
+  function handleAddEquipment(assetId: string) {
+    setSelectedAssetIds((current) => (current.includes(assetId) ? current : [...current, assetId]));
+  }
+
+  function handleRemoveEquipment(assetId: string) {
+    setSelectedAssetIds((current) => current.filter((currentAssetId) => currentAssetId !== assetId));
+  }
+
   async function handleSubmit() {
     setFormError("");
 
@@ -128,6 +225,9 @@ export default function EquipmentBorrowerRequestClient() {
       }
       if (!trimmedDepartment) {
         throw new Error("Department is required.");
+      }
+      if (!requestedDate) {
+        throw new Error("Requested date is required.");
       }
       if (!expectedReturnAt) {
         throw new Error("Expected return is required.");
@@ -145,9 +245,16 @@ export default function EquipmentBorrowerRequestClient() {
         throw new Error("Add at least one equipment item.");
       }
 
+      const requestedBorrowTimestamp = toStartOfDayTimestamp(requestedDate);
       const expectedReturnTimestamp = toTimestamp(expectedReturnAt);
+      if (!requestedBorrowTimestamp) {
+        throw new Error("Requested date is invalid.");
+      }
       if (!expectedReturnTimestamp) {
         throw new Error("Expected return date is invalid.");
+      }
+      if (expectedReturnTimestamp < requestedBorrowTimestamp) {
+        throw new Error("Expected return must be after the requested date.");
       }
 
       setSubmitting(true);
@@ -158,6 +265,7 @@ export default function EquipmentBorrowerRequestClient() {
       );
       const requestDetails = [
         trimmedPurpose,
+        `Requested date: ${new Date(requestedBorrowTimestamp).toLocaleDateString()}.`,
         `Expected return: ${new Date(expectedReturnTimestamp).toLocaleString()}.`,
         "Requested equipment:",
         ...assetLines,
@@ -165,6 +273,7 @@ export default function EquipmentBorrowerRequestClient() {
       const requestSnapshot = [
         `Requester: ${trimmedRequesterName}`,
         `Department: ${trimmedDepartment}`,
+        `Requested date: ${new Date(requestedBorrowTimestamp).toLocaleDateString()}`,
         `Expected return: ${new Date(expectedReturnTimestamp).toLocaleString()}`,
         "Selected equipment:",
         ...assetLines,
@@ -179,6 +288,7 @@ export default function EquipmentBorrowerRequestClient() {
         requestSource: MONITORING_REQUEST_SOURCE,
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
+        requestedBorrowDate: requestedBorrowTimestamp,
         expectedReturnAt: expectedReturnTimestamp,
         borrowingItems: selectedAssets.map((asset) => ({
           assetId: asset._id as Id<"hardwareInventory">,
@@ -207,112 +317,208 @@ export default function EquipmentBorrowerRequestClient() {
           </button>
         </div>
 
-        <div className="request-form-grid">
-          <label className="request-form-field">
-            <span>Requester</span>
-            <input
-              className="input-base"
-              value={requesterName}
-              readOnly
-              placeholder="Enter requester name"
-            />
-          </label>
+        <div className="request-borrower-layout">
+          <div className="request-borrower-details">
+            <div className="request-form-grid">
+              <label className="request-form-field">
+                <span>Requester</span>
+                <input
+                  className="input-base"
+                  value={requesterName}
+                  readOnly
+                  placeholder="Enter requester name"
+                />
+              </label>
 
-          <label className="request-form-field">
-            <span>Department</span>
-            <input
-              className="input-base"
-              value={department}
-              readOnly
-              placeholder="Enter department"
-            />
-            {missingDepartment ? (
-              <small className="request-form-help is-warning">
-                Department is missing from your account. Please contact IT/admin.
-              </small>
-            ) : null}
-          </label>
+              <label className="request-form-field">
+                <span>Department</span>
+                <input
+                  className="input-base"
+                  value={department}
+                  readOnly
+                  placeholder="Enter department"
+                />
+                {missingDepartment ? (
+                  <small className="request-form-help is-warning">
+                    Department is missing from your account. Please contact IT/admin.
+                  </small>
+                ) : null}
+              </label>
 
-          <label className="request-form-field">
-            <span>Expected Return</span>
-            <input
-              className="input-base"
-              type="datetime-local"
-              value={expectedReturnAt}
-              onChange={(event) => setExpectedReturnAt(event.target.value)}
-            />
-          </label>
+              <label className="request-form-field">
+                <span>Requested Date</span>
+                <input
+                  className="input-base"
+                  type="date"
+                  value={requestedDate}
+                  onChange={(event) => setRequestedDate(event.target.value)}
+                />
+              </label>
 
-          <label className="request-form-field request-form-field-wide">
-            <span>Purpose</span>
-            <textarea
-              className="input-base request-form-textarea"
-              value={purpose}
-              onChange={(event) => setPurpose(event.target.value)}
-              placeholder="Explain why the equipment is needed."
-            />
-          </label>
-        </div>
+              <label className="request-form-field">
+                <span>Expected Return</span>
+                <input
+                  className="input-base"
+                  type="datetime-local"
+                  value={expectedReturnAt}
+                  onChange={(event) => setExpectedReturnAt(event.target.value)}
+                />
+              </label>
 
-        <section className="request-selected-assets">
-          <div className="request-selected-assets-head">
-            <h2>Selected Equipment</h2>
-            <span className="request-type-status">{selectedAssets.length}</span>
+              <label className="request-form-field request-form-field-wide">
+                <span>Purpose</span>
+                <textarea
+                  className="input-base request-form-textarea"
+                  value={purpose}
+                  onChange={(event) => setPurpose(event.target.value)}
+                  placeholder="Explain why the equipment is needed."
+                />
+              </label>
+            </div>
+
+            {formError ? <div className="request-form-error">{formError}</div> : null}
+
+            <div className="request-form-actions">
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={submitting || missingDepartment || availabilityLoading || unavailableSelectedAssets.length > 0}
+                onClick={() => void handleSubmit()}
+              >
+                {submitting ? "Submitting..." : "Submit Request"}
+              </button>
+              <span>This will create a borrowing ticket for IT staff.</span>
+            </div>
           </div>
 
-          {availabilityLoading ? (
-            <div className="request-empty-state">
-              <div className="request-empty-title">Loading selected equipment...</div>
-            </div>
-          ) : selectedAssets.length ? (
-            <div className="request-selected-asset-list">
-              {selectedAssets.map((asset) => (
-                <div key={String(asset._id)} className="request-selected-asset-row">
-                  <strong>{asset.assetNameDescription || asset.assetTag}</strong>
-                  <span>{[asset.assetTag, asset.assetType, asset.specifications].filter(Boolean).join(" - ")}</span>
+          <aside className="request-equipment-side-card">
+            <section className="request-selected-assets">
+              <div className="request-selected-assets-head">
+                <h2>Selected Equipment</h2>
+                <span className="request-type-status">{selectedAssets.length}</span>
+              </div>
+
+              {availabilityLoading ? (
+                <div className="request-empty-state">
+                  <div className="request-empty-title">Loading selected equipment...</div>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="request-empty-state">
-              <div className="request-empty-title">No equipment selected yet.</div>
-              <div className="request-empty-copy">Go back to Dashboard to add equipment, or continue filling the request details.</div>
-            </div>
-          )}
-        </section>
-
-        {unavailableSelectedAssets.length ? (
-          <section className="request-selected-assets">
-            <div className="request-selected-assets-head">
-              <h2>No Longer Available</h2>
-              <span className="request-type-status">{unavailableSelectedAssets.length}</span>
-            </div>
-            <div className="request-form-help is-warning">
-              These items were removed from this request because they are reserved, borrowed, pending in another request, or no longer in MAIN STORAGE.
-            </div>
-            <div className="request-selected-asset-list">
-              {unavailableSelectedAssets.map((asset) => (
-                <div key={String(asset._id)} className="request-selected-asset-row">
-                  <strong>{asset.assetNameDescription || asset.assetTag}</strong>
-                  <span>{[asset.assetTag, asset.assetType, asset.status].filter(Boolean).join(" - ")}</span>
+              ) : selectedAssets.length ? (
+                <div className="request-selected-asset-list">
+                  {selectedAssets.map((asset) => (
+                    <div key={String(asset._id)} className="request-selected-asset-row">
+                      <EquipmentThumbnail
+                        storageId={asset.imageStorageId}
+                        assetType={asset.assetType}
+                        label={asset.assetNameDescription || asset.assetTag}
+                      />
+                      <div>
+                        <strong>{asset.assetNameDescription || asset.assetTag}</strong>
+                        <span>{[asset.assetTag, asset.assetType, asset.specifications].filter(Boolean).join(" - ")}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="request-selected-asset-remove"
+                        onClick={() => handleRemoveEquipment(String(asset._id))}
+                        aria-label={`Remove ${asset.assetNameDescription || asset.assetTag}`}
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
+              ) : (
+                <div className="request-empty-state">
+                  <div className="request-empty-title">No equipment selected yet.</div>
+                  <div className="request-empty-copy">Add equipment from the available list below.</div>
+                </div>
+              )}
+            </section>
 
-        {formError ? <div className="request-form-error">{formError}</div> : null}
+            <section className="request-selected-assets">
+              <div className="request-selected-assets-head">
+                <h2>Available Equipment</h2>
+                <span className="request-type-status is-ready">{availableEquipmentOptions.length}</span>
+              </div>
 
-        <div className="request-form-actions">
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={submitting || missingDepartment || availabilityLoading || unavailableSelectedAssets.length > 0}
-            onClick={() => void handleSubmit()}
-          >
-            {submitting ? "Submitting..." : "Submit Request"}
-          </button>
-          <span>This will create a borrowing ticket for IT staff.</span>
+              <input
+                className="input-base request-equipment-search"
+                type="search"
+                value={equipmentSearch}
+                onChange={(event) => setEquipmentSearch(event.target.value)}
+                placeholder="Search equipment..."
+                aria-label="Search available equipment"
+              />
+
+              {availabilityLoading ? (
+                <div className="request-empty-state">
+                  <div className="request-empty-title">Loading available equipment...</div>
+                </div>
+              ) : availableEquipmentOptions.length ? (
+                <div className="request-equipment-picker-list">
+                  {availableEquipmentOptions.map((asset) => (
+                    <button
+                      key={String(asset._id)}
+                      type="button"
+                      className="request-equipment-picker-option"
+                      onClick={() => handleAddEquipment(String(asset._id))}
+                    >
+                      <EquipmentThumbnail
+                        storageId={asset.imageStorageId}
+                        assetType={asset.assetType}
+                        label={asset.assetNameDescription || asset.assetTag}
+                      />
+                      <span className="request-equipment-picker-main">
+                        <strong>{asset.assetNameDescription || asset.assetTag}</strong>
+                        <small>{[asset.assetTag, asset.assetType, asset.specifications].filter(Boolean).join(" - ")}</small>
+                      </span>
+                      <span className="request-equipment-picker-status">Add</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="request-empty-state">
+                  <div className="request-empty-title">
+                    {equipmentSearchTerm && availableEquipmentBaseOptions.length
+                      ? "No equipment matches your search."
+                      : "No equipment is available right now."}
+                  </div>
+                  <div className="request-empty-copy">
+                    {equipmentSearchTerm && availableEquipmentBaseOptions.length
+                      ? "Try another asset tag, name, type, or specification."
+                      : "Requested, reserved, borrowed, or non-main-storage items are not shown here."}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {unavailableSelectedAssets.length ? (
+              <section className="request-selected-assets">
+                <div className="request-selected-assets-head">
+                  <h2>No Longer Available</h2>
+                  <span className="request-type-status">{unavailableSelectedAssets.length}</span>
+                </div>
+                <div className="request-form-help is-warning">
+                  These items were removed from this request because they are reserved, borrowed, pending in another request, or no longer in MAIN STORAGE.
+                </div>
+                <div className="request-selected-asset-list">
+                  {unavailableSelectedAssets.map((asset) => (
+                    <div key={String(asset._id)} className="request-selected-asset-row">
+                      <EquipmentThumbnail
+                        storageId={asset.imageStorageId}
+                        assetType={asset.assetType}
+                        label={asset.assetNameDescription || asset.assetTag}
+                      />
+                      <div>
+                        <strong>{asset.assetNameDescription || asset.assetTag}</strong>
+                        <span>{[asset.assetTag, asset.assetType, asset.status].filter(Boolean).join(" - ")}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </aside>
         </div>
       </section>
     </div>
