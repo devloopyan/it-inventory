@@ -16,9 +16,12 @@ import {
   MONITORING_IMPACT_OPTIONS,
   MONITORING_MEETING_MODES,
   MONITORING_MEETING_REQUEST_CATEGORY,
+  MONITORING_TRAVEL_ORDER_CATEGORY,
   MONITORING_URGENCY_OPTIONS,
+  getApprovalRouteForCategory,
   getMeetingRequestStatusOptions,
   getMonitoringStatusOptions,
+  isPendingApprovalStage,
   isMonitoringApprovalReference,
   isMonitoringWorkflowType,
   normalizeMeetingRequestStatusValue,
@@ -64,6 +67,12 @@ function formatShortDate(value?: number) {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatDateKey(value?: number) {
+  const date = value ? new Date(value) : new Date();
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  return `${safeDate.getFullYear()}-${String(safeDate.getMonth() + 1).padStart(2, "0")}-${String(safeDate.getDate()).padStart(2, "0")}`;
 }
 
 function formatFileSize(bytes?: number) {
@@ -135,6 +144,35 @@ function extractMeetingSupportNotes(requestDetails?: string) {
     .map((line) => line.trim())
     .find((line) => /^Additional notes:/i.test(line));
   return noteLine ? noteLine.replace(/^Additional notes:\s*/i, "").trim().replace(/\.$/, "") : "";
+}
+
+function extractLabeledDetail(requestDetails: string | undefined, label: string) {
+  if (!requestDetails) return "";
+  const pattern = new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*(.*)$`, "i");
+  const line = requestDetails
+    .split("\n")
+    .map((value) => value.trim())
+    .find((value) => pattern.test(value));
+
+  return line?.replace(pattern, "$1").trim() ?? "";
+}
+
+function getTravelOrderDetails(requestDetails?: string) {
+  return {
+    destination: extractLabeledDetail(requestDetails, "Destination"),
+    passengers: extractLabeledDetail(requestDetails, "Passengers"),
+    purpose: extractLabeledDetail(requestDetails, "Purpose of travel"),
+    projectName: extractLabeledDetail(requestDetails, "Project name"),
+    expectedOutput: extractLabeledDetail(requestDetails, "Expected output"),
+    departure: extractLabeledDetail(requestDetails, "Departure"),
+    returnTrip: extractLabeledDetail(requestDetails, "Return"),
+    notes:
+      extractLabeledDetail(requestDetails, "Additional / transportation notes") ||
+      extractLabeledDetail(requestDetails, "Transportation request / notes") ||
+      extractLabeledDetail(requestDetails, "Transportation details") ||
+      extractLabeledDetail(requestDetails, "Additional notes"),
+    section: extractLabeledDetail(requestDetails, "Section"),
+  };
 }
 
 function buildMeetingRequestTitle(meetingTitle: string, meetingStart: string) {
@@ -394,20 +432,6 @@ function DetailTextRow(props: { label: string; value?: ReactNode }) {
   );
 }
 
-function MeetingSummaryRow(props: { label: string; value?: ReactNode; icon: ReactNode }) {
-  return (
-    <div className="monitoring-detail-summary-row">
-      <span className="monitoring-detail-summary-icon" aria-hidden="true">
-        {props.icon}
-      </span>
-      <div className="monitoring-detail-summary-row-copy">
-        <span className="monitoring-detail-summary-row-label">{props.label}</span>
-        <span className="monitoring-detail-summary-row-value">{props.value ?? "-"}</span>
-      </div>
-    </div>
-  );
-}
-
 function MeetingAssetLookup(props: {
   query: string;
   disabled?: boolean;
@@ -519,154 +543,12 @@ function MeetingAssetLookup(props: {
   );
 }
 
-function MeetingRequestSummaryCard(props: {
-  heading?: string;
-  embedded?: boolean;
-  requesterName?: string;
-  requesterSection?: string;
-  requesterDepartment?: string;
-  createdAt?: number;
-  meetingMode?: string;
-  meetingStartAt?: number;
-  meetingEndAt?: number;
-  meetingLocation?: string;
-  meetingAttendeeCount?: string;
-  reservedAssetsCount?: number;
-  assetItems?: Array<{
-    assetId: string;
-    assetTag: string;
-    assetLabel: string;
-  }>;
-}) {
-  const schedule =
-    props.meetingStartAt && props.meetingEndAt
-      ? `${formatDateTime(props.meetingStartAt)} to ${formatDateTime(props.meetingEndAt)}`
-      : props.meetingStartAt
-        ? formatDateTime(props.meetingStartAt)
-        : "-";
-
-  return (
-    <div
-      className={`monitoring-detail-summary-card monitoring-detail-summary-card-meeting${props.embedded ? " monitoring-detail-summary-card-embedded" : ""}`}
-    >
-      {props.heading ? <div className="type-section-title monitoring-detail-summary-heading">{props.heading}</div> : null}
-      <div className="monitoring-detail-summary-top">
-        <div className="monitoring-detail-summary-badge" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path
-              d="M6.25 3.75V5.25M13.75 3.75V5.25M4.583 7.333H15.417M5.417 5.25H14.583C15.503 5.25 16.25 5.996 16.25 6.917V14.583C16.25 15.504 15.503 16.25 14.583 16.25H5.417C4.496 16.25 3.75 15.504 3.75 14.583V6.917C3.75 5.996 4.496 5.25 5.417 5.25Z"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
-        <div className="monitoring-detail-summary-copy">
-          <span className="monitoring-detail-summary-eyebrow">Requester</span>
-          <strong className="monitoring-detail-summary-title">{props.requesterName || "-"}</strong>
-          <span className="monitoring-detail-summary-subtitle">{formatDateTime(props.createdAt)}</span>
-        </div>
-        <div className="monitoring-detail-summary-highlight">
-          <span className="monitoring-detail-summary-highlight-label">Department</span>
-          <strong className="monitoring-detail-summary-highlight-value">{props.requesterDepartment || "-"}</strong>
-        </div>
-      </div>
-
-      <div className="monitoring-detail-summary-list">
-        <MeetingSummaryRow
-          label="Section"
-          value={props.requesterSection}
-          icon={
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path
-                d="M8 2.667L13 5.333L8 8L3 5.333L8 2.667ZM3 8L8 10.667L13 8M3 10.667L8 13.333L13 10.667"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          }
-        />
-      </div>
-
-      <div className="monitoring-detail-summary-subsection">
-        <div className="monitoring-detail-summary-top monitoring-detail-summary-top-compact">
-          <div className="monitoring-detail-summary-copy">
-            <span className="monitoring-detail-summary-eyebrow">Meeting Mode</span>
-            <strong className="monitoring-detail-summary-title">{props.meetingMode || "-"}</strong>
-            <span className="monitoring-detail-summary-subtitle">{schedule}</span>
-          </div>
-          <div className="monitoring-detail-summary-highlight">
-            <span className="monitoring-detail-summary-highlight-label">Attendees</span>
-            <strong className="monitoring-detail-summary-highlight-value">{props.meetingAttendeeCount || "-"}</strong>
-          </div>
-        </div>
-
-        <div className="monitoring-detail-summary-list">
-          <MeetingSummaryRow
-            label="Location / Platform"
-            value={props.meetingLocation}
-            icon={
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path
-                  d="M8 13C10.333 10.333 11.5 8.333 11.5 7C11.5 5.067 9.933 3.5 8 3.5C6.067 3.5 4.5 5.067 4.5 7C4.5 8.333 5.667 10.333 8 13Z"
-                  stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <circle cx="8" cy="7" r="1.25" stroke="currentColor" strokeWidth="1.3" />
-              </svg>
-            }
-          />
-          {props.reservedAssetsCount ? (
-            <MeetingSummaryRow
-              label="Reserved Assets"
-              value={`${props.reservedAssetsCount} reserved`}
-              icon={
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path
-                    d="M3 5.333L8 2.667L13 5.333M3 5.333V10.667L8 13.333M3 5.333L8 8M13 5.333V10.667L8 13.333M13 5.333L8 8M8 8V13.333"
-                    stroke="currentColor"
-                    strokeWidth="1.3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              }
-            />
-          ) : null}
-        </div>
-      </div>
-      {props.assetItems?.length ? (
-        <div className="monitoring-detail-summary-assets">
-          <div className="monitoring-detail-summary-assets-label">Reserved Asset List</div>
-          <div className="monitoring-detail-summary-assets-list">
-            {props.assetItems.map((item, index) => (
-              <div key={`${item.assetId}-${index}`} className="monitoring-detail-summary-asset-row">
-                <div className="monitoring-detail-inline-copy">
-                  <strong>{item.assetTag}</strong>
-                  <span className="monitoring-detail-list-meta">{item.assetLabel}</span>
-                </div>
-                <Link href={`/hardware-inventory/${item.assetId}`} className="btn-secondary monitoring-detail-inline-action">
-                  Open Asset
-                </Link>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export default function TicketDetailClient({ ticketId, actorName }: TicketDetailClientProps) {
   const router = useRouter();
   const detail = useQuery(api.monitoring.getById, { ticketId });
   const assets = useQuery(api.hardwareInventory.listAll, {});
   const updateTicket = useMutation(api.monitoring.updateTicket);
+  const reserveAssets = useMutation(api.hardwareInventory.reserveAssets);
   const deleteTicket = useMutation(api.monitoring.deleteTicket);
   const removeTicketAttachment = useMutation(api.monitoring.removeTicketAttachment);
   const submitForApproval = useMutation(api.monitoring.submitForApproval);
@@ -716,6 +598,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const [meetingAssets, setMeetingAssets] = useState<EditableMeetingAsset[]>([]);
   const [meetingAssetSearch, setMeetingAssetSearch] = useState("");
   const [borrowingAssetSearch, setBorrowingAssetSearch] = useState("");
+  const [isTicketEditing, setIsTicketEditing] = useState(false);
   const [isMeetingEditing, setIsMeetingEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -773,6 +656,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     );
     setBorrowingAssetSearch("");
     setMeetingAssetSearch("");
+    setIsTicketEditing(false);
     setIsMeetingEditing(false);
   }, [detail]);
 
@@ -989,6 +873,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
       setMeetingRecordingFile(null);
       setAttachmentFile(null);
       setMeetingAssetSearch("");
+      setIsTicketEditing(false);
       setIsMeetingEditing(false);
       setFeedback(isMeetingRequest ? "Meeting request updated." : isBorrowingRequest ? "Borrowing request updated." : "Ticket updated.");
     } catch (error) {
@@ -1024,27 +909,53 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     }
   }
 
-  function handleBackToMeetingRequests() {
-    router.replace("/monitoring?tab=meetings");
-  }
-
   function handleEditDetails() {
-    setIsMeetingEditing(true);
-    meetingDetailsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (detail?.ticket) {
+      const isMeetingRequest =
+        detail.ticket.category === MONITORING_MEETING_REQUEST_CATEGORY ||
+        Boolean(detail.ticket.meetingStartAt || detail.ticket.meetingLocation);
+      if (isMeetingRequest) {
+        setIsMeetingEditing(true);
+      } else {
+        setIsTicketEditing(true);
+      }
+    }
     requestAnimationFrame(() => {
+      meetingDetailsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       meetingTitleInputRef.current?.focus();
     });
   }
 
-  function handleCancelMeetingEdit() {
+  function handleCancelEdit() {
     if (!detail?.ticket) return;
     const ticket = detail.ticket;
     const nextMeetingMode = (MONITORING_MEETING_MODES as readonly string[]).includes(ticket.meetingMode ?? "")
       ? (ticket.meetingMode as (typeof MONITORING_MEETING_MODES)[number])
       : MONITORING_MEETING_MODES[0];
     setStatus(ticket.status);
+    setImpact(ticket.impact ?? "");
+    setUrgency(ticket.urgency ?? "");
+    setPendingReason(ticket.pendingReason ?? "");
     setCloseReason(ticket.closeReason ?? "");
+    setResolutionNote(ticket.resolutionNote ?? "");
     setFulfillmentNote(ticket.fulfillmentNote ?? "");
+    setCauseActionTaken(ticket.causeActionTaken ?? "");
+    setRevisionReason(ticket.revisionReason ?? "");
+    setAssetId(ticket.assetId ? String(ticket.assetId) : "");
+    setRequestedItemsText(ticket.requestedItemsText ?? "");
+    setRequestedBorrowDate(toDateTimeLocalValue(ticket.requestedBorrowDate));
+    setExpectedReturnAt(toDateTimeLocalValue(ticket.expectedReturnAt));
+    setBorrowingItems(
+      (ticket.borrowingItems ?? []).map((item) => ({
+        assetId: String(item.assetId),
+        assetTag: item.assetTag,
+        assetLabel: item.assetLabel,
+        releaseCondition: item.releaseCondition,
+        returnCondition: item.returnCondition ?? "",
+        returnedAt: toDateTimeLocalValue(item.returnedAt),
+      })),
+    );
+    setMajorIncident(ticket.majorIncident);
     setMeetingRequesterName(ticket.requesterName ?? "");
     setMeetingRequesterSection(ticket.requesterSection ?? "");
     setMeetingRequesterDepartment(ticket.requesterDepartment ?? "");
@@ -1062,7 +973,12 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
         assetLabel: item.assetLabel,
       })),
     );
+    setIncidentReportFile(null);
+    setMeetingRecordingFile(null);
+    setAttachmentFile(null);
+    setBorrowingAssetSearch("");
     setMeetingAssetSearch("");
+    setIsTicketEditing(false);
     setIsMeetingEditing(false);
   }
 
@@ -1100,8 +1016,11 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
 
   async function handleApprovalDecision(decision: "Approved" | "For Revision") {
     if (!detail?.ticket) return;
+    const approvalRoute = getApprovalRouteForCategory(detail.ticket.category);
     const approver =
-      detail.ticket.approvalStage === "Pending IT Team Leader" ? "IT Team Leader" : "OSMD Manager";
+      detail.ticket.approvalStage === approvalRoute.firstPendingStage
+        ? approvalRoute.firstApprover
+        : approvalRoute.secondApprover;
 
     setSaving(true);
     setFeedback("");
@@ -1111,13 +1030,77 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
         approver,
         decision,
         reference: approvalReference,
-        note: approvalNote || revisionReason || "Recorded by IT.",
+        note: approvalNote || revisionReason || "Recorded.",
         actorName,
       });
       setApprovalNote("");
       setFeedback(`${approver} decision recorded.`);
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Approval recording failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleReserveBorrowingAssets() {
+    if (!detail?.ticket) return;
+
+    const ticket = detail.ticket;
+    const requesterName = ticket.requesterName.trim();
+    const requesterDepartment = ticket.requesterDepartment?.trim() ?? "";
+    const nextExpectedReturnAt = toTimestamp(expectedReturnAt) ?? ticket.expectedReturnAt;
+    const nextRequestedBorrowDate = toTimestamp(requestedBorrowDate) ?? ticket.requestedBorrowDate;
+
+    if (!borrowingItems.length) {
+      setFeedback("Add at least one linked asset before reserving.");
+      return;
+    }
+    if (!requesterName) {
+      setFeedback("Requester name is required before reserving assets.");
+      return;
+    }
+    if (!requesterDepartment) {
+      setFeedback("Requester department is required before reserving assets.");
+      return;
+    }
+    if (!nextExpectedReturnAt) {
+      setFeedback("Expected return date and time is required before reserving assets.");
+      return;
+    }
+
+    setSaving(true);
+    setFeedback("");
+
+    try {
+      await reserveAssets({
+        inventoryIds: borrowingItems.map((item) => item.assetId as Id<"hardwareInventory">),
+        borrowerName: requesterName,
+        department: requesterDepartment,
+        requestedDate: formatDateKey(ticket.requestReceivedAt),
+        expectedPickupDate: nextRequestedBorrowDate ? formatDateKey(nextRequestedBorrowDate) : undefined,
+        purpose: ticket.title,
+      });
+
+      await updateTicket({
+        ticketId,
+        actorName,
+        status: "In Progress",
+        fulfillmentNote: fulfillmentNote || undefined,
+        requestedItemsText: requestedItemsText.trim() || undefined,
+        requestedBorrowDate: nextRequestedBorrowDate,
+        expectedReturnAt: nextExpectedReturnAt,
+        borrowingItems: borrowingItems.map((item) => ({
+          assetId: item.assetId as Id<"hardwareInventory">,
+          releaseCondition: item.releaseCondition,
+          returnCondition: item.returnCondition || undefined,
+          returnedAt: toTimestamp(item.returnedAt),
+        })),
+      });
+
+      setStatus("In Progress");
+      setFeedback("Assets reserved and request moved to In Progress.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Asset reservation failed.");
     } finally {
       setSaving(false);
     }
@@ -1145,18 +1128,28 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     ticket.category === MONITORING_MEETING_REQUEST_CATEGORY || Boolean(ticket.meetingStartAt || ticket.meetingLocation);
   const isBorrowingRequest =
     ticket.category === MONITORING_BORROWING_REQUEST_CATEGORY || Boolean(ticket.borrowingItems?.length);
+  const isTravelOrder = ticket.category === MONITORING_TRAVEL_ORDER_CATEGORY;
   const isInternetLog = ticket.workflowType === "internetOutage";
   const borrowingTypeLabel = formatRequesterRequestType(ticket);
   const borrowingAssetLabel = formatRequesterAssetLabel(ticket);
-  const ticketTypeLabel = isMeetingRequest ? "Meeting Request" : isBorrowingRequest ? borrowingTypeLabel : ticket.workType;
+  const ticketTypeLabel = isMeetingRequest
+    ? "Meeting Request"
+    : isBorrowingRequest
+      ? borrowingTypeLabel
+      : isTravelOrder
+        ? "Travel Order"
+        : ticket.workType;
   const detailSectionTitle = isMeetingRequest
     ? "Meeting Request"
     : isBorrowingRequest
       ? borrowingTypeLabel
       : isInternetLog
         ? "Internet Log"
-        : "Work Ticket";
+        : isTravelOrder
+          ? "Travel Order"
+          : "Work Ticket";
   const displayTitle = isMeetingRequest ? getEditableMeetingTitle(ticket.title, ticket.meetingStartAt) : ticket.title;
+  const travelOrderDetails = isTravelOrder ? getTravelOrderDetails(ticket.requestDetails) : null;
   const meetingRecordingAttachment = attachments.find((attachment) => attachment.kind === "Meeting Recording");
   const supportingAttachments = attachments.filter((attachment) => attachment.kind !== "Meeting Recording");
   const selectedStatus = isMeetingRequest ? normalizeMeetingRequestStatus(status) : status;
@@ -1166,8 +1159,28 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     : getMonitoringStatusOptions(workflowType);
   const detailMetaItems = isMeetingRequest
     ? [`Updated ${formatDateTime(ticket.updatedAt)}`]
-    : [ticketTypeLabel, isBorrowingRequest ? borrowingAssetLabel : ticket.category, `Updated ${formatDateTime(ticket.updatedAt)}`];
-  const snapshotTitle = isInternetLog ? "Log Summary" : "Request Snapshot";
+    : [
+        ticketTypeLabel,
+        isBorrowingRequest || ticket.category !== ticketTypeLabel
+          ? isBorrowingRequest
+            ? borrowingAssetLabel
+            : ticket.category
+          : null,
+        `Updated ${formatDateTime(ticket.updatedAt)}`,
+      ].filter((item): item is string => Boolean(item));
+  const borrowingLinkedAssetRows = borrowingItems
+    .map((item) => assets?.find((assetRow) => String(assetRow._id) === item.assetId))
+    .filter((assetRow): assetRow is NonNullable<typeof assets>[number] => Boolean(assetRow));
+  const borrowingAssetsAlreadyReserved =
+    borrowingItems.length > 0 &&
+    borrowingLinkedAssetRows.length === borrowingItems.length &&
+    borrowingLinkedAssetRows.every((assetRow) => assetRow.reservationStatus === "Reserved");
+  const canReserveBorrowingAssets =
+    isBorrowingRequest &&
+    borrowingItems.length > 0 &&
+    !borrowingAssetsAlreadyReserved &&
+    selectedStatus !== "Fulfilled" &&
+    selectedStatus !== "Closed";
   const selectedMeetingAssetIds = new Set(meetingAssets.map((item) => item.assetId));
   const meetingAssetSearchTerm = meetingAssetSearch.trim().toLowerCase();
   const meetingAssetOptions = (assets ?? [])
@@ -1199,78 +1212,24 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     (ticket.approvalStage === "Not Submitted" || ticket.approvalStage === "For Revision");
   const canRecordApproval =
     !isMeetingRequest &&
-    (ticket.approvalStage === "Pending IT Team Leader" || ticket.approvalStage === "Pending OSMD Manager");
+    isPendingApprovalStage(ticket.approvalStage);
+  const isDetailEditing = isMeetingRequest ? isMeetingEditing : isTicketEditing;
+  const backHref = isMeetingRequest
+    ? "/monitoring?tab=meetings"
+    : isBorrowingRequest
+      ? "/monitoring?tab=borrowing"
+      : isTravelOrder
+        ? "/monitoring?tab=hrAdmin"
+        : isInternetLog
+          ? "/monitoring?tab=internet"
+          : "/monitoring";
+  const backLabel = isMeetingRequest ? "Back to Meeting Requests" : "Back to Monitoring";
 
   return (
     <div className="monitoring-page monitoring-detail-page">
       <section className="panel monitoring-detail-shell">
         <header className="monitoring-detail-header">
           <div className="monitoring-detail-header-main">
-            {isMeetingRequest ? (
-              <div className="monitoring-detail-header-icon-actions">
-                <button
-                  type="button"
-                  className="asset-action-btn"
-                  onClick={handleBackToMeetingRequests}
-                  aria-label="Back to Meeting Requests"
-                  title="Back to Meeting Requests"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path
-                      d="M15 6L9 12L15 18"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-                <button
-                  className="asset-action-btn asset-action-btn-primary"
-                  onClick={handleEditDetails}
-                  type="button"
-                  aria-label="Edit Meeting Details"
-                  title="Edit Meeting Details"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M12 20H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    <path
-                      d="M16.5 3.5C17.3284 2.67157 18.6716 2.67157 19.5 3.5C20.3284 4.32843 20.3284 5.67157 19.5 6.5L7 19L3 20L4 16L16.5 3.5Z"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-                <button
-                  className="asset-action-btn asset-action-btn-danger"
-                  onClick={() => void handleDelete()}
-                  type="button"
-                  aria-label={saving ? "Deleting Request" : "Delete Request"}
-                  title={saving ? "Deleting Request" : "Delete Request"}
-                  disabled={saving}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M4 7H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    <path d="M10 11V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    <path d="M14 11V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                    <path
-                      d="M6 7L7 19C7.05 19.6 7.55 20 8.15 20H15.85C16.45 20 16.95 19.6 17 19L18 7"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path d="M9 7V4.8C9 4.36 9.36 4 9.8 4H14.2C14.64 4 15 4.36 15 4.8V7" stroke="currentColor" strokeWidth="2" />
-                  </svg>
-                </button>
-              </div>
-            ) : (
-              <Link href="/monitoring" className="btn-secondary monitoring-detail-back">
-                Back to Monitoring
-              </Link>
-            )}
             <div className="monitoring-detail-title-stack">
               <div className="monitoring-detail-title-row">
                 <h1 className="type-page-title">{displayTitle}</h1>
@@ -1279,8 +1238,8 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 {ticket.priority ? <Chip label={ticket.priority} /> : null}
               </div>
               <div className="monitoring-detail-meta">
-                {detailMetaItems.map((item) => (
-                  <span key={item}>{item}</span>
+                {detailMetaItems.map((item, index) => (
+                  <span key={`${item}-${index}`}>{item}</span>
                 ))}
               </div>
             </div>
@@ -1289,10 +1248,128 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
             {!isMeetingRequest && ticket.incidentReportRequired && !ticket.incidentReportAttached ? (
               <Chip label="Incident Report Pending" />
             ) : null}
+            <Link href={backHref} className="asset-action-btn" aria-label={backLabel} title={backLabel}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M15 6L9 12L15 18"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </Link>
+            {!isDetailEditing ? (
+              <button
+                className="asset-action-btn asset-action-btn-primary"
+                onClick={handleEditDetails}
+                type="button"
+                aria-label={`Edit ${detailSectionTitle}`}
+                title={`Edit ${detailSectionTitle}`}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 20H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path
+                    d="M16.5 3.5C17.3284 2.67157 18.6716 2.67157 19.5 3.5C20.3284 4.32843 20.3284 5.67157 19.5 6.5L7 19L3 20L4 16L16.5 3.5Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            ) : null}
+            {canSubmitApproval ? (
+              <button
+                type="button"
+                className="asset-action-btn"
+                disabled={saving}
+                onClick={() => void handleSubmitForApproval()}
+                aria-label="Submit for Approval"
+                title="Submit for Approval"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 12L20 4L16 20L12 13L4 12Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                  <path d="M12 13L20 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </button>
+            ) : null}
+            {isBorrowingRequest ? (
+              <button
+                type="button"
+                className="asset-action-btn"
+                disabled={saving || !canReserveBorrowingAssets}
+                onClick={() => void handleReserveBorrowingAssets()}
+                aria-label={
+                  borrowingAssetsAlreadyReserved
+                    ? "Assets Reserved"
+                    : borrowingItems.length
+                      ? "Reserve Assets"
+                      : "Link Assets First"
+                }
+                title={
+                  borrowingAssetsAlreadyReserved
+                    ? "Assets Reserved"
+                    : borrowingItems.length
+                      ? "Reserve Assets"
+                      : "Link Assets First"
+                }
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 10V8C6 4.7 8.7 2 12 2C15.3 2 18 4.7 18 8V10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path
+                    d="M5 10H19V20H5V10Z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            ) : null}
             {!isMeetingRequest && !isBorrowingRequest && ticket.assetId && asset ? (
-              <Link href={`/hardware-inventory/${asset._id}`} className="btn-secondary">
-                Open Linked Asset
+              <Link
+                href={`/hardware-inventory/${asset._id}`}
+                className="asset-action-btn"
+                aria-label="Open Linked Asset"
+                title="Open Linked Asset"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M14 4H20V10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M10 14L20 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path
+                    d="M20 14V19C20 19.55 19.55 20 19 20H5C4.45 20 4 19.55 4 19V5C4 4.45 4.45 4 5 4H10"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </Link>
+            ) : null}
+            {isMeetingRequest ? (
+              <button
+                className="asset-action-btn asset-action-btn-danger"
+                onClick={() => void handleDelete()}
+                type="button"
+                aria-label={saving ? "Deleting Request" : "Delete Request"}
+                title={saving ? "Deleting Request" : "Delete Request"}
+                disabled={saving}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 7H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path d="M10 11V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path d="M14 11V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path
+                    d="M6 7L7 19C7.05 19.6 7.55 20 8.15 20H15.85C16.45 20 16.95 19.6 17 19L18 7"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path d="M9 7V4.8C9 4.36 9.36 4 9.8 4H14.2C14.64 4 15 4.36 15 4.8V7" stroke="currentColor" strokeWidth="2" />
+                </svg>
+              </button>
             ) : null}
           </div>
         </header>
@@ -1301,9 +1378,10 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
 
         <div className="monitoring-detail-body">
           <main className="monitoring-detail-main">
-            <section ref={isMeetingRequest ? meetingDetailsSectionRef : undefined} className="monitoring-detail-section">
-              <div className="type-section-title">{detailSectionTitle}</div>
-              <div className="monitoring-detail-field-grid">
+            {isDetailEditing ? (
+              <section ref={meetingDetailsSectionRef} className="monitoring-detail-section">
+                <div className="type-section-title">{detailSectionTitle}</div>
+                <div className="monitoring-detail-field-grid">
                 <FieldBlock label="Status">
                   <select
                     disabled={isMeetingRequest ? !isMeetingEditing : false}
@@ -1492,7 +1570,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                     </select>
                   </FieldBlock>
                   ) : null}
-              </div>
+                </div>
 
               {isMeetingRequest ? (
                 <FieldBlock label="Reserved Assets">
@@ -1610,27 +1688,40 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 </label>
               ) : null}
 
-              <div className="monitoring-detail-actions">
-                {isMeetingRequest && isMeetingEditing ? (
-                  <button type="button" className="btn-secondary" disabled={saving} onClick={handleCancelMeetingEdit}>
+                <div className="monitoring-detail-actions">
+                  <button type="button" className="btn-secondary" disabled={saving} onClick={handleCancelEdit}>
                     Cancel
                   </button>
-                ) : null}
-                {canSubmitApproval ? (
-                  <button type="button" className="btn-secondary" disabled={saving} onClick={() => void handleSubmitForApproval()}>
-                    Submit for Approval
+                  <button type="button" className="btn-primary" disabled={saving} onClick={() => void handleSave()}>
+                    {saving ? "Saving..." : isMeetingRequest || isBorrowingRequest ? "Save Request" : "Save Ticket"}
                   </button>
-                ) : null}
-                <button type="button" className="btn-primary" disabled={saving} onClick={() => void handleSave()}>
-                  {saving ? "Saving..." : isMeetingRequest || isBorrowingRequest ? "Save Request" : "Save Ticket"}
-                </button>
-              </div>
-            </section>
+                </div>
+              </section>
+            ) : null}
 
-            <section className="monitoring-detail-section">
-              <div className="type-subsection-title">{snapshotTitle}</div>
-              <p className="monitoring-detail-copy">{ticket.requestSnapshot}</p>
-            </section>
+            {travelOrderDetails ? (
+              <section className="monitoring-detail-section">
+                <div className="type-subsection-title">Travel Details</div>
+                <div className="monitoring-detail-stack">
+                  <DetailTextRow label="Destination" value={travelOrderDetails.destination} />
+                  <DetailTextRow label="Passengers" value={travelOrderDetails.passengers} />
+                  <DetailTextRow label="Purpose" value={travelOrderDetails.purpose} />
+                  <DetailTextRow label="Project Name" value={travelOrderDetails.projectName} />
+                  <DetailTextRow label="Expected Output" value={travelOrderDetails.expectedOutput} />
+                  <DetailTextRow label="Departure" value={travelOrderDetails.departure} />
+                  <DetailTextRow label="Return" value={travelOrderDetails.returnTrip} />
+                  <DetailTextRow label="Additional / Transportation Notes" value={travelOrderDetails.notes || "None"} />
+                </div>
+              </section>
+            ) : null}
+
+            {!isMeetingRequest ? (
+              <section className="monitoring-detail-section">
+                <div className="type-subsection-title">Request Details</div>
+                <p className="monitoring-detail-copy">{ticket.requestDetails}</p>
+              </section>
+            ) : null}
+
           </main>
 
           <aside className="monitoring-detail-side">

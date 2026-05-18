@@ -6,5 +6,6 @@
       "path": "C:\\Program Files\\Git\\bin\\bash.exe"
     }
   },
-  "terminal.integrated.defaultProfile.windows": "Git Bash"
+  "terminal.integrated.defaultProfile.windows": "Git Bash",
+  "workbench.browser.openLocalhostLinks": false
 }

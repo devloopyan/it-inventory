@@ -12,14 +12,21 @@ export const MONITORING_CATEGORIES = [
   "Security & Sensitive Access",
   "Meeting & Event Support",
   "Borrowing Requests",
+  "Travel Order",
+  "IT Exemption",
   "Other",
 ] as const;
 
 export const MONITORING_MEETING_REQUEST_CATEGORY = "Meeting & Event Support";
 export const MONITORING_BORROWING_REQUEST_CATEGORY = "Borrowing Requests";
+export const MONITORING_TRAVEL_ORDER_CATEGORY = "Travel Order";
+export const MONITORING_IT_EXEMPTION_CATEGORY = "IT Exemption";
 export const MONITORING_TICKET_CATEGORIES = MONITORING_CATEGORIES.filter(
   (category) =>
-    category !== MONITORING_MEETING_REQUEST_CATEGORY && category !== MONITORING_BORROWING_REQUEST_CATEGORY,
+    category !== MONITORING_MEETING_REQUEST_CATEGORY &&
+    category !== MONITORING_BORROWING_REQUEST_CATEGORY &&
+    category !== MONITORING_TRAVEL_ORDER_CATEGORY &&
+    category !== MONITORING_IT_EXEMPTION_CATEGORY,
 );
 
 export const MONITORING_IMPACT_OPTIONS = [
@@ -95,6 +102,8 @@ export const MONITORING_APPROVAL_STAGES = [
   "Not Submitted",
   "Pending IT Team Leader",
   "Pending OSMD Manager",
+  "Pending Department Approver",
+  "Pending HR/Admin Approver",
   "Approved",
   "For Revision",
 ] as const;
@@ -106,7 +115,12 @@ export const MONITORING_APPROVAL_DECISIONS = [
   "Resubmitted",
 ] as const;
 
-export const MONITORING_APPROVERS = ["IT Team Leader", "OSMD Manager"] as const;
+export const MONITORING_APPROVERS = [
+  "IT Team Leader",
+  "OSMD Manager",
+  "Department Approver",
+  "HR/Admin Approver",
+] as const;
 
 export const MONITORING_CLOSE_REASONS = [
   "Duplicate",
@@ -191,6 +205,33 @@ const PRIORITY_MATRIX: Record<MonitoringImpact, Record<MonitoringUrgency, Monito
   },
 };
 
+const DEFAULT_APPROVAL_ROUTE = {
+  firstApprover: "IT Team Leader",
+  secondApprover: "OSMD Manager",
+  firstPendingStage: "Pending IT Team Leader",
+  secondPendingStage: "Pending OSMD Manager",
+} as const;
+
+const TRAVEL_ORDER_APPROVAL_ROUTE = {
+  firstApprover: "Department Approver",
+  secondApprover: "HR/Admin Approver",
+  firstPendingStage: "Pending Department Approver",
+  secondPendingStage: "Pending HR/Admin Approver",
+} as const;
+
+export function getApprovalRouteForCategory(category?: string) {
+  return category === MONITORING_TRAVEL_ORDER_CATEGORY
+    ? TRAVEL_ORDER_APPROVAL_ROUTE
+    : DEFAULT_APPROVAL_ROUTE;
+}
+
+export function isPendingApprovalStage(stage?: string) {
+  return stage === DEFAULT_APPROVAL_ROUTE.firstPendingStage ||
+    stage === DEFAULT_APPROVAL_ROUTE.secondPendingStage ||
+    stage === TRAVEL_ORDER_APPROVAL_ROUTE.firstPendingStage ||
+    stage === TRAVEL_ORDER_APPROVAL_ROUTE.secondPendingStage;
+}
+
 export function getMonitoringStatusOptions(workflowType: MonitoringWorkflowType) {
   switch (workflowType) {
     case "serviceRequest":
@@ -267,10 +308,12 @@ export function isApprovalRequired(flags: {
 
 export function resolveApprovalStage(args: {
   approvalRequired: boolean;
+  category?: string;
   teamLeaderApprovalStatus?: string;
   osmdManagerApprovalStatus?: string;
 }) {
   if (!args.approvalRequired) return "Not Required" satisfies MonitoringApprovalStage;
+  const route = getApprovalRouteForCategory(args.category);
   if (!args.teamLeaderApprovalStatus && !args.osmdManagerApprovalStatus) {
     return "Not Submitted" satisfies MonitoringApprovalStage;
   }
@@ -281,12 +324,19 @@ export function resolveApprovalStage(args: {
     return "Approved" satisfies MonitoringApprovalStage;
   }
   if (args.teamLeaderApprovalStatus === "Approved") {
-    return "Pending OSMD Manager" satisfies MonitoringApprovalStage;
+    return route.secondPendingStage;
   }
-  return "Pending IT Team Leader" satisfies MonitoringApprovalStage;
+  return route.firstPendingStage;
 }
 
-export function resolveTicketPrefix(workType: MonitoringWorkType) {
+export function resolveTicketPrefix(workType: MonitoringWorkType, category?: string) {
+  if (category === MONITORING_TRAVEL_ORDER_CATEGORY) {
+    return "TO";
+  }
+  if (category === MONITORING_IT_EXEMPTION_CATEGORY) {
+    return "EXM";
+  }
+
   return workType === "Service Request" ? "SRQ" : "INC";
 }
 

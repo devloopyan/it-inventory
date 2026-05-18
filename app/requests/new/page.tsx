@@ -16,16 +16,24 @@ export default function NewRequestPage() {
           {REQUEST_TYPES.map((requestType) =>
             requestType.enabled && requestType.href ? (
               <Link key={requestType.id} href={requestType.href} className="request-type-card">
-                <span className="request-type-status is-ready">Available</span>
+                <span className="request-type-service">{requestType.serviceGroup}</span>
                 <span className="request-type-title">{requestType.label}</span>
                 <span className="request-type-copy">{requestType.description}</span>
-                <span className="request-type-action">Start request</span>
+                <span className="request-type-examples">
+                  {requestType.examples.join(" / ")}
+                </span>
               </Link>
             ) : (
               <button key={requestType.id} type="button" className="request-type-card is-disabled" disabled>
-                <span className="request-type-status">Coming soon</span>
+                <span className="request-type-card-meta">
+                  <span className="request-type-service">{requestType.serviceGroup}</span>
+                  <span className="request-type-status">Coming soon</span>
+                </span>
                 <span className="request-type-title">{requestType.label}</span>
                 <span className="request-type-copy">{requestType.description}</span>
+                <span className="request-type-examples">
+                  {requestType.examples.join(" / ")}
+                </span>
               </button>
             ),
           )}

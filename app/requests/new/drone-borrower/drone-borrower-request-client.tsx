@@ -1,16 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentUser } from "@/app/current-user-context";
+import FileUploadCard from "@/app/hardware-inventory/file-upload-card";
 import {
   MONITORING_BORROWING_REQUEST_CATEGORY,
   MONITORING_BORROW_CONDITION_OPTIONS,
-  MONITORING_REQUEST_SOURCE,
 } from "@/lib/monitoring";
+
+const REQUEST_SOURCE = "Requests Portal";
 
 function toTimestamp(value: string) {
   const timestamp = new Date(value).getTime();
@@ -49,6 +51,42 @@ function formatDroneKitSummary(asset: {
   return [asset.assetTag, asset.assetType ?? "Drone Kit"].filter(Boolean).join(" - ");
 }
 
+function getDroneThumbnailLabel(assetType?: string) {
+  const words = assetType?.trim().split(/\s+/).filter(Boolean) ?? [];
+  const initials = words
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("");
+
+  return initials || "DR";
+}
+
+function DroneThumbnail({
+  storageId,
+  assetType,
+  label,
+}: {
+  storageId?: Id<"_storage">;
+  assetType?: string;
+  label: string;
+}) {
+  const imageUrl = useQuery(
+    api.hardwareInventory.getImageUrl,
+    storageId ? { storageId } : "skip",
+  );
+
+  return (
+    <div className="request-equipment-thumb" aria-hidden={!imageUrl}>
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageUrl} alt={`${label} image`} />
+      ) : (
+        <span>{getDroneThumbnailLabel(assetType)}</span>
+      )}
+    </div>
+  );
+}
+
 export default function DroneBorrowerRequestClient() {
   const router = useRouter();
   const currentUser = useCurrentUser();
@@ -58,14 +96,19 @@ export default function DroneBorrowerRequestClient() {
     showClosed: false,
   });
   const createTicket = useMutation(api.monitoring.createTicket);
+  const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
-  const [department, setDepartment] = useState("");
+  const department = currentUser?.department ?? "";
   const [requestedDate, setRequestedDate] = useState("");
   const [expectedReturnAt, setExpectedReturnAt] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [droneSearch, setDroneSearch] = useState("");
   const [selectedDroneId, setSelectedDroneId] = useState("");
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const missingDepartment = !department.trim();
 
   const openBorrowingAssetIds = useMemo(
     () =>
@@ -77,7 +120,8 @@ export default function DroneBorrowerRequestClient() {
       ),
     [openRequests],
   );
-  const availableDroneKits = useMemo(
+  const droneSearchTerm = droneSearch.trim();
+  const availableDroneKitBaseOptions = useMemo(
     () =>
       (assets ?? [])
         .filter((asset) => isAvailableDroneKit(asset))
@@ -85,10 +129,35 @@ export default function DroneBorrowerRequestClient() {
         .sort((left, right) => left.assetTag.localeCompare(right.assetTag)),
     [assets, openBorrowingAssetIds],
   );
+  const availableDroneKits = useMemo(
+    () => {
+      const search = droneSearchTerm.toLowerCase();
+
+      return availableDroneKitBaseOptions.filter((asset) => {
+        if (!search) return true;
+
+        return [
+          asset.assetTag,
+          asset.assetNameDescription,
+          asset.assetType,
+          asset.specifications,
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(search));
+      });
+    },
+    [availableDroneKitBaseOptions, droneSearchTerm],
+  );
   const selectedDroneKit = useMemo(
     () => availableDroneKits.find((asset) => String(asset._id) === selectedDroneId),
     [availableDroneKits, selectedDroneId],
   );
+
+  useEffect(() => {
+    if (!requesterName.trim() && currentUser?.displayName) {
+      setRequesterName(currentUser.displayName);
+    }
+  }, [currentUser?.displayName, requesterName]);
 
   function handleBack() {
     if (window.history.length > 1) {
@@ -97,6 +166,30 @@ export default function DroneBorrowerRequestClient() {
     }
 
     router.push("/requests/new");
+  }
+
+  async function uploadAttachment() {
+    if (!attachmentFile) return undefined;
+
+    const uploadUrl = await generateUploadUrl();
+    const uploadResult = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": attachmentFile.type || "application/octet-stream",
+      },
+      body: attachmentFile,
+    });
+
+    if (!uploadResult.ok) {
+      throw new Error("Attachment upload failed.");
+    }
+
+    const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
+    if (!uploadData.storageId) {
+      throw new Error("Attachment upload failed.");
+    }
+
+    return uploadData.storageId;
   }
 
   async function handleSubmit() {
@@ -139,6 +232,7 @@ export default function DroneBorrowerRequestClient() {
       }
 
       setSubmitting(true);
+      const attachmentStorageId = await uploadAttachment();
 
       const assetLine = `- ${selectedDroneKit.assetTag} | ${
         selectedDroneKit.assetNameDescription ?? selectedDroneKit.assetType ?? "Drone Kit"
@@ -148,6 +242,7 @@ export default function DroneBorrowerRequestClient() {
         trimmedPurpose,
         `Requested date: ${new Date(requestedBorrowTimestamp).toLocaleDateString()}.`,
         `Expected return: ${new Date(expectedReturnTimestamp).toLocaleString()}.`,
+        "Return requirement: Flight report required before the drone kit can be returned.",
         "Requested drone kit:",
         assetLine,
       ].join("\n");
@@ -157,6 +252,8 @@ export default function DroneBorrowerRequestClient() {
         `Department: ${trimmedDepartment}`,
         `Requested date: ${new Date(requestedBorrowTimestamp).toLocaleDateString()}`,
         `Expected return: ${new Date(expectedReturnTimestamp).toLocaleString()}`,
+        "Workflow: Requested -> Reserved -> Released -> Returned with flight report",
+        "Return requirement: Flight report required",
         "Selected drone kit:",
         assetLine,
       ].join("\n");
@@ -167,7 +264,7 @@ export default function DroneBorrowerRequestClient() {
         category: MONITORING_BORROWING_REQUEST_CATEGORY,
         requestDetails,
         requestSnapshot,
-        requestSource: MONITORING_REQUEST_SOURCE,
+        requestSource: REQUEST_SOURCE,
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
         requestedBorrowDate: requestedBorrowTimestamp,
@@ -178,6 +275,18 @@ export default function DroneBorrowerRequestClient() {
             releaseCondition: MONITORING_BORROW_CONDITION_OPTIONS[0],
           },
         ],
+        attachments: attachmentStorageId
+          ? [
+              {
+                kind: "Reference",
+                label: "Drone borrowing support file",
+                fileName: attachmentFile?.name ?? "Attachment",
+                contentType: attachmentFile?.type || undefined,
+                storageId: attachmentStorageId,
+                uploadedBy: currentUser?.displayName ?? trimmedRequesterName,
+              },
+            ]
+          : undefined,
         createdBy: currentUser?.displayName ?? trimmedRequesterName,
       });
 
@@ -201,111 +310,160 @@ export default function DroneBorrowerRequestClient() {
           </button>
         </div>
 
-        <section className="request-selected-assets">
-          <div className="request-selected-assets-head">
-            <h2>Available Drone Kits</h2>
-            <span className="request-type-status is-ready">{availableDroneKits.length}</span>
+        <div className="request-borrower-layout">
+          <div className="request-borrower-details">
+            <div className="request-form-grid">
+              <label className="request-form-field">
+                <span>Requester</span>
+                <input
+                  className="input-base"
+                  value={requesterName}
+                  readOnly
+                  placeholder="Enter requester name"
+                />
+              </label>
+
+              <label className="request-form-field">
+                <span>Department</span>
+                <input
+                  className="input-base"
+                  value={department}
+                  readOnly
+                  placeholder="Enter department"
+                />
+                {missingDepartment ? (
+                  <small className="request-form-help is-warning">
+                    Department is missing from your account. Please contact IT/admin.
+                  </small>
+                ) : null}
+              </label>
+
+              <label className="request-form-field">
+                <span>Requested Date</span>
+                <input
+                  className="input-base"
+                  type="date"
+                  value={requestedDate}
+                  onChange={(event) => setRequestedDate(event.target.value)}
+                />
+              </label>
+
+              <label className="request-form-field">
+                <span>Expected Return</span>
+                <input
+                  className="input-base"
+                  type="datetime-local"
+                  value={expectedReturnAt}
+                  onChange={(event) => setExpectedReturnAt(event.target.value)}
+                />
+              </label>
+
+              <label className="request-form-field request-form-field-wide">
+                <span>Purpose / Site Activity</span>
+                <textarea
+                  className="input-base request-form-textarea"
+                  value={purpose}
+                  onChange={(event) => setPurpose(event.target.value)}
+                  placeholder="Describe where and why the drone kit is needed."
+                />
+              </label>
+
+              <div className="request-form-field request-form-field-wide">
+                <FileUploadCard
+                  label="Supporting File"
+                  inputRef={attachmentInputRef}
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                  onFileChange={setAttachmentFile}
+                  file={attachmentFile}
+                  hasAttachment={Boolean(attachmentFile)}
+                  displayName="No file selected"
+                  helperText="Optional flight plan, site schedule, permit, or supporting document."
+                  badge="FILE"
+                  ariaLabel="Upload drone borrowing support file"
+                  onRemove={() => setAttachmentFile(null)}
+                />
+              </div>
+            </div>
+
+            <div className="request-empty-state request-drone-note">
+              <div className="request-empty-title">Flight report is required on return.</div>
+              <div className="request-empty-copy">
+                This request only asks to borrow the drone kit. The return workflow will handle the flight report.
+              </div>
+            </div>
+
+            {formError ? <div className="request-form-error">{formError}</div> : null}
+
+            <div className="request-form-actions">
+              <button type="button" className="btn-primary" disabled={submitting || missingDepartment} onClick={() => void handleSubmit()}>
+                {submitting ? "Submitting..." : "Submit Request"}
+              </button>
+              <span>This will create a drone borrowing ticket for IT to reserve, release, and receive back with a flight report.</span>
+            </div>
           </div>
 
-          {assets === undefined || openRequests === undefined ? (
-            <div className="request-empty-state">
-              <div className="request-empty-title">Loading drone kits...</div>
-            </div>
-          ) : availableDroneKits.length ? (
-            <div className="request-drone-list">
-              {availableDroneKits.map((asset) => {
-                const selected = selectedDroneId === String(asset._id);
+          <aside className="request-equipment-side-card">
+            <section className="request-selected-assets">
+              <div className="request-selected-assets-head">
+                <h2>Available Drone Kits</h2>
+                <span className="request-type-status is-ready">{availableDroneKits.length}</span>
+              </div>
 
-                return (
-                  <button
-                    key={String(asset._id)}
-                    type="button"
-                    className={`request-drone-option${selected ? " is-selected" : ""}`}
-                    onClick={() => setSelectedDroneId(String(asset._id))}
-                  >
-                    <span className="request-drone-option-main">
-                      <strong className="request-drone-option-title">{asset.assetNameDescription || asset.assetTag}</strong>
-                      <small className="request-drone-option-meta">{formatDroneKitSummary(asset)}</small>
-                    </span>
-                    <span className="request-drone-option-status">{selected ? "Selected" : "Select"}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="request-empty-state">
-              <div className="request-empty-title">No drone kits are available right now.</div>
-              <div className="request-empty-copy">Reserved, borrowed, or already requested drone kits are not shown here.</div>
-            </div>
-          )}
-        </section>
+              <input
+                className="input-base request-equipment-search"
+                type="search"
+                value={droneSearch}
+                onChange={(event) => setDroneSearch(event.target.value)}
+                placeholder="Search drone kits..."
+                aria-label="Search available drone kits"
+              />
 
-        <div className="request-form-grid">
-          <label className="request-form-field">
-            <span>Requester</span>
-            <input
-              className="input-base"
-              value={requesterName}
-              onChange={(event) => setRequesterName(event.target.value)}
-              placeholder="Enter requester name"
-            />
-          </label>
+              {assets === undefined || openRequests === undefined ? (
+                <div className="request-empty-state">
+                  <div className="request-empty-title">Loading drone kits...</div>
+                </div>
+              ) : availableDroneKits.length ? (
+                <div className="request-drone-list">
+                  {availableDroneKits.map((asset) => {
+                    const selected = selectedDroneId === String(asset._id);
 
-          <label className="request-form-field">
-            <span>Department</span>
-            <input
-              className="input-base"
-              value={department}
-              onChange={(event) => setDepartment(event.target.value)}
-              placeholder="Enter department"
-            />
-          </label>
-
-          <label className="request-form-field">
-            <span>Requested Date</span>
-            <input
-              className="input-base"
-              type="date"
-              value={requestedDate}
-              onChange={(event) => setRequestedDate(event.target.value)}
-            />
-          </label>
-
-          <label className="request-form-field">
-            <span>Expected Return</span>
-            <input
-              className="input-base"
-              type="datetime-local"
-              value={expectedReturnAt}
-              onChange={(event) => setExpectedReturnAt(event.target.value)}
-            />
-          </label>
-
-          <label className="request-form-field request-form-field-wide">
-            <span>Purpose / Site Activity</span>
-            <textarea
-              className="input-base request-form-textarea"
-              value={purpose}
-              onChange={(event) => setPurpose(event.target.value)}
-              placeholder="Describe where and why the drone kit is needed."
-            />
-          </label>
-        </div>
-
-        <div className="request-empty-state request-drone-note">
-          <div className="request-empty-title">Flight report is required on return.</div>
-          <div className="request-empty-copy">
-            This request only asks to borrow the drone kit. The return workflow will handle the flight report.
-          </div>
-        </div>
-
-        {formError ? <div className="request-form-error">{formError}</div> : null}
-
-        <div className="request-form-actions">
-          <button type="button" className="btn-primary" disabled={submitting} onClick={() => void handleSubmit()}>
-            {submitting ? "Submitting..." : "Submit Request"}
-          </button>
-          <span>This will create a drone borrowing ticket for IT staff.</span>
+                    return (
+                      <button
+                        key={String(asset._id)}
+                        type="button"
+                        className={`request-drone-option${selected ? " is-selected" : ""}`}
+                        onClick={() => setSelectedDroneId(String(asset._id))}
+                      >
+                        <DroneThumbnail
+                          storageId={asset.imageStorageId}
+                          assetType={asset.assetType}
+                          label={asset.assetNameDescription || asset.assetTag}
+                        />
+                        <span className="request-drone-option-main">
+                          <strong className="request-drone-option-title">{asset.assetNameDescription || asset.assetTag}</strong>
+                          <small className="request-drone-option-meta">{formatDroneKitSummary(asset)}</small>
+                        </span>
+                        <span className="request-drone-option-status">{selected ? "Selected" : "Select"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="request-empty-state">
+                  <div className="request-empty-title">
+                    {droneSearchTerm && availableDroneKitBaseOptions.length
+                      ? "No drone kits match your search."
+                      : "No drone kits are available right now."}
+                  </div>
+                  <div className="request-empty-copy">
+                    {droneSearchTerm && availableDroneKitBaseOptions.length
+                      ? "Try another asset tag, name, type, or specification."
+                      : "Reserved, borrowed, or already requested drone kits are not shown here."}
+                  </div>
+                </div>
+              )}
+            </section>
+          </aside>
         </div>
       </section>
     </div>

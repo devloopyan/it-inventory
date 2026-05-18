@@ -1,5 +1,5 @@
-import ItIncidentRequestClient from "./it-incident-request-client";
+import { redirect } from "next/navigation";
 
 export default function ItIncidentRequestPage() {
-  return <ItIncidentRequestClient />;
+  redirect("/requests/new/it-support");
 }

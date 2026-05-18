@@ -9,10 +9,41 @@ import { useCurrentUser } from "@/app/current-user-context";
 import FileUploadCard from "@/app/hardware-inventory/file-upload-card";
 import {
   MONITORING_IMPACT_OPTIONS,
-  MONITORING_REQUEST_SOURCE,
   MONITORING_TICKET_CATEGORIES,
-  MONITORING_URGENCY_OPTIONS,
 } from "@/lib/monitoring";
+
+const REQUEST_SOURCE = "Requests Portal";
+
+const IT_SUPPORT_CATEGORY_EXAMPLES: Record<string, string> = {
+  "Network & Connectivity": "No internet, slow connection, Wi-Fi issue, VPN problem.",
+  "Accounts & Access": "Forgot password, cannot log in, locked account, access suddenly stopped.",
+  "Microsoft 365": "Outlook, Teams, OneDrive, SharePoint, or Microsoft app issue.",
+  "Hardware & Peripherals": "PC, laptop, monitor, printer, mouse, keyboard, or headset issue.",
+  "Software & Applications": "Application error, app not opening, installation problem, system bug.",
+  "Procurement & Replacement": "Broken device that may need replacement or purchase review.",
+  "Security & Sensitive Access": "Suspicious email, possible malware, sensitive access issue.",
+  Other: "Use this when the issue does not match the listed categories.",
+};
+
+const WORK_STATUS_OPTIONS = [
+  "I can still work",
+  "Work is slowed",
+  "I cannot do my work",
+  "A team or operation is blocked",
+] as const;
+
+function resolveUrgencyFromWorkStatus(workStatus: string) {
+  switch (workStatus) {
+    case "I cannot do my work":
+      return "Same Day";
+    case "A team or operation is blocked":
+      return "Immediate";
+    case "Work is slowed":
+    case "I can still work":
+    default:
+      return "Can Wait";
+  }
+}
 
 export default function ItIncidentRequestClient() {
   const router = useRouter();
@@ -21,16 +52,18 @@ export default function ItIncidentRequestClient() {
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
-  const [department, setDepartment] = useState("");
-  const [section, setSection] = useState("");
+  const department = currentUser?.department ?? "";
+  const [section, setSection] = useState(currentUser?.section ?? "");
   const [category, setCategory] = useState("Hardware & Peripherals");
   const [impact, setImpact] = useState("Single User");
-  const [urgency, setUrgency] = useState("Can Wait");
+  const [workStatus, setWorkStatus] = useState<(typeof WORK_STATUS_OPTIONS)[number]>("I can still work");
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const categoryExamples = IT_SUPPORT_CATEGORY_EXAMPLES[category];
+  const missingDepartment = !department.trim();
 
   useEffect(() => {
     if (!requesterName.trim() && currentUser?.displayName) {
@@ -97,19 +130,24 @@ export default function ItIncidentRequestClient() {
 
       setSubmitting(true);
 
+      const urgency = resolveUrgencyFromWorkStatus(workStatus);
       const attachmentStorageId = await uploadAttachment();
       const requestDetails = [
         trimmedDetails,
+        `Work status: ${workStatus}`,
+        "Workflow: New -> Triage -> In Progress -> Resolved",
         trimmedSection ? `Section: ${trimmedSection}` : "",
       ].filter(Boolean).join("\n");
       const requestSnapshot = [
-        "Request type: IT Incident",
+        "Request type: IT Support",
         `Requester: ${trimmedRequesterName}`,
         `Department: ${trimmedDepartment}`,
         trimmedSection ? `Section: ${trimmedSection}` : "",
         `Category: ${category}`,
         `Impact: ${impact}`,
-        `Urgency: ${urgency}`,
+        `Work status: ${workStatus}`,
+        `Triage urgency: ${urgency}`,
+        "Workflow: New -> Triage -> In Progress -> Resolved",
       ].filter(Boolean).join("\n");
 
       await createTicket({
@@ -119,7 +157,7 @@ export default function ItIncidentRequestClient() {
         title: trimmedTitle,
         requestDetails,
         requestSnapshot,
-        requestSource: MONITORING_REQUEST_SOURCE,
+        requestSource: REQUEST_SOURCE,
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
         requesterSection: trimmedSection || undefined,
@@ -142,7 +180,7 @@ export default function ItIncidentRequestClient() {
 
       router.push("/requests/my");
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Incident request submission failed.");
+      setFormError(error instanceof Error ? error.message : "IT support request submission failed.");
       setSubmitting(false);
     }
   }
@@ -152,8 +190,10 @@ export default function ItIncidentRequestClient() {
       <section className="panel request-page-panel">
         <div className="request-page-head">
           <div>
-            <h1 className="request-page-title">IT Incident</h1>
-            <p className="request-page-subtitle">Report an issue that needs IT help.</p>
+            <h1 className="request-page-title">IT Support</h1>
+            <p className="request-page-subtitle">
+              Use this when something is broken, blocked, or not working normally.
+            </p>
           </div>
           <button type="button" className="btn-secondary" onClick={handleBack}>
             Back
@@ -166,7 +206,7 @@ export default function ItIncidentRequestClient() {
             <input
               className="input-base"
               value={requesterName}
-              onChange={(event) => setRequesterName(event.target.value)}
+              readOnly
               placeholder="Enter requester name"
             />
           </label>
@@ -176,9 +216,14 @@ export default function ItIncidentRequestClient() {
             <input
               className="input-base"
               value={department}
-              onChange={(event) => setDepartment(event.target.value)}
+              readOnly
               placeholder="Enter department"
             />
+            {missingDepartment ? (
+              <small className="request-form-help is-warning">
+                Department is missing from your account. Please contact IT/admin.
+              </small>
+            ) : null}
           </label>
 
           <label className="request-form-field">
@@ -199,11 +244,18 @@ export default function ItIncidentRequestClient() {
               onChange={(event) => setCategory(event.target.value)}
             >
               {MONITORING_TICKET_CATEGORIES.map((option) => (
-                <option key={option} value={option}>
+                <option
+                  key={option}
+                  value={option}
+                  title={IT_SUPPORT_CATEGORY_EXAMPLES[option]}
+                >
                   {option}
                 </option>
               ))}
             </select>
+            {categoryExamples ? (
+              <small className="request-form-help">Examples: {categoryExamples}</small>
+            ) : null}
           </label>
 
           <label className="request-form-field">
@@ -222,18 +274,23 @@ export default function ItIncidentRequestClient() {
           </label>
 
           <label className="request-form-field">
-            <span>Urgency</span>
+            <span>How affected are you?</span>
             <select
               className="input-base"
-              value={urgency}
-              onChange={(event) => setUrgency(event.target.value)}
+              value={workStatus}
+              onChange={(event) =>
+                setWorkStatus(event.target.value as (typeof WORK_STATUS_OPTIONS)[number])
+              }
             >
-              {MONITORING_URGENCY_OPTIONS.map((option) => (
+              {WORK_STATUS_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
               ))}
             </select>
+            <small className="request-form-help">
+              IT will use this during triage to set the final urgency.
+            </small>
           </label>
 
           <label className="request-form-field request-form-field-wide">
@@ -276,10 +333,10 @@ export default function ItIncidentRequestClient() {
         {formError ? <div className="request-form-error">{formError}</div> : null}
 
         <div className="request-form-actions">
-          <button type="button" className="btn-primary" disabled={submitting} onClick={() => void handleSubmit()}>
+          <button type="button" className="btn-primary" disabled={submitting || missingDepartment} onClick={() => void handleSubmit()}>
             {submitting ? "Submitting..." : "Submit Request"}
           </button>
-          <span>This will create an incident ticket for IT staff.</span>
+          <span>This will create a support ticket for IT staff.</span>
         </div>
       </section>
     </div>

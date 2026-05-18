@@ -3,9 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { formatUserRoleLabel, normalizeUserRole, type UserRole } from "@/lib/roles";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import {
+  MONITORING_BORROWING_REQUEST_CATEGORY,
+  MONITORING_MEETING_REQUEST_CATEGORY,
+} from "@/lib/monitoring";
+import {
+  formatUserRoleLabel,
+  normalizeApprovalScopes,
+  normalizeServiceGroups,
+  normalizeUserRole,
+  type UserRole,
+} from "@/lib/roles";
+import { getServiceGroupForCategory } from "@/lib/serviceGroups";
+import type { ServiceGroup } from "@/lib/serviceGroups";
 import { CurrentUserProvider, type CurrentUser } from "./current-user-context";
 import TopbarActivityMenu from "./topbar-activity-menu";
+import { ActiveWorkflowProvider } from "./active-workflow-context";
+import ActiveWorkflowBanner from "./active-workflow-banner";
 
 type AppShellProps = {
   children: React.ReactNode;
@@ -21,6 +37,7 @@ type NavItem = {
   icon: React.ReactNode;
   matchPrefixes?: readonly string[];
   allowedRoles?: readonly UserRole[];
+  requiredServiceGroups?: readonly ServiceGroup[];
 };
 
 const THEME_STORAGE_KEY = "it-inventory-theme";
@@ -69,7 +86,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/monitoring",
         label: "Monitoring",
-        allowedRoles: ["admin", "it_staff", "approver"],
+        allowedRoles: ["admin", "service_staff", "it_staff", "approver"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M4 16L8.5 10.5L12 14L16 6L20 10" stroke="currentColor" strokeWidth="2" />
@@ -80,7 +97,6 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/requests/new",
         label: "New Request",
-        allowedRoles: ["requester"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 5V19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -91,7 +107,6 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/requests/my",
         label: "My Requests",
-        allowedRoles: ["requester"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M7 5H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -104,7 +119,8 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         href: "/assets",
         label: "Assets",
         matchPrefixes: ["/assets", "/hardware-inventory"],
-        allowedRoles: ["admin", "it_staff"],
+        allowedRoles: ["admin", "service_staff", "it_staff"],
+        requiredServiceGroups: ["IT"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="2" />
@@ -116,7 +132,8 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/digital-inventory",
         label: "Digital Inventory",
-        allowedRoles: ["admin", "it_staff"],
+        allowedRoles: ["admin", "service_staff", "it_staff"],
+        requiredServiceGroups: ["IT"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="2" />
@@ -129,7 +146,8 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/operations",
         label: "Operations",
-        allowedRoles: ["admin", "it_staff"],
+        allowedRoles: ["admin", "service_staff", "it_staff"],
+        requiredServiceGroups: ["IT"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path
@@ -213,8 +231,12 @@ function getInitials(name: string) {
   return initials || "IT";
 }
 
-function canShowNavItem(role: UserRole, item: NavItem) {
-  return !item.allowedRoles || item.allowedRoles.includes(role);
+function canShowNavItem(role: UserRole, serviceGroups: readonly string[] | undefined, item: NavItem) {
+  if (item.allowedRoles && !item.allowedRoles.includes(role)) return false;
+  if (!item.requiredServiceGroups) return true;
+
+  const normalizedServiceGroups = normalizeServiceGroups(role, serviceGroups);
+  return item.requiredServiceGroups.some((group) => normalizedServiceGroups.includes(group));
 }
 
 export default function AppShell({ children, currentUser }: AppShellProps) {
@@ -226,6 +248,31 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const showAppChrome = pathname !== "/login";
   const currentRole = normalizeUserRole(currentUser?.role);
+  const currentServiceGroups = normalizeServiceGroups(currentRole, currentUser?.serviceGroups);
+  const currentApprovalScopes = normalizeApprovalScopes(currentRole, currentUser?.approvalScopes);
+  const canSeeItMonitoring =
+    currentRole === "admin" || currentServiceGroups.includes("IT") || currentApprovalScopes.includes("IT");
+  const canSeeHrAdminMonitoring =
+    currentRole === "admin" || currentServiceGroups.includes("HR/Admin") || currentApprovalScopes.includes("HR/Admin");
+  const canSeeMonitoringNotifications = showAppChrome && currentRole !== "requester";
+  const monitoringNotificationRows = useQuery(
+    api.monitoring.list,
+    canSeeMonitoringNotifications ? { view: "issues", showClosed: true } : "skip",
+  );
+  const monitoringNotificationCount = (monitoringNotificationRows ?? []).filter((row) => {
+    if (row.status !== "New") return false;
+
+    const serviceGroup = getServiceGroupForCategory(row.category);
+    if (serviceGroup === "HR/Admin") {
+      return canSeeHrAdminMonitoring;
+    }
+
+    if (row.category === MONITORING_MEETING_REQUEST_CATEGORY || row.category === MONITORING_BORROWING_REQUEST_CATEGORY) {
+      return canSeeItMonitoring;
+    }
+
+    return canSeeItMonitoring;
+  }).length;
   const accountName = currentUser?.displayName || "IT Operations";
   const accountUsername = currentUser?.username ? `@${currentUser.username}` : "Hub Console";
   const accountRoleLabel = formatUserRoleLabel(currentRole);
@@ -233,7 +280,7 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
   const visibleNavSections = navSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => canShowNavItem(currentRole, item)),
+      items: section.items.filter((item) => canShowNavItem(currentRole, currentUser?.serviceGroups, item)),
     }))
     .filter((section) => section.items.length > 0);
   const pathnameSegments = pathname?.split("/").filter(Boolean) ?? [];
@@ -304,6 +351,7 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
 
   return (
     <CurrentUserProvider currentUser={currentUser}>
+      <ActiveWorkflowProvider>
       <div className="app-bg">
         <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
         <aside className={`app-sidebar${sidebarOpen ? " open" : ""}${sidebarCollapsed ? " collapsed" : ""}`}>
@@ -330,17 +378,23 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
               <nav className="side-nav" aria-label={`${section.label} navigation`}>
                 {section.items.map((item) => {
                   const active = isNavItemActive(item);
+                  const badgeCount = item.href === "/monitoring" ? monitoringNotificationCount : 0;
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`side-link ${active ? "active" : ""}`}
+                      className={`side-link ${active ? "active" : ""}${badgeCount > 0 ? " has-badge" : ""}`}
                       aria-label={item.label}
                       title={sidebarCollapsed ? item.label : undefined}
                       onClick={() => setSidebarOpen(false)}
                     >
                       {item.icon}
-                      <span>{item.label}</span>
+                      <span className="side-link-label">{item.label}</span>
+                      {badgeCount > 0 ? (
+                        <span className="side-link-badge" aria-label={`${badgeCount} new monitoring requests`}>
+                          {badgeCount}
+                        </span>
+                      ) : null}
                     </Link>
                   );
                 })}
@@ -566,10 +620,14 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
             </div>
           </header>
 
-          <main className="app-content">{children}</main>
+          <main className="app-content">
+            <ActiveWorkflowBanner />
+            {children}
+          </main>
         </div>
       </div>
     </div>
+      </ActiveWorkflowProvider>
     </CurrentUserProvider>
   );
 }

@@ -1,5 +1,5 @@
-import OperationsClient from "./operations-client";
+import OperationsTabs from "./operations-tabs";
 
 export default function OperationsPage() {
-  return <OperationsClient />;
+  return <OperationsTabs />;
 }

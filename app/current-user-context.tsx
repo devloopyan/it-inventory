@@ -6,6 +6,10 @@ export type CurrentUser = {
   displayName: string;
   username: string;
   role?: string;
+  serviceGroups?: string[];
+  approvalScopes?: string[];
+  department?: string;
+  section?: string;
 };
 
 const CurrentUserContext = createContext<CurrentUser | null>(null);

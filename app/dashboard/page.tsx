@@ -6,7 +6,6 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useCurrentUser } from "../current-user-context";
 import FileUploadCard from "../hardware-inventory/file-upload-card";
-import { HARDWARE_DEPARTMENTS } from "@/lib/hardwareDepartments";
 import { HARDWARE_BORROW_CONDITION_OPTIONS } from "@/lib/hardwareBorrowConditions";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
 import { MONITORING_BORROWING_REQUEST_CATEGORY } from "@/lib/monitoring";
@@ -14,10 +13,9 @@ import { normalizeUserRole } from "@/lib/roles";
 import RequesterDashboard from "./requester-dashboard";
 import DashboardStaffDropdown from "./staff-dropdown";
 
-type TabKey = "workstation" | "master" | "storage" | "borrowed" | "available" | "reserved";
+type TabKey = "workstation" | "master" | "storage" | "borrowed" | "reserved" | "requested" | "available";
 type ReservationStatus = "Reserved" | "Claimed" | "Cancelled" | "Expired";
 type ActivityTone = "blue" | "green" | "amber" | "red" | "slate";
-type ReservationMode = "equipment" | "drone";
 type HardwareActivityRecord = {
   _id: string;
   inventoryId?: string;
@@ -88,21 +86,11 @@ const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as
 const tabs: { key: TabKey; label: string }[] = [
   { key: "borrowed", label: "Borrowed" },
   { key: "reserved", label: "Reserved" },
+  { key: "requested", label: "Requested" },
   { key: "available", label: "Available" },
 ];
 
 const DEFAULT_BORROW_CONDITION = HARDWARE_BORROW_CONDITION_OPTIONS[0];
-
-const statusIconColor: Record<HardwareStatus, string> = {
-  Borrowed: "#f97316",
-  Assigned: "#22c55e",
-  "For Repair": "#ef4444",
-  Retired: "#6b7280",
-  Available: "#3b82f6",
-  Working: "#06b6d4",
-  NEW: "#8b5cf6",
-  "Pre-owned": "#f59e0b",
-};
 
 function matchesSearch(
   row: {
@@ -182,14 +170,6 @@ function getReservationDepartment(row: Record<string, unknown>) {
   return (row.reservationDepartment as string | undefined) ?? "";
 }
 
-function getReservationRequestedDate(row: Record<string, unknown>) {
-  return (row.reservationRequestedDate as string | undefined) ?? "";
-}
-
-function getReservationPickupDate(row: Record<string, unknown>) {
-  return (row.reservationPickupDate as string | undefined) ?? "";
-}
-
 function isDroneKitRecord(row: {
   assetType?: string;
   registerMode?: string;
@@ -225,32 +205,6 @@ function getCalendarGridRange(date: Date) {
 function getCalendarDateKey(value: Date | number) {
   const date = typeof value === "number" ? new Date(value) : value;
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function getDefaultReservationRequestedDate() {
-  return getCalendarDateKey(new Date());
-}
-
-function formatReservationAssetLabel(row: {
-  assetTag: string;
-  assetNameDescription?: string;
-  assetType?: string;
-}) {
-  const detail = row.assetNameDescription?.trim() || row.assetType?.trim() || "Asset";
-  return `${row.assetTag} · ${detail}`;
-}
-
-function formatReservationAssetSummary(row: {
-  assetType?: string;
-  specifications?: string;
-  assetNameDescription?: string;
-}) {
-  const summary =
-    [row.assetType?.trim(), row.specifications?.trim()].filter(Boolean).join(" | ") ||
-    row.assetNameDescription?.trim() ||
-    "Main storage asset";
-  const condensed = summary.replace(/\s+/g, " ").trim();
-  return condensed.length > 108 ? `${condensed.slice(0, 105).trimEnd()}...` : condensed;
 }
 
 function parseCalendarDateKey(key: string) {
@@ -301,25 +255,6 @@ function toTimestamp(value: string) {
   if (Number.isNaN(date.getTime())) return undefined;
   return date.getTime();
 }
-
-function getStartOfCalendarDay(date: Date) {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function addCalendarDays(date: Date, amount: number) {
-  const copy = new Date(date);
-  copy.setDate(copy.getDate() + amount);
-  return copy;
-}
-
-function getNextWeekStart(date: Date) {
-  const day = getStartOfCalendarDay(date).getDay();
-  const daysUntilNextMonday = ((8 - day) % 7) || 7;
-  return addCalendarDays(getStartOfCalendarDay(date), daysUntilNextMonday);
-}
-
 
 function getDefaultSupportEventStart(dayKey: string) {
   const date = parseCalendarDateKey(dayKey);
@@ -584,16 +519,6 @@ export default function DashboardPage() {
   ) as unknown as HardwareActivityRecord[] | undefined;
   const migrateLegacy = useMutation(api.hardwareInventory.migrateLegacy);
   const createSupportEvent = useMutation(api.dashboardCalendar.createSupportEvent);
-  const reserveAssets = useMutation(
-    (api.hardwareInventory as Record<string, unknown>)["reserveAssets"] as never,
-  ) as unknown as (args: {
-    inventoryIds: never[];
-    borrowerName: string;
-    department: string;
-    requestedDate: string;
-    expectedPickupDate?: string;
-    purpose?: string;
-  }) => Promise<unknown>;
   const claimReservation = useMutation(
     (api.hardwareInventory as Record<string, unknown>)["claimReservation"] as never,
   ) as unknown as (args: { inventoryId: never; releaseCondition: string }) => Promise<unknown>;
@@ -615,18 +540,9 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("borrowed");
   const [activityExpanded, setActivityExpanded] = useState(false);
-  const [reservationPickerOpen, setReservationPickerOpen] = useState(false);
   const [requesterBorrowingListIds, setRequesterBorrowingListIds] = useState<string[]>([]);
-  const [reservationMode, setReservationMode] = useState<ReservationMode>("equipment");
-  const [reservationTargetIds, setReservationTargetIds] = useState<string[]>([]);
-  const [reservationBorrower, setReservationBorrower] = useState("");
-  const [reservationDepartment, setReservationDepartment] = useState("");
-  const [reservationRequestedDate, setReservationRequestedDate] = useState(() => getDefaultReservationRequestedDate());
-  const [reservationPickupDate, setReservationPickupDate] = useState("");
-  const [reservationPurpose, setReservationPurpose] = useState("");
   const [reservationError, setReservationError] = useState("");
   const [reservationBusyId, setReservationBusyId] = useState("");
-  const [reservationFormBusy, setReservationFormBusy] = useState(false);
   const [claimConditionInventoryId, setClaimConditionInventoryId] = useState("");
   const [claimConditionValue, setClaimConditionValue] = useState<string>(DEFAULT_BORROW_CONDITION);
   const [claimConditionError, setClaimConditionError] = useState("");
@@ -636,7 +552,6 @@ export default function DashboardPage() {
   const [selectedReturnDroneFlightReportFile, setSelectedReturnDroneFlightReportFile] = useState<File | null>(
     null,
   );
-  const reservationPickerRef = useRef<HTMLDivElement | null>(null);
   const returnDroneFlightReportInputRef = useRef<HTMLInputElement | null>(null);
   const migrationRan = useRef(false);
   const workspaceSectionRef = useRef<HTMLElement | null>(null);
@@ -684,78 +599,6 @@ export default function DashboardPage() {
     void migrateLegacy();
   }, [allRows, migrateLegacy]);
 
-  function resetReservationForm() {
-    setReservationPickerOpen(false);
-    setReservationMode("equipment");
-    setReservationTargetIds([]);
-    setReservationBorrower("");
-    setReservationDepartment("");
-    setReservationRequestedDate(getDefaultReservationRequestedDate());
-    setReservationPickupDate("");
-    setReservationPurpose("");
-    setReservationError("");
-    setReservationBusyId("");
-    setReservationFormBusy(false);
-  }
-
-  function addReservationTarget(inventoryId: string) {
-    if (!inventoryId) return;
-    setReservationTargetIds((current) =>
-      current.includes(inventoryId) ? current : [...current, inventoryId],
-    );
-    setReservationPickerOpen(false);
-    setReservationError("");
-  }
-
-  function removeReservationTarget(inventoryId: string) {
-    setReservationTargetIds((current) => current.filter((id) => id !== inventoryId));
-    setReservationError("");
-  }
-
-  function toggleReservationMode() {
-    setReservationMode((current) => (current === "equipment" ? "drone" : "equipment"));
-    setReservationPickerOpen(false);
-    setReservationTargetIds([]);
-    setReservationError("");
-  }
-
-  async function handleReserveSubmit() {
-    if (!reservationTargetIds.length) {
-      setReservationError("Select at least one asset to reserve.");
-      return;
-    }
-    if (!reservationBorrower.trim()) {
-      setReservationError("Borrower name is required.");
-      return;
-    }
-    if (!reservationDepartment.trim()) {
-      setReservationError("Department is required.");
-      return;
-    }
-    if (!reservationRequestedDate) {
-      setReservationError("Requested date is required.");
-      return;
-    }
-
-    try {
-      setReservationFormBusy(true);
-      setReservationError("");
-      await reserveAssets({
-        inventoryIds: reservationTargetIds as never[],
-        borrowerName: reservationBorrower,
-        department: reservationDepartment,
-        requestedDate: reservationRequestedDate,
-        expectedPickupDate: reservationPickupDate || undefined,
-        purpose: reservationPurpose || undefined,
-      });
-      setActiveTab("reserved");
-      resetReservationForm();
-    } catch (error) {
-      setReservationError(error instanceof Error ? error.message : "Reservation failed.");
-      setReservationFormBusy(false);
-    }
-  }
-
   function openClaimConditionDialog(inventoryId: string) {
     setClaimConditionInventoryId(inventoryId);
     setClaimConditionValue(DEFAULT_BORROW_CONDITION);
@@ -790,7 +633,6 @@ export default function DashboardPage() {
       setReservationBusyId(inventoryId);
       setReservationError("");
       await cancelReservation({ inventoryId: inventoryId as never });
-      setReservationTargetIds((current) => current.filter((id) => id !== inventoryId));
     } catch (error) {
       setReservationError(error instanceof Error ? error.message : "Cancel failed.");
     } finally {
@@ -868,12 +710,6 @@ export default function DashboardPage() {
     }
   }
 
-  function focusWorkspaceTab(nextTab: TabKey) {
-    setSearch("");
-    setActiveTab(nextTab);
-    workspaceSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
   const counts = useMemo(() => {
     const base: { total: number; byStatus: Record<HardwareStatus, number> } = {
       total: 0,
@@ -904,6 +740,34 @@ export default function DashboardPage() {
     [allRows, search],
   );
 
+  const openBorrowingTicketByAssetId = useMemo(
+    () => {
+      const lookup = new Map<string, { ticketId: string; ticketNumber?: string; title?: string }>();
+
+      for (const request of openBorrowingRequests ?? []) {
+        if (request.category !== MONITORING_BORROWING_REQUEST_CATEGORY) continue;
+
+        for (const item of request.borrowingItems ?? []) {
+          const assetId = String(item.assetId);
+          if (!lookup.has(assetId)) {
+            lookup.set(assetId, {
+              ticketId: String(request._id),
+              ticketNumber: request.ticketNumber,
+              title: request.title,
+            });
+          }
+        }
+      }
+
+      return lookup;
+    },
+    [openBorrowingRequests],
+  );
+  const openBorrowingAssetIds = useMemo(
+    () => new Set(openBorrowingTicketByAssetId.keys()),
+    [openBorrowingTicketByAssetId],
+  );
+
   const tabRows = useMemo(() => {
     switch (activeTab) {
       case "workstation":
@@ -920,17 +784,26 @@ export default function DashboardPage() {
             row.locationPersonAssigned === "MAIN STORAGE" &&
             isReservedRecord(row as Record<string, unknown>),
         );
+      case "requested":
+        return searched.filter(
+          (row) =>
+            row.locationPersonAssigned === "MAIN STORAGE" &&
+            row.status !== "Borrowed" &&
+            !isReservedRecord(row as Record<string, unknown>) &&
+            openBorrowingAssetIds.has(String(row._id)),
+        );
       case "available": 
         return searched.filter(
           (row) =>
             row.locationPersonAssigned === "MAIN STORAGE" &&
             availableStatuses.includes(row.status as HardwareStatus) &&
-            !isReservedRecord(row as Record<string, unknown>),
+            !isReservedRecord(row as Record<string, unknown>) &&
+            !openBorrowingAssetIds.has(String(row._id)),
         );
       default:
         return searched;
     }
-  }, [searched, activeTab, availableStatuses]);
+  }, [searched, activeTab, availableStatuses, openBorrowingAssetIds]);
 
   const groupedRows = useMemo(() => {
     if (activeTab === "workstation") {
@@ -940,7 +813,8 @@ export default function DashboardPage() {
       activeTab === "storage" ||
       activeTab === "borrowed" ||
       activeTab === "available" ||
-      activeTab === "reserved"
+      activeTab === "reserved" ||
+      activeTab === "requested"
     ) {
       if (activeTab === "reserved") {
         return groupBy(tabRows, (row) => getReservationBorrower(row as Record<string, unknown>));
@@ -966,67 +840,26 @@ export default function DashboardPage() {
   );
 
   const recentRows = useMemo(() => (allRows ?? []).slice(0, 5), [allRows]);
-  const reservedMainStorageRows = useMemo(
-    () =>
-      (allRows ?? [])
-        .filter(
-          (row) =>
-            row.locationPersonAssigned === "MAIN STORAGE" &&
-            isReservedRecord(row as Record<string, unknown>),
-        )
-        .sort((left, right) => {
-          const leftPickup =
-            getReservationPickupDate(left as Record<string, unknown>) ||
-            getReservationRequestedDate(left as Record<string, unknown>);
-          const rightPickup =
-            getReservationPickupDate(right as Record<string, unknown>) ||
-            getReservationRequestedDate(right as Record<string, unknown>);
-          return leftPickup.localeCompare(rightPickup);
-        }),
-    [allRows],
-  );
   const reservableMainStorageRows = useMemo(
     () =>
       (allRows ?? []).filter(
         (row) =>
           row.locationPersonAssigned === "MAIN STORAGE" &&
           availableStatuses.includes(row.status as HardwareStatus) &&
-          !isReservedRecord(row as Record<string, unknown>),
+          !isReservedRecord(row as Record<string, unknown>) &&
+          !openBorrowingAssetIds.has(String(row._id)),
       ),
-    [allRows, availableStatuses],
+    [allRows, availableStatuses, openBorrowingAssetIds],
   );
-  const selectedReservationRows = useMemo(
-    () =>
-      reservationTargetIds
-        .map((inventoryId) => allRows?.find((row) => String(row._id) === inventoryId))
-        .filter((row): row is NonNullable<typeof allRows>[number] => Boolean(row)),
-    [allRows, reservationTargetIds],
-  );
-  const reservationSourceRows = useMemo(
-    () =>
-      reservableMainStorageRows.filter((row) =>
-        reservationMode === "drone" ? isDroneKitRecord(row) : !isDroneKitRecord(row),
-      ),
-    [reservationMode, reservableMainStorageRows],
-  );
-  const reservationPickerOptions = useMemo(
-    () =>
-      reservationSourceRows
-        .filter((row) => !reservationTargetIds.includes(String(row._id)))
-        .map((row) => ({
-          id: String(row._id),
-          label: formatReservationAssetLabel(row),
-        })),
-    [reservationSourceRows, reservationTargetIds],
-  );
-  const selectedReservationHasDrone = selectedReservationRows.some((row) => isDroneKitRecord(row));
   const adjustedAvailableCount = useMemo(
     () =>
       (allRows ?? []).filter(
         (row) =>
-          row.status === "Available" && !isReservedRecord(row as Record<string, unknown>),
+          row.status === "Available" &&
+          !isReservedRecord(row as Record<string, unknown>) &&
+          !openBorrowingAssetIds.has(String(row._id)),
       ).length,
-    [allRows],
+    [allRows, openBorrowingAssetIds],
   );
   const searchedReservableEquipmentRows = useMemo(
     () =>
@@ -1035,9 +868,10 @@ export default function DashboardPage() {
           row.locationPersonAssigned === "MAIN STORAGE" &&
           availableStatuses.includes(row.status as HardwareStatus) &&
           !isReservedRecord(row as Record<string, unknown>) &&
+          !openBorrowingAssetIds.has(String(row._id)) &&
           !isDroneKitRecord(row),
       ),
-    [searched, availableStatuses],
+    [searched, availableStatuses, openBorrowingAssetIds],
   );
   const searchedReservableDroneRows = useMemo(
     () =>
@@ -1046,9 +880,10 @@ export default function DashboardPage() {
           row.locationPersonAssigned === "MAIN STORAGE" &&
           availableStatuses.includes(row.status as HardwareStatus) &&
           !isReservedRecord(row as Record<string, unknown>) &&
+          !openBorrowingAssetIds.has(String(row._id)) &&
           isDroneKitRecord(row),
       ),
-    [searched, availableStatuses],
+    [searched, availableStatuses, openBorrowingAssetIds],
   );
   const searchedReservedEquipmentRows = useMemo(
     () =>
@@ -1070,37 +905,35 @@ export default function DashboardPage() {
       ),
     [searched],
   );
-  const availableMainStorageLaptopRows = useMemo(
+  const searchedRequestedEquipmentRows = useMemo(
     () =>
-      (allRows ?? [])
-        .filter(
-          (row) =>
-            row.locationPersonAssigned === "MAIN STORAGE" &&
-            row.assetType === "Laptop" &&
-            row.status === "Available",
-        )
-        .sort((left, right) => left.assetTag.localeCompare(right.assetTag)),
-    [allRows],
+      searched.filter(
+        (row) =>
+          row.locationPersonAssigned === "MAIN STORAGE" &&
+          row.status !== "Borrowed" &&
+          !isReservedRecord(row as Record<string, unknown>) &&
+          openBorrowingAssetIds.has(String(row._id)) &&
+          !isDroneKitRecord(row),
+      ),
+    [searched, openBorrowingAssetIds],
   );
-  const availableMainStorageLaptopPreview = useMemo(
-    () => availableMainStorageLaptopRows.slice(0, 5),
-    [availableMainStorageLaptopRows],
+  const searchedRequestedDroneRows = useMemo(
+    () =>
+      searched.filter(
+        (row) =>
+          row.locationPersonAssigned === "MAIN STORAGE" &&
+          row.status !== "Borrowed" &&
+          !isReservedRecord(row as Record<string, unknown>) &&
+          openBorrowingAssetIds.has(String(row._id)) &&
+          isDroneKitRecord(row),
+      ),
+    [searched, openBorrowingAssetIds],
   );
   const visibleActivityFeed = useMemo(
     () => (activityExpanded ? activityFeed ?? [] : (activityFeed ?? []).slice(0, 3)),
     [activityFeed, activityExpanded],
   );
   const hasMoreActivity = (activityFeed?.length ?? 0) > 3;
-  const openBorrowingAssetIds = useMemo(
-    () =>
-      new Set(
-        (openBorrowingRequests ?? [])
-          .filter((request) => request.category === MONITORING_BORROWING_REQUEST_CATEGORY)
-          .flatMap((request) => request.borrowingItems ?? [])
-          .map((item) => String(item.assetId)),
-      ),
-    [openBorrowingRequests],
-  );
   const requesterAvailableEquipment = useMemo(
     () =>
       reservableMainStorageRows
@@ -1156,29 +989,10 @@ export default function DashboardPage() {
     workstation: "Grouped workstation views for laptop and desktop turnover assignments.",
     storage: "Everything currently sitting in main storage for quick dispatch review.",
     borrowed: "Borrowed assets that are currently out with users or teams.",
-    available: "Reserve IT equipment and drone kits from one workspace without switching sections.",
+    available: "Review IT equipment and drone kits that are not borrowed, reserved, or already requested.",
     reserved: "Manage queued equipment and drone reservations waiting for pickup, claim, or cancellation.",
+    requested: "Review borrowing requests submitted by requestees before reserving assets.",
   };
-  const borrowingCardReadyCount = reservableMainStorageRows.length;
-  const borrowingCardSaveBusy = reservationFormBusy;
-  const reservationModeCopy =
-    reservationMode === "drone"
-      ? {
-          badge: "DRONE BORROWING",
-          assetLabel: "Drone Kits from Main Storage",
-          trigger: "Select drone kit to add",
-          empty: "No drone kits available",
-          purposePlaceholder: "Enter drone borrowing purpose",
-          submit: "Log Drone Borrower",
-        }
-      : {
-          badge: "BORROWING FORM",
-          assetLabel: "Assets from Main Storage",
-          trigger: "Select asset to add",
-          empty: "No assets available",
-          purposePlaceholder: "Enter borrowing purpose",
-          submit: "Log Borrower",
-        };
   const claimConditionTargetRow = useMemo(
     () => allRows?.find((row) => String(row._id) === claimConditionInventoryId),
     [allRows, claimConditionInventoryId],
@@ -1192,32 +1006,9 @@ export default function DashboardPage() {
     [returnConditionTargetRow],
   );
 
-  useEffect(() => {
-    if (!reservationPickerOpen) return undefined;
-
-    function handlePointerDown(event: MouseEvent) {
-      if (reservationPickerRef.current?.contains(event.target as Node)) return;
-      setReservationPickerOpen(false);
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setReservationPickerOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [reservationPickerOpen]);
-
   const renderTable = (
     rows: typeof tabRows,
-    actionMode: "none" | "reserve" | "reserved" | "borrowed" = "none",
+    actionMode: "none" | "reserved" | "borrowed" = "none",
   ) => (
     <div className="saas-table-wrap">
       <table className="saas-table">
@@ -1234,6 +1025,13 @@ export default function DashboardPage() {
             (() => {
               const reservationRow = row as Record<string, unknown>;
               const reserved = isReservedRecord(reservationRow);
+              const requested =
+                !reserved &&
+                row.status !== "Borrowed" &&
+                openBorrowingAssetIds.has(String(row._id));
+              const requestedTicket = requested
+                ? openBorrowingTicketByAssetId.get(String(row._id))
+                : undefined;
               const reservationBorrower = getReservationBorrower(reservationRow);
               const reservationDepartment = getReservationDepartment(reservationRow);
               const borrowReleaseCondition = reservationRow.borrowReleaseCondition as string | undefined;
@@ -1254,6 +1052,11 @@ export default function DashboardPage() {
                           Reserved for {reservationAssignee || "Pending borrower"}
                         </div>
                       ) : null}
+                      {requested ? (
+                        <div style={{ fontSize: 12, color: "#7c3aed", fontWeight: 600 }}>
+                          Requested in {requestedTicket?.ticketNumber ?? "an open borrowing ticket"}
+                        </div>
+                      ) : null}
                       {row.status === "Borrowed" && borrowReleaseCondition ? (
                         <div style={{ fontSize: 12, color: "#b45309", fontWeight: 600 }}>
                           Release condition: {borrowReleaseCondition}
@@ -1267,45 +1070,52 @@ export default function DashboardPage() {
                     </div>
                   </td>
                   <td>{row.locationPersonAssigned ?? "-"}</td>
-                  <td>{reserved ? "Reserved" : row.status}</td>
-                  <td>{reserved ? reservationAssignee || "-" : row.turnoverTo ?? "-"}</td>
-                  {actionMode === "reserve" ? (
-                    <td>
-                      <div className="dashboard-showcase-table-actions">
-                        <button
-                          className={`btn-secondary reservation-available-btn${
-                            reservationTargetIds.includes(String(row._id)) ? " is-selected" : ""
-                          }`}
-                          type="button"
-                          onClick={() => {
-                            addReservationTarget(String(row._id));
-                          }}
-                        >
-                          {reservationTargetIds.includes(String(row._id)) ? "Added" : "Add"}
-                        </button>
-                      </div>
-                    </td>
-                  ) : null}
+                  <td>{reserved ? "Reserved" : requested ? "Requested" : row.status}</td>
+                  <td>
+                    {reserved
+                      ? reservationAssignee || "-"
+                      : requested
+                        ? "Pending request"
+                        : row.turnoverTo ?? "-"}
+                  </td>
                   {actionMode === "reserved" ? (
                     <td>
-                      <div className="dashboard-showcase-table-actions">
-                        <button
-                          className="btn-primary"
-                          type="button"
-                          disabled={reservationBusyId === row._id}
-                          onClick={() => openClaimConditionDialog(String(row._id))}
-                        >
-                          Claim
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          type="button"
-                          disabled={reservationBusyId === row._id}
-                          onClick={() => void handleCancelReservation(String(row._id))}
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                      {reserved ? (
+                        <div className="dashboard-showcase-table-actions">
+                          <button
+                            className="btn-primary"
+                            type="button"
+                            disabled={reservationBusyId === row._id}
+                            onClick={() => openClaimConditionDialog(String(row._id))}
+                          >
+                            Claim
+                          </button>
+                          <button
+                            className="btn-secondary"
+                            type="button"
+                            disabled={reservationBusyId === row._id}
+                            onClick={() => void handleCancelReservation(String(row._id))}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="dashboard-showcase-table-actions">
+                          {requestedTicket ? (
+                            <Link
+                              href={`/monitoring/${requestedTicket.ticketId}`}
+                              className="dashboard-request-link"
+                              title={requestedTicket.title}
+                            >
+                              Request
+                            </Link>
+                          ) : (
+                            <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>
+                              Pending request
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                   ) : null}
                   {actionMode === "borrowed" ? (
@@ -1339,7 +1149,7 @@ export default function DashboardPage() {
   const renderGroupedTables = (
     groups: Map<string, typeof tabRows>,
     emptyState: React.ReactNode = renderTable([]),
-    actionMode: "none" | "reserve" | "reserved" | "borrowed" = "none",
+    actionMode: "none" | "reserved" | "borrowed" = "none",
   ) => (
     <div className="dashboard-group-list" style={{ display: "grid", gap: 16 }}>
       {[...groups.entries()].map(([group, rows]) => (
@@ -1360,7 +1170,7 @@ export default function DashboardPage() {
       cursor.setDate(cursor.getDate() + 1);
     }
     return days;
-  }, [calendarMonth, meetingCalendarRange.gridEnd, meetingCalendarRange.gridStart]);
+  }, [meetingCalendarRange.gridEnd, meetingCalendarRange.gridStart]);
   const eventsByDay = useMemo(() => {
     const grouped = new Map<string, DashboardCalendarEvent[]>();
 
@@ -1630,228 +1440,6 @@ export default function DashboardPage() {
               </div>
 
             </div>
-          </div>
-        </div>
-        <div className="dashboard-side-stack">
-          <div
-            className={`dashboard-reminder-card dashboard-borrowing-card${
-              reservationMode === "drone" ? " is-drone-mode" : ""
-            }`}
-          >
-            <div className="dashboard-borrowing-head">
-              <button
-                type="button"
-                className={`dashboard-reminder-badge dashboard-borrowing-mode-toggle${
-                  reservationMode === "drone" ? " is-drone" : ""
-                }`}
-                onClick={toggleReservationMode}
-              >
-                {reservationModeCopy.badge}
-              </button>
-            </div>
-            <div className="dashboard-borrowing-fields">
-              <div className="reservation-form-field dashboard-borrowing-field-span">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>
-                  {reservationModeCopy.assetLabel}
-                </div>
-                <div className="dashboard-borrowing-picker-row">
-                  <div
-                    ref={reservationPickerRef}
-                    className={`dashboard-borrowing-picker${reservationPickerOpen ? " is-open" : ""}`}
-                  >
-                    <button
-                      type="button"
-                      className="input-base reservation-input dashboard-borrowing-picker-trigger"
-                      aria-haspopup="listbox"
-                      aria-expanded={reservationPickerOpen}
-                      aria-label="Assets from main storage"
-                      disabled={!reservationPickerOptions.length}
-                      onClick={() => {
-                        setReservationPickerOpen((current) => !current);
-                        setReservationError("");
-                      }}
-                    >
-                      <span className="dashboard-borrowing-picker-trigger-text">
-                        {reservationPickerOptions.length ? reservationModeCopy.trigger : reservationModeCopy.empty}
-                      </span>
-                      <span className="dashboard-borrowing-picker-trigger-icon" aria-hidden="true">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                          <path
-                            d="M7 10L12 15L17 10"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </span>
-                    </button>
-                    {reservationPickerOpen ? (
-                      <div className="dashboard-borrowing-picker-menu" role="listbox" aria-label="Assets from main storage">
-                        {reservationPickerOptions.map((option) => (
-                          <button
-                            key={option.id}
-                            type="button"
-                            className="dashboard-borrowing-picker-option"
-                            onClick={() => addReservationTarget(option.id)}
-                          >
-                            <span className="dashboard-borrowing-picker-option-label">{option.label}</span>
-                            <span className="dashboard-borrowing-picker-option-action">Add</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-              <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Borrower Name</div>
-                <input
-                  className="input-base reservation-input"
-                  value={reservationBorrower}
-                  onChange={(event) => setReservationBorrower(event.target.value)}
-                  placeholder="Enter borrower name"
-                  aria-label="Borrower name"
-                />
-              </div>
-              <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Department</div>
-                <select
-                  className="input-base reservation-input"
-                  value={reservationDepartment}
-                  onChange={(event) => setReservationDepartment(event.target.value)}
-                  aria-label="Reservation department"
-                >
-                  <option value="">Select department</option>
-                  {HARDWARE_DEPARTMENTS.map((department) => (
-                    <option key={department} value={department}>
-                      {department}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Requested Date</div>
-                <input
-                  className="input-base reservation-input"
-                  type="date"
-                  value={reservationRequestedDate}
-                  onChange={(event) => setReservationRequestedDate(event.target.value)}
-                  aria-label="Requested date"
-                />
-              </div>
-              <div className="reservation-form-field">
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Expected Pickup Date</div>
-                <input
-                  className="input-base reservation-input"
-                  type="date"
-                  value={reservationPickupDate}
-                  onChange={(event) => setReservationPickupDate(event.target.value)}
-                  aria-label="Expected pickup date"
-                />
-              </div>
-            </div>
-            <div className="reservation-form-field">
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-strong)" }}>Purpose</div>
-              <input
-                className="input-base reservation-input"
-                value={reservationPurpose}
-                onChange={(event) => setReservationPurpose(event.target.value)}
-                placeholder={reservationModeCopy.purposePlaceholder}
-                aria-label="Purpose"
-              />
-            </div>
-            <div className="dashboard-borrowing-selected">
-              <span className="dashboard-borrowing-selected-label">Selected Assets</span>
-              {selectedReservationRows.length ? (
-                <div
-                  className={`dashboard-borrowing-selected-list${
-                    selectedReservationRows.length > 1 ? " is-scrollable" : ""
-                  }`}
-                >
-                  {selectedReservationRows.map((row) => (
-                    <div key={String(row._id)} className="dashboard-borrowing-selected-item">
-                      <div className="dashboard-borrowing-selected-item-copy">
-                        <strong className="dashboard-borrowing-selected-item-title">{formatReservationAssetLabel(row)}</strong>
-                        <div className="dashboard-borrowing-selected-copy">
-                          {formatReservationAssetSummary(row)}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        onClick={() => removeReservationTarget(String(row._id))}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <strong>No assets selected yet</strong>
-                  {!borrowingCardReadyCount ? (
-                    <div className="dashboard-borrowing-selected-copy">
-                      No main storage assets are currently ready for borrowing.
-                    </div>
-                  ) : null}
-                </>
-              )}
-            </div>
-            {reservationError ? <div className="reservation-error">{reservationError}</div> : null}
-            <div className="dashboard-borrowing-actions">
-              <div className="reservation-form-actions dashboard-borrowing-form-actions">
-                <button className="btn-secondary" type="button" onClick={resetReservationForm}>
-                  Clear
-                </button>
-                <button
-                  className="dashboard-reminder-btn"
-                  type="button"
-                  onClick={() => void handleReserveSubmit()}
-                  disabled={borrowingCardSaveBusy || !reservationTargetIds.length}
-                >
-                  {borrowingCardSaveBusy ? "Saving..." : reservationModeCopy.submit}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="panel dashboard-panel dashboard-today-panel" style={{ padding: 16 }}>
-            <div className="dashboard-today-head">
-              <div className="dashboard-today-topline">
-                <span className="dashboard-reminder-badge">MAIN STORAGE</span>
-                <button type="button" className="btn-secondary" onClick={() => focusWorkspaceTab("available")}>
-                  Open Available Assets
-                </button>
-              </div>
-              <h3 className="type-section-title" style={{ margin: 0 }}>Available Laptops</h3>
-            </div>
-            <div className="dashboard-today-list">
-              {allRows === undefined ? (
-                <div className="dashboard-calendar-empty">Loading laptop availability...</div>
-              ) : null}
-              {availableMainStorageLaptopPreview.map((row) => (
-                <div key={String(row._id)} className="dashboard-storage-asset-card">
-                  <div className="dashboard-storage-asset-main">
-                    <strong className="dashboard-storage-asset-title">{row.assetTag}</strong>
-                    <span className="dashboard-storage-asset-copy">
-                      {row.assetNameDescription ?? row.assetType ?? "Laptop"}
-                    </span>
-                    <span className="dashboard-storage-asset-copy">{formatReservationAssetSummary(row)}</span>
-                  </div>
-                  <span className="dashboard-storage-asset-status">{row.status}</span>
-                </div>
-              ))}
-              {allRows !== undefined && !availableMainStorageLaptopRows.length ? (
-                <div className="dashboard-calendar-empty">
-                  No laptops are currently available in main storage.
-                </div>
-              ) : null}
-            </div>
-            {allRows !== undefined && availableMainStorageLaptopRows.length > availableMainStorageLaptopPreview.length ? (
-              <div className="dashboard-storage-asset-footnote">
-                Showing {availableMainStorageLaptopPreview.length} of {availableMainStorageLaptopRows.length} available laptops.
-              </div>
-            ) : null}
           </div>
         </div>
       </div>
@@ -2434,7 +2022,7 @@ export default function DashboardPage() {
             );
           })}
         </div>
-        {reservationError && !reservationTargetIds.length ? (
+        {reservationError ? (
           <div className="reservation-error reservation-error-inline">{reservationError}</div>
         ) : null}
 
@@ -2501,13 +2089,8 @@ export default function DashboardPage() {
                     {section.rows.length} asset{section.rows.length === 1 ? "" : "s"}
                   </span>
                 </div>
-                {section.key === "drone" ? (
-                  <div className="dashboard-showcase-inline-note">
-                    Drone reservations stay here too. Flight reports are still required upon return.
-                  </div>
-                ) : null}
                 {section.rows.length ? (
-                  renderTable(section.rows, "reserve")
+                  renderTable(section.rows)
                 ) : (
                   <div
                     className="saas-card dashboard-group-card"
@@ -2533,6 +2116,50 @@ export default function DashboardPage() {
                 label: "Reserved Drone Kits",
                 rows: searchedReservedDroneRows,
                 empty: "No reserved drone kits match this search.",
+              },
+            ].map((section) => (
+              <section key={section.key} style={{ display: "grid", gap: 12 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 8,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <h3 className="type-section-title">{section.label}</h3>
+                  <span style={{ fontSize: "var(--type-label)", color: "var(--muted)" }}>
+                    {section.rows.length} asset{section.rows.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {section.rows.length ? (
+                  renderTable(section.rows, "reserved")
+                ) : (
+                  <div
+                    className="saas-card dashboard-group-card"
+                    style={{ padding: 12, fontSize: 13, color: "var(--muted)" }}
+                  >
+                    {section.empty}
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        ) : activeTab === "requested" ? (
+          <div style={{ display: "grid", gap: 24 }}>
+            {[
+              {
+                key: "equipment",
+                label: "Requested IT Equipment",
+                rows: searchedRequestedEquipmentRows,
+                empty: "No requested IT equipment matches this search.",
+              },
+              {
+                key: "drone",
+                label: "Requested Drone Kits",
+                rows: searchedRequestedDroneRows,
+                empty: "No requested drone kits match this search.",
               },
             ].map((section) => (
               <section key={section.key} style={{ display: "grid", gap: 12 }}>
