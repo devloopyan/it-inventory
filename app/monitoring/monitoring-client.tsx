@@ -2231,6 +2231,9 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   {requestRows.map((row) => {
                     const rowId = String(row._id);
                     const displayStatus = getDisplayStatusLabel(row.status, row.category);
+                    const rowServiceGroup = getServiceGroupForCategory(row.category);
+                    const isUnopenedRequest =
+                      displayStatus === "New" && !(row.notificationSeenByGroups ?? []).includes(rowServiceGroup);
                     const requestListTitle =
                       activeTab === "meetings" ? getMeetingRequestListTitle(row.title, row.meetingStartAt) : row.title;
                     const borrowingRequestType = formatRequesterRequestType(row);
@@ -2247,14 +2250,17 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     return (
                       <tr
                         key={row._id}
-                        className="table-row-hover"
+                        className={`table-row-hover${isUnopenedRequest ? " monitoring-row-unopened" : ""}`}
                         style={{ cursor: "pointer" }}
                         onClick={() => router.push(`/monitoring/${row._id}`)}
                       >
                         <td>
-                          <div style={{ display: "grid", gap: 4 }}>
-                            <strong>{row.ticketNumber}</strong>
-                            <span style={{ color: "var(--muted)", fontSize: 12 }}>{requestListTitle}</span>
+                          <div className="monitoring-request-cell">
+                            <div className="monitoring-request-title-row">
+                              <strong>{row.ticketNumber}</strong>
+                              {isUnopenedRequest ? <span className="monitoring-unopened-pill">New</span> : null}
+                            </div>
+                            <span className="monitoring-request-title">{requestListTitle}</span>
                             {row.meetingLocation ? (
                               <span style={{ color: "var(--muted)", fontSize: 12 }}>{row.meetingLocation}</span>
                             ) : null}

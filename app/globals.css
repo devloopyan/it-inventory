@@ -3404,6 +3404,47 @@ a {
   background: #f9fbff;
 }
 
+.monitoring-row-unopened td {
+  background: #f8fbff;
+}
+
+.monitoring-row-unopened strong,
+.monitoring-row-unopened .monitoring-request-title {
+  color: var(--foreground);
+  font-weight: 800;
+}
+
+.monitoring-request-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.monitoring-request-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.monitoring-request-title {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.monitoring-unopened-pill {
+  display: inline-grid;
+  place-items: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .input-base {
   height: 34px;
   width: 100%;
@@ -7966,6 +8007,15 @@ select.status-select optgroup {
 :root[data-theme="dark"] .saas-table td {
   border-bottom-color: #343b47;
   background: var(--surface-panel);
+}
+
+:root[data-theme="dark"] .monitoring-row-unopened td {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+:root[data-theme="dark"] .monitoring-unopened-pill {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
 }
 
 :root[data-theme="dark"] .dashboard-panel,
