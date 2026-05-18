@@ -531,17 +531,16 @@ a {
 .side-link-badge {
   display: inline-grid;
   place-items: center;
-  min-width: 20px;
-  height: 20px;
+  min-width: 17px;
+  height: 17px;
   margin-left: auto;
-  padding: 0 6px;
+  padding: 0 5px;
   border-radius: 999px;
-  background: #dc2626;
+  background: #ef4444;
   color: #ffffff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1;
-  box-shadow: 0 0 0 2px var(--surface);
 }
 
 .app-main {
@@ -1158,12 +1157,12 @@ a {
 
   .app-shell.sidebar-collapsed .side-link-badge {
     position: absolute;
-    top: -4px;
-    right: -4px;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    font-size: 10px;
+    top: -3px;
+    right: -3px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 9px;
   }
 
   .app-shell.sidebar-collapsed .sidebar-account-card {
