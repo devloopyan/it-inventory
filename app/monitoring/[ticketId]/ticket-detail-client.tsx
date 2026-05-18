@@ -160,11 +160,17 @@ function extractLabeledDetail(requestDetails: string | undefined, label: string)
 function getTravelOrderDetails(requestDetails?: string) {
   return {
     destination: extractLabeledDetail(requestDetails, "Destination"),
+    passengers: extractLabeledDetail(requestDetails, "Passengers"),
     purpose: extractLabeledDetail(requestDetails, "Purpose of travel"),
+    projectName: extractLabeledDetail(requestDetails, "Project name"),
+    expectedOutput: extractLabeledDetail(requestDetails, "Expected output"),
     departure: extractLabeledDetail(requestDetails, "Departure"),
     returnTrip: extractLabeledDetail(requestDetails, "Return"),
-    transportation: extractLabeledDetail(requestDetails, "Transportation details"),
-    additionalNotes: extractLabeledDetail(requestDetails, "Additional notes"),
+    notes:
+      extractLabeledDetail(requestDetails, "Additional / transportation notes") ||
+      extractLabeledDetail(requestDetails, "Transportation request / notes") ||
+      extractLabeledDetail(requestDetails, "Transportation details") ||
+      extractLabeledDetail(requestDetails, "Additional notes"),
     section: extractLabeledDetail(requestDetails, "Section"),
   };
 }
@@ -1698,11 +1704,13 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 <div className="type-subsection-title">Travel Details</div>
                 <div className="monitoring-detail-stack">
                   <DetailTextRow label="Destination" value={travelOrderDetails.destination} />
+                  <DetailTextRow label="Passengers" value={travelOrderDetails.passengers} />
                   <DetailTextRow label="Purpose" value={travelOrderDetails.purpose} />
+                  <DetailTextRow label="Project Name" value={travelOrderDetails.projectName} />
+                  <DetailTextRow label="Expected Output" value={travelOrderDetails.expectedOutput} />
                   <DetailTextRow label="Departure" value={travelOrderDetails.departure} />
                   <DetailTextRow label="Return" value={travelOrderDetails.returnTrip} />
-                  <DetailTextRow label="Transportation" value={travelOrderDetails.transportation || "Not specified"} />
-                  <DetailTextRow label="Additional Notes" value={travelOrderDetails.additionalNotes || "None"} />
+                  <DetailTextRow label="Additional / Transportation Notes" value={travelOrderDetails.notes || "None"} />
                 </div>
               </section>
             ) : null}

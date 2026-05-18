@@ -63,8 +63,9 @@ export function normalizeApprovalScopes(role?: string, approvalScopes?: readonly
   return [];
 }
 
-export function canAccessAppPath(role: string | undefined, pathname: string) {
+export function canAccessAppPath(role: string | undefined, pathname: string, serviceGroups?: readonly string[]) {
   const normalizedRole = normalizeUserRole(role);
+  const normalizedServiceGroups = normalizeServiceGroups(normalizedRole, serviceGroups);
 
   if (pathname === "/users" || pathname.startsWith("/users/")) {
     return normalizedRole === "admin";
@@ -84,7 +85,7 @@ export function canAccessAppPath(role: string | undefined, pathname: string) {
     pathname === "/operations" ||
     pathname.startsWith("/operations/")
   ) {
-    return STAFF_ROLES.includes(normalizedRole);
+    return STAFF_ROLES.includes(normalizedRole) && normalizedServiceGroups.includes("IT");
   }
 
   if (pathname === "/monitoring" || pathname.startsWith("/monitoring/")) {

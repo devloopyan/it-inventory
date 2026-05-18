@@ -965,11 +965,12 @@ export const createTicket = mutation({
     }
     const requiresPurchase = isMeetingRequest ? false : Boolean(args.requiresPurchase);
     const requiresReplacement = isMeetingRequest ? false : Boolean(args.requiresReplacement);
-    const requiresSensitiveAccess = isMeetingRequest ? false : Boolean(args.requiresSensitiveAccess);
+    const requiresSensitiveAccess = isMeetingRequest ? false : isItExemptionRequest || Boolean(args.requiresSensitiveAccess);
     const approvalRequired =
       workflowType === "serviceRequest" &&
       !isMeetingRequest &&
       (isTravelOrderRequest ||
+        isItExemptionRequest ||
         isApprovalRequired({
           requiresPurchase,
           requiresReplacement,
@@ -1083,7 +1084,10 @@ export const createTicket = mutation({
       if (!meetingStartAt) {
         throw new Error("Meeting start is required.");
       }
-      if (meetingEndAt && meetingEndAt <= meetingStartAt) {
+      if (!meetingEndAt) {
+        throw new Error("Meeting end is required.");
+      }
+      if (meetingEndAt <= meetingStartAt) {
         throw new Error("Meeting end must be after the meeting start.");
       }
       meetingMode = normalizeRequired(args.meetingMode ?? "", "Meeting mode");
@@ -1387,15 +1391,19 @@ export const updateTicket = mutation({
     const incidentReportAttached = Boolean(incidentReportStorageId);
     const nextRequiresPurchase = isMeetingRequest ? false : args.requiresPurchase ?? ticket.requiresPurchase;
     const nextRequiresReplacement = isMeetingRequest ? false : args.requiresReplacement ?? ticket.requiresReplacement;
-    const nextRequiresSensitiveAccess = isMeetingRequest ? false : args.requiresSensitiveAccess ?? ticket.requiresSensitiveAccess;
+    const nextRequiresSensitiveAccess = isMeetingRequest
+      ? false
+      : ticketIsItExemptionRequest || (args.requiresSensitiveAccess ?? ticket.requiresSensitiveAccess);
     const nextApprovalRequired =
       workflowType === "serviceRequest" &&
       !isMeetingRequest &&
-      isApprovalRequired({
-        requiresPurchase: nextRequiresPurchase,
-        requiresReplacement: nextRequiresReplacement,
-        requiresSensitiveAccess: nextRequiresSensitiveAccess,
-      });
+      (ticketIsTravelOrderRequest ||
+        ticketIsItExemptionRequest ||
+        isApprovalRequired({
+          requiresPurchase: nextRequiresPurchase,
+          requiresReplacement: nextRequiresReplacement,
+          requiresSensitiveAccess: nextRequiresSensitiveAccess,
+        }));
 
     let assetId = ticket.assetId;
     let assetTag = ticket.assetTag;
@@ -1549,7 +1557,10 @@ export const updateTicket = mutation({
       if (!meetingStartAt) {
         throw new Error("Meeting start is required.");
       }
-      if (meetingEndAt && meetingEndAt <= meetingStartAt) {
+      if (!meetingEndAt) {
+        throw new Error("Meeting end is required.");
+      }
+      if (meetingEndAt <= meetingStartAt) {
         throw new Error("Meeting end must be after the meeting start.");
       }
       meetingMode = normalizeRequired(meetingMode ?? "", "Meeting mode");

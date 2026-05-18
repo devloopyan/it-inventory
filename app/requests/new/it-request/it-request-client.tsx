@@ -9,9 +9,10 @@ import { useCurrentUser } from "@/app/current-user-context";
 import FileUploadCard from "@/app/hardware-inventory/file-upload-card";
 import {
   MONITORING_IMPACT_OPTIONS,
-  MONITORING_REQUEST_SOURCE,
   MONITORING_TICKET_CATEGORIES,
 } from "@/lib/monitoring";
+
+const REQUEST_SOURCE = "Requests Portal";
 
 const IT_REQUEST_TYPES = [
   "New service",
@@ -128,12 +129,17 @@ export default function ItRequestClient() {
         requiresReplacement ? "Replacement needed" : "",
         requiresSensitiveAccess ? "Sensitive access involved" : "",
       ].filter(Boolean);
+      const approvalFlow = approvalSignals.length
+        ? "Approval route: IT Team Leader -> OSMD Manager"
+        : "Approval route: Not required unless IT flags it during review";
       const attachmentStorageId = await uploadAttachment();
       const requestDetails = [
         `Request type: ${requestType}`,
         `System / resource: ${trimmedSystemResource}`,
         `Business purpose: ${trimmedBusinessPurpose}`,
         `Desired outcome: ${trimmedDesiredOutcome}`,
+        "Workflow: New -> Triage -> In Progress -> Fulfilled",
+        approvalFlow,
         neededByText ? `Needed by: ${neededByText}` : "",
         approvalSignals.length ? `Approval signals: ${approvalSignals.join(", ")}` : "",
         trimmedAdditionalNotes ? `Additional notes: ${trimmedAdditionalNotes}` : "",
@@ -149,6 +155,8 @@ export default function ItRequestClient() {
         `Scope: ${impact}`,
         `System / resource: ${trimmedSystemResource}`,
         "Nature: Planned / non-urgent",
+        "Workflow: New -> Triage -> In Progress -> Fulfilled",
+        approvalFlow,
         neededByText ? `Needed by: ${neededByText}` : "",
         approvalSignals.length ? `Approval signals: ${approvalSignals.join(", ")}` : "",
       ].filter(Boolean).join("\n");
@@ -160,7 +168,7 @@ export default function ItRequestClient() {
         title: trimmedTitle,
         requestDetails,
         requestSnapshot,
-        requestSource: MONITORING_REQUEST_SOURCE,
+        requestSource: REQUEST_SOURCE,
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
         requesterSection: trimmedSection || undefined,

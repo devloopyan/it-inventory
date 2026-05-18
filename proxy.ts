@@ -27,7 +27,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(destination);
   }
 
-  if (session && canAccessAppPath(session.role, pathname)) {
+  if (session && canAccessAppPath(session.role, pathname, session.serviceGroups)) {
     return NextResponse.next();
   }
 

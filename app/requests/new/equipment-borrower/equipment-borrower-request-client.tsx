@@ -1,16 +1,18 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentUser } from "@/app/current-user-context";
+import FileUploadCard from "@/app/hardware-inventory/file-upload-card";
 import {
   MONITORING_BORROWING_REQUEST_CATEGORY,
   MONITORING_BORROW_CONDITION_OPTIONS,
-  MONITORING_REQUEST_SOURCE,
 } from "@/lib/monitoring";
+
+const REQUEST_SOURCE = "Requests Portal";
 
 function toTimestamp(value: string) {
   const timestamp = new Date(value).getTime();
@@ -89,12 +91,15 @@ export default function EquipmentBorrowerRequestClient() {
     showClosed: false,
   });
   const createTicket = useMutation(api.monitoring.createTicket);
+  const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
   const department = currentUser?.department ?? "";
   const [requestedDate, setRequestedDate] = useState("");
   const [expectedReturnAt, setExpectedReturnAt] = useState("");
   const [purpose, setPurpose] = useState("");
   const [equipmentSearch, setEquipmentSearch] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const missingDepartment = !department.trim();
@@ -212,6 +217,30 @@ export default function EquipmentBorrowerRequestClient() {
     setSelectedAssetIds((current) => current.filter((currentAssetId) => currentAssetId !== assetId));
   }
 
+  async function uploadAttachment() {
+    if (!attachmentFile) return undefined;
+
+    const uploadUrl = await generateUploadUrl();
+    const uploadResult = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": attachmentFile.type || "application/octet-stream",
+      },
+      body: attachmentFile,
+    });
+
+    if (!uploadResult.ok) {
+      throw new Error("Attachment upload failed.");
+    }
+
+    const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
+    if (!uploadData.storageId) {
+      throw new Error("Attachment upload failed.");
+    }
+
+    return uploadData.storageId;
+  }
+
   async function handleSubmit() {
     setFormError("");
 
@@ -258,6 +287,7 @@ export default function EquipmentBorrowerRequestClient() {
       }
 
       setSubmitting(true);
+      const attachmentStorageId = await uploadAttachment();
 
       const assetLines = selectedAssets.map(
         (asset) =>
@@ -275,6 +305,7 @@ export default function EquipmentBorrowerRequestClient() {
         `Department: ${trimmedDepartment}`,
         `Requested date: ${new Date(requestedBorrowTimestamp).toLocaleDateString()}`,
         `Expected return: ${new Date(expectedReturnTimestamp).toLocaleString()}`,
+        "Workflow: Requested -> Reserved -> Released -> Returned",
         "Selected equipment:",
         ...assetLines,
       ].join("\n");
@@ -285,7 +316,7 @@ export default function EquipmentBorrowerRequestClient() {
         category: MONITORING_BORROWING_REQUEST_CATEGORY,
         requestDetails,
         requestSnapshot,
-        requestSource: MONITORING_REQUEST_SOURCE,
+        requestSource: REQUEST_SOURCE,
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
         requestedBorrowDate: requestedBorrowTimestamp,
@@ -294,6 +325,18 @@ export default function EquipmentBorrowerRequestClient() {
           assetId: asset._id as Id<"hardwareInventory">,
           releaseCondition: MONITORING_BORROW_CONDITION_OPTIONS[0],
         })),
+        attachments: attachmentStorageId
+          ? [
+              {
+                kind: "Reference",
+                label: "Borrowing support file",
+                fileName: attachmentFile?.name ?? "Attachment",
+                contentType: attachmentFile?.type || undefined,
+                storageId: attachmentStorageId,
+                uploadedBy: currentUser?.displayName ?? trimmedRequesterName,
+              },
+            ]
+          : undefined,
         createdBy: currentUser?.displayName ?? trimmedRequesterName,
       });
 
@@ -374,6 +417,22 @@ export default function EquipmentBorrowerRequestClient() {
                   placeholder="Explain why the equipment is needed."
                 />
               </label>
+
+              <div className="request-form-field request-form-field-wide">
+                <FileUploadCard
+                  label="Supporting File"
+                  inputRef={attachmentInputRef}
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                  onFileChange={setAttachmentFile}
+                  file={attachmentFile}
+                  hasAttachment={Boolean(attachmentFile)}
+                  displayName="No file selected"
+                  helperText="Optional approval, event brief, schedule, or supporting document."
+                  badge="FILE"
+                  ariaLabel="Upload borrowing support file"
+                  onRemove={() => setAttachmentFile(null)}
+                />
+              </div>
             </div>
 
             {formError ? <div className="request-form-error">{formError}</div> : null}
@@ -387,7 +446,7 @@ export default function EquipmentBorrowerRequestClient() {
               >
                 {submitting ? "Submitting..." : "Submit Request"}
               </button>
-              <span>This will create a borrowing ticket for IT staff.</span>
+              <span>This will create a borrowing ticket for IT to reserve, release, and receive back.</span>
             </div>
           </div>
 

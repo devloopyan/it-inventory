@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentUser } from "@/app/current-user-context";
+import FileUploadCard from "@/app/hardware-inventory/file-upload-card";
 import {
   MONITORING_MEETING_MODES,
   MONITORING_MEETING_REQUEST_CATEGORY,
@@ -25,6 +27,8 @@ export default function MeetingRequestClient() {
   const router = useRouter();
   const currentUser = useCurrentUser();
   const createTicket = useMutation(api.monitoring.createTicket);
+  const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
   const department = currentUser?.department ?? "";
@@ -39,6 +43,7 @@ export default function MeetingRequestClient() {
   const [attendeeCount, setAttendeeCount] = useState("");
   const [supportNeeded, setSupportNeeded] = useState("");
   const [additionalNotes, setAdditionalNotes] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const missingDepartment = !department.trim();
@@ -62,6 +67,30 @@ export default function MeetingRequestClient() {
     }
 
     router.push("/requests/new");
+  }
+
+  async function uploadAttachment() {
+    if (!attachmentFile) return undefined;
+
+    const uploadUrl = await generateUploadUrl();
+    const uploadResult = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": attachmentFile.type || "application/octet-stream",
+      },
+      body: attachmentFile,
+    });
+
+    if (!uploadResult.ok) {
+      throw new Error("Attachment upload failed.");
+    }
+
+    const uploadData = (await uploadResult.json()) as { storageId?: Id<"_storage"> };
+    if (!uploadData.storageId) {
+      throw new Error("Attachment upload failed.");
+    }
+
+    return uploadData.storageId;
   }
 
   async function handleSubmit() {
@@ -89,6 +118,9 @@ export default function MeetingRequestClient() {
       if (!meetingStart) {
         throw new Error("Meeting start is required.");
       }
+      if (!meetingEnd) {
+        throw new Error("Meeting end is required.");
+      }
       if (!trimmedMeetingLocation) {
         throw new Error("Location / platform is required.");
       }
@@ -100,22 +132,21 @@ export default function MeetingRequestClient() {
       }
 
       const meetingStartAt = toTimestamp(meetingStart);
-      const meetingEndAt = meetingEnd ? toTimestamp(meetingEnd) : null;
+      const meetingEndAt = toTimestamp(meetingEnd);
       if (!meetingStartAt) {
         throw new Error("Meeting start is invalid.");
       }
-      if (meetingEnd && !meetingEndAt) {
+      if (!meetingEndAt) {
         throw new Error("Meeting end is invalid.");
       }
-      if (meetingEndAt && meetingEndAt <= meetingStartAt) {
+      if (meetingEndAt <= meetingStartAt) {
         throw new Error("Meeting end must be after the meeting start.");
       }
 
       setSubmitting(true);
 
-      const scheduleText = meetingEndAt
-        ? `${formatDateTime(meetingStartAt)} to ${formatDateTime(meetingEndAt)}`
-        : formatDateTime(meetingStartAt);
+      const scheduleText = `${formatDateTime(meetingStartAt)} to ${formatDateTime(meetingEndAt)}`;
+      const attachmentStorageId = await uploadAttachment();
       const title = `Meeting Support - ${trimmedMeetingTitle}`;
       const requestDetails = [
         `Meeting support requested for "${trimmedMeetingTitle}".`,
@@ -137,6 +168,8 @@ export default function MeetingRequestClient() {
         `Location / platform: ${trimmedMeetingLocation}`,
         `Expected attendees: ${trimmedAttendeeCount}`,
         `Support needed: ${trimmedSupportNeeded}`,
+        "Approval required: No",
+        "Workflow: New -> Reserved -> Ready -> Done",
       ].filter(Boolean).join("\n");
 
       await createTicket({
@@ -153,8 +186,20 @@ export default function MeetingRequestClient() {
         meetingMode,
         meetingLocation: trimmedMeetingLocation,
         meetingStartAt,
-        meetingEndAt: meetingEndAt || undefined,
+        meetingEndAt,
         meetingAttendeeCount: trimmedAttendeeCount,
+        attachments: attachmentStorageId
+          ? [
+              {
+                kind: "Reference",
+                label: "Meeting support file",
+                fileName: attachmentFile?.name ?? "Attachment",
+                contentType: attachmentFile?.type || undefined,
+                storageId: attachmentStorageId,
+                uploadedBy: currentUser?.displayName ?? trimmedRequesterName,
+              },
+            ]
+          : undefined,
         createdBy: currentUser?.displayName ?? trimmedRequesterName,
       });
 
@@ -288,6 +333,22 @@ export default function MeetingRequestClient() {
               placeholder="Add special instructions, contact person, agenda link, or timing notes."
             />
           </label>
+
+          <div className="request-form-field request-form-field-wide">
+            <FileUploadCard
+              label="Supporting File"
+              inputRef={attachmentInputRef}
+              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+              onFileChange={setAttachmentFile}
+              file={attachmentFile}
+              hasAttachment={Boolean(attachmentFile)}
+              displayName="No file selected"
+              helperText="Optional agenda, invitation, layout, reservation screenshot, or setup reference."
+              badge="FILE"
+              ariaLabel="Upload meeting support file"
+              onRemove={() => setAttachmentFile(null)}
+            />
+          </div>
         </div>
 
         {formError ? <div className="request-form-error">{formError}</div> : null}
@@ -301,7 +362,7 @@ export default function MeetingRequestClient() {
           >
             {submitting ? "Submitting..." : "Submit Meeting Request"}
           </button>
-          <span>This will create a meeting support request for IT staff.</span>
+          <span>This will create a meeting setup request with no approval step.</span>
         </div>
       </section>
     </div>

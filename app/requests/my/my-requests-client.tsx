@@ -20,9 +20,25 @@ function formatDate(value?: number) {
   });
 }
 
+function formatDateTime(value?: number) {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function getStatusTone(status: string) {
   const normalized = status.trim().toLowerCase();
-  if (normalized.includes("closed") || normalized.includes("done") || normalized.includes("completed")) {
+  if (
+    normalized.includes("closed") ||
+    normalized.includes("done") ||
+    normalized.includes("completed") ||
+    normalized.includes("resolved") ||
+    normalized.includes("fulfilled")
+  ) {
     return "is-complete";
   }
   if (normalized.includes("progress") || normalized.includes("review") || normalized.includes("pending")) {
@@ -74,6 +90,13 @@ export default function MyRequestsClient() {
                 request.requestedItemsText ||
                 "";
               const assetLabel = formatRequesterAssetLabel(request);
+              const contextLine = request.meetingStartAt
+                ? `Scheduled: ${formatDateTime(request.meetingStartAt)}${request.meetingLocation ? ` - ${request.meetingLocation}` : ""}`
+                : request.expectedReturnAt
+                  ? `Expected return: ${formatDateTime(request.expectedReturnAt)}`
+                  : request.approvalRequired
+                    ? `Approval: ${request.approvalStage}`
+                    : `Category: ${request.category}`;
 
               return (
                 <Link key={String(request._id)} href={`/requests/my/${request._id}`} className="my-request-row">
@@ -84,7 +107,8 @@ export default function MyRequestsClient() {
                     </div>
                     <div className="my-request-title">{request.title}</div>
                     <div className="my-request-meta">
-                      {linkedAssets ? <span>{assetLabel}: {linkedAssets}</span> : <span>Category: {request.category}</span>}
+                      {linkedAssets ? <span>{assetLabel}: {linkedAssets}</span> : null}
+                      <span>{contextLine}</span>
                     </div>
                   </div>
                   <div className="my-request-side">

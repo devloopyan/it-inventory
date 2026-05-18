@@ -150,7 +150,7 @@ export default function ItExemptionRequestClient() {
         `Scope: ${impact}`,
         `Policy / system / control: ${trimmedPolicyOrSystem}`,
         `Requested duration: ${trimmedRequestedDuration}`,
-        "Approval required: Yes",
+        "Approval path: IT Team Leader -> OSMD Manager",
       ].filter(Boolean).join("\n");
 
       await createTicket({
@@ -342,7 +342,7 @@ export default function ItExemptionRequestClient() {
           >
             {submitting ? "Submitting..." : "Submit Exemption"}
           </button>
-          <span>This will create an approval-required IT exemption request.</span>
+          <span>This will create an IT approval request for IT Team Leader and OSMD Manager review.</span>
         </div>
       </section>
     </div>

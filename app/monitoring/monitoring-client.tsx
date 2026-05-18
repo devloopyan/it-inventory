@@ -715,6 +715,14 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     search: deferredInternetSearch || undefined,
     showClosed: true,
   });
+  const notificationIssueRows = useQuery(api.monitoring.list, {
+    view: "issues",
+    showClosed: true,
+  });
+  const notificationInternetRows = useQuery(api.monitoring.list, {
+    view: "internet",
+    showClosed: true,
+  });
   const generalIssueRows = [...(issueRows ?? [])]
     .filter(
       (row) =>
@@ -765,6 +773,31 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     const internetState = row.status === "Resolved" ? "Resolved" : "Active";
     return internetStatusFilters.includes(internetState);
   });
+  const tabNotificationCounts: Record<MonitoringTab, number> = {
+    issues: (notificationIssueRows ?? []).filter(
+      (row) =>
+        row.category !== MONITORING_MEETING_REQUEST_CATEGORY &&
+        row.category !== MONITORING_BORROWING_REQUEST_CATEGORY &&
+        getServiceGroupForCategory(row.category) === "IT" &&
+        getDisplayStatusLabel(row.status, row.category) === "New",
+    ).length,
+    hrAdmin: (notificationIssueRows ?? []).filter(
+      (row) =>
+        getServiceGroupForCategory(row.category) === "HR/Admin" &&
+        getDisplayStatusLabel(row.status, row.category) === "New",
+    ).length,
+    meetings: (notificationIssueRows ?? []).filter(
+      (row) =>
+        row.category === MONITORING_MEETING_REQUEST_CATEGORY &&
+        getDisplayStatusLabel(row.status, row.category) === "New",
+    ).length,
+    borrowing: (notificationIssueRows ?? []).filter(
+      (row) =>
+        row.category === MONITORING_BORROWING_REQUEST_CATEGORY &&
+        getDisplayStatusLabel(row.status, row.category) === "New",
+    ).length,
+    internet: (notificationInternetRows ?? []).filter((row) => row.status === "Investigating").length,
+  };
 
   const requestRows =
     activeTab === "meetings"
@@ -1178,7 +1211,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
       if (!meetingStartAt) {
         throw new Error("Meeting start is required.");
       }
-      if (meetingEndAt && meetingEndAt <= meetingStartAt) {
+      if (!meetingEndAt) {
+        throw new Error("Meeting end is required.");
+      }
+      if (meetingEndAt <= meetingStartAt) {
         throw new Error("Meeting end must be after the meeting start.");
       }
 
@@ -1328,11 +1364,20 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               type="button"
               role="tab"
               aria-selected={activeTab === tab.key}
-              className={`monitoring-tab-btn${activeTab === tab.key ? " active" : ""}`}
+              className={`monitoring-tab-btn${activeTab === tab.key ? " active" : ""}${
+                tabNotificationCounts[tab.key] > 0 ? " has-notification" : ""
+              }`}
               onClick={() => setActiveTab(tab.key)}
             >
               <span className="monitoring-tab-copy">
-                <span className="monitoring-tab-label">{tab.label}</span>
+                <span className="monitoring-tab-label-row">
+                  <span className="monitoring-tab-label">{tab.label}</span>
+                  {tabNotificationCounts[tab.key] > 0 ? (
+                    <span className="monitoring-tab-badge" aria-label={`${tabNotificationCounts[tab.key]} new items`}>
+                      {tabNotificationCounts[tab.key]}
+                    </span>
+                  ) : null}
+                </span>
                 <span className="monitoring-tab-description">{tab.description}</span>
               </span>
             </button>

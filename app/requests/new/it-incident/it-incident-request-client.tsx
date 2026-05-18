@@ -9,9 +9,10 @@ import { useCurrentUser } from "@/app/current-user-context";
 import FileUploadCard from "@/app/hardware-inventory/file-upload-card";
 import {
   MONITORING_IMPACT_OPTIONS,
-  MONITORING_REQUEST_SOURCE,
   MONITORING_TICKET_CATEGORIES,
 } from "@/lib/monitoring";
+
+const REQUEST_SOURCE = "Requests Portal";
 
 const IT_SUPPORT_CATEGORY_EXAMPLES: Record<string, string> = {
   "Network & Connectivity": "No internet, slow connection, Wi-Fi issue, VPN problem.",
@@ -134,6 +135,7 @@ export default function ItIncidentRequestClient() {
       const requestDetails = [
         trimmedDetails,
         `Work status: ${workStatus}`,
+        "Workflow: New -> Triage -> In Progress -> Resolved",
         trimmedSection ? `Section: ${trimmedSection}` : "",
       ].filter(Boolean).join("\n");
       const requestSnapshot = [
@@ -145,6 +147,7 @@ export default function ItIncidentRequestClient() {
         `Impact: ${impact}`,
         `Work status: ${workStatus}`,
         `Triage urgency: ${urgency}`,
+        "Workflow: New -> Triage -> In Progress -> Resolved",
       ].filter(Boolean).join("\n");
 
       await createTicket({
@@ -154,7 +157,7 @@ export default function ItIncidentRequestClient() {
         title: trimmedTitle,
         requestDetails,
         requestSnapshot,
-        requestSource: MONITORING_REQUEST_SOURCE,
+        requestSource: REQUEST_SOURCE,
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
         requesterSection: trimmedSection || undefined,

@@ -487,6 +487,7 @@ a {
 }
 
 .side-link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -521,6 +522,25 @@ a {
   color: var(--nav-active-color);
   font-weight: 600;
   box-shadow: inset 0 0 0 1px var(--nav-active-border);
+}
+
+.side-link-label {
+  min-width: 0;
+}
+
+.side-link-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .app-main {
@@ -1110,7 +1130,7 @@ a {
 
   .app-shell.sidebar-collapsed .logo-copy,
   .app-shell.sidebar-collapsed .sidebar-section-label,
-  .app-shell.sidebar-collapsed .side-link span,
+  .app-shell.sidebar-collapsed .side-link-label,
   .app-shell.sidebar-collapsed .sidebar-account-copy,
   .app-shell.sidebar-collapsed .sidebar-account-chevron {
     display: none;
@@ -1133,6 +1153,16 @@ a {
     width: 36px;
     height: 36px;
     padding: 0;
+  }
+
+  .app-shell.sidebar-collapsed .side-link-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    font-size: 10px;
   }
 
   .app-shell.sidebar-collapsed .sidebar-account-card {
@@ -1998,6 +2028,26 @@ a {
   resize: vertical;
 }
 
+.request-passenger-list {
+  display: grid;
+  gap: 8px;
+}
+
+.request-passenger-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.request-passenger-add {
+  width: fit-content;
+}
+
+.request-passenger-remove {
+  min-height: 44px;
+}
+
 .request-form-checkboxes {
   display: grid;
   gap: 8px;
@@ -2326,6 +2376,8 @@ a {
 }
 
 .my-request-meta {
+  display: grid;
+  gap: 2px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.4;
@@ -2396,6 +2448,75 @@ a {
   color: var(--text);
 }
 
+.my-request-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.my-request-detail-grid > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.my-request-detail-grid span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.my-request-detail-grid strong {
+  color: var(--text);
+}
+
+.my-request-progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.my-request-progress-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.my-request-progress-marker {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #475569;
+  font-size: 12px;
+}
+
+.my-request-progress-step.is-complete,
+.my-request-progress-step.is-current {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.my-request-progress-step.is-complete .my-request-progress-marker,
+.my-request-progress-step.is-current .my-request-progress-marker {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
 .my-request-detail-block {
   display: grid;
   gap: 8px;
@@ -2411,6 +2532,43 @@ a {
   color: var(--muted-strong);
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.my-request-attachment-list {
+  display: grid;
+  gap: 8px;
+}
+
+.my-request-attachment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.my-request-attachment-row > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.my-request-attachment-row strong {
+  color: var(--text);
+}
+
+.my-request-attachment-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.my-request-attachment-row a {
+  color: var(--primary);
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .hardware-register-panel {
@@ -11282,12 +11440,13 @@ select.status-select optgroup {
 }
 
 .monitoring-tab-btn {
+  position: relative;
   min-height: 74px;
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
   gap: 0;
-  padding: 14px 16px;
+  padding: 14px 44px 14px 16px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
@@ -11313,16 +11472,43 @@ select.status-select optgroup {
 }
 
 .monitoring-tab-copy {
+  width: 100%;
   min-width: 0;
   display: grid;
   gap: 8px;
 }
 
+.monitoring-tab-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
 .monitoring-tab-label {
+  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.25;
   color: var(--foreground);
+}
+
+.monitoring-tab-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .monitoring-tab-description {
@@ -14166,6 +14352,15 @@ select.status-select optgroup {
     grid-template-columns: 1fr;
   }
 
+  .request-passenger-row {
+    grid-template-columns: 1fr;
+  }
+
+  .request-passenger-add,
+  .request-passenger-remove {
+    width: 100%;
+  }
+
   .my-request-row {
     grid-template-columns: 1fr;
   }
@@ -14175,6 +14370,11 @@ select.status-select optgroup {
   }
 
   .my-request-detail-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .my-request-detail-grid,
+  .my-request-progress {
     grid-template-columns: 1fr;
   }
 
