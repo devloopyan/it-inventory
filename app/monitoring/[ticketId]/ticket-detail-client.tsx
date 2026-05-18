@@ -553,6 +553,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const removeTicketAttachment = useMutation(api.monitoring.removeTicketAttachment);
   const submitForApproval = useMutation(api.monitoring.submitForApproval);
   const recordApprovalDecision = useMutation(api.monitoring.recordApprovalDecision);
+  const markTicketSeen = useMutation(api.monitoring.markTicketSeen);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const [status, setStatus] = useState("");
   const [impact, setImpact] = useState("");
@@ -607,6 +608,22 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const attachmentRef = useRef<HTMLInputElement | null>(null);
   const meetingDetailsSectionRef = useRef<HTMLElement | null>(null);
   const meetingTitleInputRef = useRef<HTMLInputElement | null>(null);
+  const lastSeenTicketRef = useRef("");
+
+  useEffect(() => {
+    if (!detail?.ticket) return;
+    const rowId = String(detail.ticket._id);
+    if (lastSeenTicketRef.current === rowId) return;
+
+    lastSeenTicketRef.current = rowId;
+    void markTicketSeen({
+      ticketId,
+      actorName,
+    }).catch((error) => {
+      console.error("Failed to mark monitoring ticket seen", error);
+      lastSeenTicketRef.current = "";
+    });
+  }, [actorName, detail?.ticket, markTicketSeen, ticketId]);
 
   useEffect(() => {
     if (!detail?.ticket) return;

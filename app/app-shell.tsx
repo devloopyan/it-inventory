@@ -263,6 +263,8 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
     if (row.status !== "New") return false;
 
     const serviceGroup = getServiceGroupForCategory(row.category);
+    if ((row.notificationSeenByGroups ?? []).includes(serviceGroup)) return false;
+
     if (serviceGroup === "HR/Admin") {
       return canSeeHrAdminMonitoring;
     }

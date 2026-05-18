@@ -220,6 +220,9 @@ export default defineSchema({
     requestedItemsText: v.optional(v.string()),
     requestedBorrowDate: v.optional(v.number()),
     expectedReturnAt: v.optional(v.number()),
+    notificationSeenByGroups: v.optional(v.array(v.string())),
+    notificationSeenAt: v.optional(v.number()),
+    notificationSeenBy: v.optional(v.string()),
     borrowingItems: v.optional(
       v.array(
         v.object({

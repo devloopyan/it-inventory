@@ -779,24 +779,30 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
         row.category !== MONITORING_MEETING_REQUEST_CATEGORY &&
         row.category !== MONITORING_BORROWING_REQUEST_CATEGORY &&
         getServiceGroupForCategory(row.category) === "IT" &&
+        !(row.notificationSeenByGroups ?? []).includes("IT") &&
         getDisplayStatusLabel(row.status, row.category) === "New",
     ).length,
     hrAdmin: (notificationIssueRows ?? []).filter(
       (row) =>
         getServiceGroupForCategory(row.category) === "HR/Admin" &&
+        !(row.notificationSeenByGroups ?? []).includes("HR/Admin") &&
         getDisplayStatusLabel(row.status, row.category) === "New",
     ).length,
     meetings: (notificationIssueRows ?? []).filter(
       (row) =>
         row.category === MONITORING_MEETING_REQUEST_CATEGORY &&
+        !(row.notificationSeenByGroups ?? []).includes("IT") &&
         getDisplayStatusLabel(row.status, row.category) === "New",
     ).length,
     borrowing: (notificationIssueRows ?? []).filter(
       (row) =>
         row.category === MONITORING_BORROWING_REQUEST_CATEGORY &&
+        !(row.notificationSeenByGroups ?? []).includes("IT") &&
         getDisplayStatusLabel(row.status, row.category) === "New",
     ).length,
-    internet: (notificationInternetRows ?? []).filter((row) => row.status === "Investigating").length,
+    internet: (notificationInternetRows ?? []).filter(
+      (row) => row.status === "Investigating" && !(row.notificationSeenByGroups ?? []).includes("IT"),
+    ).length,
   };
 
   const requestRows =

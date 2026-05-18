@@ -48,6 +48,7 @@ import {
   type MonitoringWorkType,
   type MonitoringWorkflowType,
 } from "../lib/monitoring";
+import { getServiceGroupForCategory } from "../lib/serviceGroups";
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 
@@ -871,6 +872,33 @@ export const getById = query({
     const ticket = await ctx.db.get(args.ticketId);
     if (!ticket) return null;
     return await enrichTicketForDetail(ctx, ticket);
+  },
+});
+
+export const markTicketSeen = mutation({
+  args: {
+    ticketId: v.id("monitoringTickets"),
+    actorName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const ticket = await ctx.db.get(args.ticketId);
+    if (!ticket) {
+      throw new Error("Ticket could not be found.");
+    }
+
+    const serviceGroup = getServiceGroupForCategory(ticket.category);
+    const seenByGroups = ticket.notificationSeenByGroups ?? [];
+    if (seenByGroups.includes(serviceGroup)) {
+      return { changed: false };
+    }
+
+    await ctx.db.patch(args.ticketId, {
+      notificationSeenByGroups: [...seenByGroups, serviceGroup],
+      notificationSeenAt: Date.now(),
+      notificationSeenBy: args.actorName,
+    });
+
+    return { changed: true };
   },
 });
 
