@@ -103,6 +103,11 @@ function normalizeWorkstationComponents(
   }));
 }
 
+function normalizeImageStorageIds(ids?: Id<"_storage">[]) {
+  if (!ids?.length) return undefined;
+  return Array.from(new Set(ids));
+}
+
 type HardwareActivityInput = {
   inventoryId?: Id<"hardwareInventory">;
   assetTag: string;
@@ -530,6 +535,7 @@ export const create = mutation({
     warranty: v.string(),
     remarks: v.optional(v.string()),
     imageStorageId: v.optional(v.id("_storage")),
+    imageStorageIds: v.optional(v.array(v.id("_storage"))),
     receivingFormStorageId: v.optional(v.id("_storage")),
     turnoverFormStorageId: v.optional(v.id("_storage")),
     droneFlightReportStorageId: v.optional(v.id("_storage")),
@@ -582,6 +588,7 @@ export const create = mutation({
     const warranty = normalizeRequired(args.warranty, "Warranty");
     const remarks = normalizeOptional(args.remarks);
     const imageStorageId = args.imageStorageId;
+    const imageStorageIds = normalizeImageStorageIds(args.imageStorageIds ?? (imageStorageId ? [imageStorageId] : undefined));
     const receivingFormStorageId = args.receivingFormStorageId;
     const turnoverFormStorageId = args.turnoverFormStorageId;
     const droneFlightReportStorageId = args.droneFlightReportStorageId;
@@ -772,6 +779,7 @@ export const create = mutation({
       warranty,
         remarks,
         imageStorageId,
+        imageStorageIds,
         receivingFormStorageId,
          turnoverFormStorageId,
          droneFlightReportStorageId,
@@ -852,6 +860,7 @@ export const update = mutation({
     warranty: v.string(),
     remarks: v.optional(v.string()),
     imageStorageId: v.optional(v.id("_storage")),
+    imageStorageIds: v.optional(v.array(v.id("_storage"))),
     receivingFormStorageId: v.optional(v.id("_storage")),
     turnoverFormStorageId: v.optional(v.id("_storage")),
     droneFlightReportStorageId: v.optional(v.id("_storage")),
@@ -888,6 +897,7 @@ export const update = mutation({
     const warranty = normalizeRequired(args.warranty, "Warranty");
     const remarks = normalizeOptional(args.remarks);
     const imageStorageId = args.imageStorageId;
+    const imageStorageIds = normalizeImageStorageIds(args.imageStorageIds);
     const receivingFormStorageId = args.receivingFormStorageId;
     const turnoverFormStorageId = args.turnoverFormStorageId;
     const droneFlightReportStorageId = args.droneFlightReportStorageId;
@@ -945,6 +955,7 @@ export const update = mutation({
       remarks: string | undefined;
       updatedAt: number;
       imageStorageId?: typeof args.imageStorageId;
+      imageStorageIds?: typeof args.imageStorageIds;
       receivingFormStorageId?: typeof args.receivingFormStorageId;
       turnoverFormStorageId?: typeof args.turnoverFormStorageId;
       droneFlightReportStorageId?: typeof args.droneFlightReportStorageId;
@@ -977,17 +988,32 @@ export const update = mutation({
       patchData.assignedTo = personAssigned;
     }
 
-    let nextImageStorageId = existing.imageStorageId;
+    const previousImageStorageIds = normalizeImageStorageIds(
+      ((existing as Record<string, unknown>).imageStorageIds as Id<"_storage">[] | undefined) ??
+        (existing.imageStorageId ? [existing.imageStorageId] : undefined),
+    ) ?? [];
+    let nextImageStorageIds = previousImageStorageIds;
     if (clearImage) {
-      nextImageStorageId = undefined;
+      nextImageStorageIds = [];
     }
-    if (imageStorageId !== undefined) {
-      nextImageStorageId = imageStorageId;
+    if (imageStorageIds !== undefined) {
+      nextImageStorageIds = imageStorageIds;
+    } else if (imageStorageId !== undefined) {
+      nextImageStorageIds = [imageStorageId];
     }
-    if (nextImageStorageId !== existing.imageStorageId) {
+    const nextImageStorageId = nextImageStorageIds[0];
+    const imagesChanged =
+      nextImageStorageId !== existing.imageStorageId ||
+      nextImageStorageIds.length !== previousImageStorageIds.length ||
+      nextImageStorageIds.some((storageId, index) => storageId !== previousImageStorageIds[index]);
+    if (imagesChanged) {
       patchData.imageStorageId = nextImageStorageId;
-      if (existing.imageStorageId) {
-        await ctx.storage.delete(existing.imageStorageId);
+      patchData.imageStorageIds = nextImageStorageIds.length ? nextImageStorageIds : undefined;
+      const nextImageSet = new Set(nextImageStorageIds);
+      for (const storageId of previousImageStorageIds) {
+        if (!nextImageSet.has(storageId)) {
+          await ctx.storage.delete(storageId);
+        }
       }
     }
 
@@ -1484,8 +1510,12 @@ export const remove = mutation({
       location: existing.locationPersonAssigned ?? existing.location,
       status: existing.status,
     });
-    if (existing.imageStorageId) {
-      await ctx.storage.delete(existing.imageStorageId);
+    const imageStorageIdsToDelete = normalizeImageStorageIds(
+      ((existing as Record<string, unknown>).imageStorageIds as Id<"_storage">[] | undefined) ??
+        (existing.imageStorageId ? [existing.imageStorageId] : undefined),
+    ) ?? [];
+    for (const storageId of imageStorageIdsToDelete) {
+      await ctx.storage.delete(storageId);
     }
     const receivingFormStorageId = (existing as Record<string, unknown>).receivingFormStorageId;
     if (receivingFormStorageId) {

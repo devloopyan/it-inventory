@@ -7,7 +7,9 @@ type FileUploadCardProps = {
   inputRef: RefObject<HTMLInputElement | null>;
   accept?: string;
   onFileChange: (file: File | null) => void;
+  onFilesChange?: (files: File[]) => void;
   file?: File | null;
+  multiple?: boolean;
   hasAttachment: boolean;
   displayName: string;
   helperText: string;
@@ -50,7 +52,9 @@ export default function FileUploadCard({
   inputRef,
   accept,
   onFileChange,
+  onFilesChange,
   file,
+  multiple = false,
   hasAttachment,
   displayName,
   helperText,
@@ -85,7 +89,15 @@ export default function FileUploadCard({
         className="file-card-native"
         type="file"
         accept={accept}
-        onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+        multiple={multiple}
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          if (onFilesChange) {
+            onFilesChange(files);
+            return;
+          }
+          onFileChange(files[0] ?? null);
+        }}
         aria-label={ariaLabel}
         title={title}
       />

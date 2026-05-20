@@ -1301,6 +1301,7 @@ export const updateTicket = mutation({
     clearAssetLink: v.optional(v.boolean()),
     impact: v.optional(v.string()),
     urgency: v.optional(v.string()),
+    priority: v.optional(v.string()),
     status: v.optional(v.string()),
     pendingReason: v.optional(v.string()),
     closeReason: v.optional(v.string()),
@@ -1537,6 +1538,7 @@ export const updateTicket = mutation({
 
     let nextImpact: string | undefined;
     let nextUrgency: string | undefined;
+    const nextPriority = normalizeOptional(args.priority);
 
     if (!isMeetingRequest && !isBorrowingRequest) {
       nextImpact = args.impact
@@ -1658,7 +1660,7 @@ export const updateTicket = mutation({
       assetTag,
       impact: nextImpact,
       urgency: nextUrgency,
-      priority: nextImpact && nextUrgency ? getPriorityFromImpactUrgency(nextImpact, nextUrgency) : undefined,
+      priority: nextPriority ?? (nextImpact && nextUrgency ? getPriorityFromImpactUrgency(nextImpact, nextUrgency) : undefined),
       status: nextStatus,
       pendingReason: requiresPendingReason(nextStatus) ? nextPendingReason : undefined,
       closeReason: nextCloseReason,

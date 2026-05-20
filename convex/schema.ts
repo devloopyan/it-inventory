@@ -110,6 +110,7 @@ export default defineSchema({
     borrowReturnCondition: v.optional(v.string()),
     borrowReturnConditionCheckedAt: v.optional(v.number()),
     imageStorageId: v.optional(v.id("_storage")),
+    imageStorageIds: v.optional(v.array(v.id("_storage"))),
     receivingFormStorageId: v.optional(v.id("_storage")),
     turnoverFormStorageId: v.optional(v.id("_storage")),
     droneFlightReportStorageId: v.optional(v.id("_storage")),
@@ -220,6 +221,13 @@ export default defineSchema({
     requestedItemsText: v.optional(v.string()),
     requestedBorrowDate: v.optional(v.number()),
     expectedReturnAt: v.optional(v.number()),
+    fleetDriverId: v.optional(v.id("fleetDrivers")),
+    fleetDriverName: v.optional(v.string()),
+    fleetVehicleId: v.optional(v.id("fleetVehicles")),
+    fleetVehicleName: v.optional(v.string()),
+    fleetVehiclePlateNumber: v.optional(v.string()),
+    fleetAssignedAt: v.optional(v.number()),
+    fleetAssignedBy: v.optional(v.string()),
     notificationSeenByGroups: v.optional(v.array(v.string())),
     notificationSeenAt: v.optional(v.number()),
     notificationSeenBy: v.optional(v.string()),
@@ -283,6 +291,29 @@ export default defineSchema({
     createdBy: v.optional(v.string()),
   })
     .index("by_startAt", ["startAt"])
+    .index("by_updatedAt", ["updatedAt"]),
+  fleetDrivers: defineTable({
+    name: v.string(),
+    position: v.optional(v.string()),
+    contactNumber: v.optional(v.string()),
+    status: v.string(),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_updatedAt", ["updatedAt"]),
+  fleetVehicles: defineTable({
+    name: v.string(),
+    plateNumber: v.string(),
+    vehicleType: v.string(),
+    capacity: v.optional(v.number()),
+    status: v.string(),
+    notes: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
     .index("by_updatedAt", ["updatedAt"]),
   operationsTasks: defineTable({
     title: v.string(),

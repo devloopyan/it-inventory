@@ -550,7 +550,7 @@ export default function HardwareInventoryPage() {
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState<{ id: number; message: string } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [selectedImageFiles, setSelectedImageFiles] = useState<File[]>([]);
   const [droneKitComponentImageFiles, setDroneKitComponentImageFiles] = useState(
     defaultDroneKitComponentImageFiles,
   );
@@ -562,6 +562,7 @@ export default function HardwareInventoryPage() {
     Record<string, { status: HardwareStatus; borrower: string }>
   >({});
   const [inlineSavingId, setInlineSavingId] = useState<string>("");
+  const selectedImageFile = selectedImageFiles[0] ?? null;
 
   const hasActiveMasterFilters = Boolean(
     search.trim() || assetTypeFilter.length || statusFilter || locationFilter,
@@ -762,7 +763,7 @@ export default function HardwareInventoryPage() {
           }
           inputRef={imageInputRef}
           accept="image/*"
-          onFileChange={(file) => setSelectedImageFile(file)}
+          onFileChange={(file) => setSelectedImageFiles(file ? [file] : [])}
           file={selectedImageFile}
           hasAttachment={Boolean(selectedImageFile)}
           displayName={selectedImageFile ? selectedImageFile.name : "Drone unit image"}
@@ -773,7 +774,7 @@ export default function HardwareInventoryPage() {
           onRemove={
             selectedImageFile
               ? () => {
-                  setSelectedImageFile(null);
+                  setSelectedImageFiles([]);
                   if (imageInputRef.current) {
                     imageInputRef.current.value = "";
                   }
@@ -1684,7 +1685,10 @@ export default function HardwareInventoryPage() {
 
     try {
       setIsSaving(true);
-      const imageStorageId = await uploadFileToStorage(selectedImageFile, "Image upload failed.");
+      const imageStorageIds = await Promise.all(
+        selectedImageFiles.map((file) => uploadFileToStorage(file, "Image upload failed.")),
+      );
+      const imageStorageId = imageStorageIds[0];
       const batteryImageStorageId = isDroneKitMode
         ? await uploadFileToStorage(
             droneKitComponentImageFiles.battery,
@@ -1735,6 +1739,7 @@ export default function HardwareInventoryPage() {
         warranty: form.warranty,
         remarks: form.remarks || undefined,
         imageStorageId,
+        imageStorageIds: imageStorageIds.filter(Boolean) as Id<"_storage">[],
         receivingFormStorageId,
         turnoverFormStorageId,
         registerMode,
@@ -1818,7 +1823,7 @@ export default function HardwareInventoryPage() {
       setDesktopForm(defaultDesktopForm);
       setDroneKitForm(defaultDroneKitForm);
       setSpecTier("");
-      setSelectedImageFile(null);
+      setSelectedImageFiles([]);
       setDroneKitComponentImageFiles(defaultDroneKitComponentImageFiles);
       setSelectedReceivingFormFile(null);
       setSelectedTurnoverFormFile(null);
@@ -2398,18 +2403,26 @@ export default function HardwareInventoryPage() {
               }
               inputRef={imageInputRef}
               accept="image/*"
-              onFileChange={(file) => setSelectedImageFile(file)}
+              multiple
+              onFileChange={(file) => setSelectedImageFiles(file ? [file] : [])}
+              onFilesChange={(files) => setSelectedImageFiles(files)}
               file={selectedImageFile}
-              hasAttachment={Boolean(selectedImageFile)}
-              displayName={selectedImageFile ? selectedImageFile.name : "Asset image"}
-              helperText=""
+              hasAttachment={selectedImageFiles.length > 0}
+              displayName={
+                selectedImageFiles.length > 1
+                  ? `${selectedImageFiles.length} asset images selected`
+                  : selectedImageFile
+                    ? selectedImageFile.name
+                    : "Asset images"
+              }
+              helperText={selectedImageFiles.length > 1 ? selectedImageFiles.map((file) => file.name).join(", ") : ""}
               badge="IMG"
               ariaLabel="Asset image upload"
-              title="Upload asset image"
+              title="Upload asset images"
               onRemove={
-                selectedImageFile
+                selectedImageFiles.length
                   ? () => {
-                      setSelectedImageFile(null);
+                      setSelectedImageFiles([]);
                       if (imageInputRef.current) {
                         imageInputRef.current.value = "";
                       }

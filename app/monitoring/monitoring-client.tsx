@@ -1,7 +1,16 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  startTransition,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -20,6 +29,8 @@ import {
   MONITORING_MEETING_REQUEST_CATEGORY,
   MONITORING_REQUEST_SOURCE,
   MONITORING_TICKET_CATEGORIES,
+  MONITORING_TRAVEL_ORDER_CATEGORY,
+  MONITORING_PRIORITY_OPTIONS,
   MONITORING_URGENCY_OPTIONS,
   MONITORING_WORK_TYPES,
   normalizeMeetingRequestStatusValue,
@@ -35,6 +46,7 @@ type MonitoringClientProps = {
 };
 
 type MonitoringTab = "issues" | "hrAdmin" | "meetings" | "borrowing" | "internet";
+type HrAdminArchiveView = "active" | "archive";
 
 type IssueFormState = {
   workType: (typeof MONITORING_WORK_TYPES)[number];
@@ -97,6 +109,83 @@ type MeetingFormState = {
     assetLabel: string;
   }>;
   supportNotes: string;
+};
+
+type FleetDriverAvailabilityRow = {
+  _id: Id<"fleetDrivers">;
+  name: string;
+  position?: string;
+  contactNumber?: string;
+  status: string;
+  notes?: string;
+};
+
+type FleetVehicleAvailabilityRow = {
+  _id: Id<"fleetVehicles">;
+  name: string;
+  plateNumber: string;
+  vehicleType: string;
+  capacity?: number;
+  status: string;
+  notes?: string;
+};
+
+type FleetDriverFormState = {
+  name: string;
+  position: string;
+  contactNumber: string;
+  status: string;
+  notes: string;
+};
+
+type FleetVehicleFormState = {
+  name: string;
+  plateNumber: string;
+  vehicleType: string;
+  capacity: string;
+  status: string;
+  notes: string;
+};
+
+type FleetAssignmentFormState = {
+  driverId: string;
+  vehicleId: string;
+};
+
+type FleetAssignmentTicket = {
+  _id: Id<"monitoringTickets">;
+  ticketNumber: string;
+  title: string;
+  fleetDriverId?: Id<"fleetDrivers">;
+  fleetDriverName?: string;
+  fleetVehicleId?: Id<"fleetVehicles">;
+  fleetVehicleName?: string;
+  fleetVehiclePlateNumber?: string;
+};
+
+const FLEET_DRIVER_STATUSES = ["Available", "Assigned", "Unavailable"] as const;
+const FLEET_VEHICLE_STATUSES = ["Available", "Assigned", "Maintenance", "Unavailable"] as const;
+
+const defaultFleetDriverForm: FleetDriverFormState = {
+  name: "",
+  position: "",
+  contactNumber: "",
+  status: "Available",
+  notes: "",
+};
+
+const defaultFleetVehicleForm: FleetVehicleFormState = {
+  name: "",
+  plateNumber: "",
+  vehicleType: "",
+  capacity: "",
+  status: "Available",
+  notes: "",
+};
+
+const defaultFleetAssignmentForm: FleetAssignmentFormState = {
+  driverId: "",
+  vehicleId: "",
 };
 
 const defaultIssueForm: IssueFormState = {
@@ -202,6 +291,16 @@ function formatDateTimeInput(value: string, options?: Intl.DateTimeFormatOptions
   });
 }
 
+function formatDateFilterValue(value?: number) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function formatMeetingSchedule(start: string, end: string) {
   const startLabel = formatDateTimeInput(start);
   if (!end) return startLabel;
@@ -217,9 +316,55 @@ function getMeetingRequestListTitle(title: string, meetingStartAt?: number) {
   return withoutPrefix;
 }
 
+function getTravelPurposeFromDetails(requestDetails?: string) {
+  const purposeLine = requestDetails
+    ?.split(/\r?\n/)
+    .find((line) => /^Purpose of travel:/i.test(line.trim()));
+  return purposeLine?.replace(/^Purpose of travel:\s*/i, "").trim() || "-";
+}
+
+function getTravelScheduleFromDetails(requestDetails?: string) {
+  const lines = requestDetails?.split(/\r?\n/).map((line) => line.trim()) ?? [];
+  const departure = lines.find((line) => /^Departure:/i.test(line))?.replace(/^Departure:\s*/i, "").trim();
+  const returnAt = lines.find((line) => /^Return:/i.test(line))?.replace(/^Return:\s*/i, "").trim();
+  return {
+    departure: departure || "-",
+    returnAt: returnAt || "-",
+  };
+}
+
+function formatCompactTravelDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function getDisplayStatusLabel(status: string, category?: string) {
   if (category === MONITORING_MEETING_REQUEST_CATEGORY) {
     return normalizeMeetingRequestStatusValue(status) ?? status;
+  }
+  return status;
+}
+
+function getTravelOrderDisplayStatus(row: {
+  status: string;
+  category?: string;
+  fleetDriverName?: string;
+  fleetVehicleName?: string;
+}) {
+  const status = getDisplayStatusLabel(row.status, row.category);
+  if (
+    row.category === MONITORING_TRAVEL_ORDER_CATEGORY &&
+    status === "New" &&
+    row.fleetDriverName &&
+    row.fleetVehicleName
+  ) {
+    return "Assigned";
   }
   return status;
 }
@@ -240,6 +385,7 @@ function getChipStyle(status: string) {
     case "P2":
     case "Reserved":
     case "Assets Reserved":
+    case "Assigned":
     case "Pending Approval":
     case "Pending":
     case "Investigating":
@@ -302,6 +448,525 @@ function Chip({ label }: { label: string }) {
     >
       {label}
     </span>
+  );
+}
+
+function getFleetInitials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("") || "DR";
+}
+
+function getDriverStatusStyle(status: string): CSSProperties {
+  if (status === "Available") {
+    return { background: "#dcfce7", color: "#166534" };
+  }
+  if (status === "Assigned") {
+    return { background: "#fef3c7", color: "#92400e" };
+  }
+  if (status === "Unavailable") {
+    return { background: "#fee2e2", color: "#991b1b" };
+  }
+  return { background: "#e5e7eb", color: "#374151" };
+}
+
+function formatDriverHoverDetails(driver: FleetDriverAvailabilityRow) {
+  return [
+    driver.name,
+    `Status: ${driver.status}`,
+    `Position: ${driver.position ?? "Driver"}`,
+    `Contact: ${driver.contactNumber ?? "-"}`,
+    driver.notes ? `Notes: ${driver.notes}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function FleetAvailabilitySection(props: {
+  loading: boolean;
+  drivers: FleetDriverAvailabilityRow[];
+  vehicles: FleetVehicleAvailabilityRow[];
+  canManage: boolean;
+  onManage: () => void;
+}) {
+  const availableDriverCount = props.drivers.filter((driver) => driver.status === "Available").length;
+  return (
+    <section className="monitoring-fleet-panel" aria-label="Fleet availability">
+      <div className="monitoring-fleet-head">
+        <div>
+          <h2 className="type-section-title">Fleet Availability</h2>
+          <p className="type-section-copy">Available drivers and vehicles for travel order coordination.</p>
+        </div>
+        <div className="monitoring-fleet-head-actions">
+          <div className="monitoring-fleet-counts" aria-label="Fleet availability counts">
+            <span>{availableDriverCount}/{props.drivers.length} drivers available</span>
+            <span>{props.vehicles.length} vehicles</span>
+          </div>
+          {props.canManage ? (
+            <button type="button" className="btn-secondary" onClick={props.onManage}>
+              Manage Fleet
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="monitoring-fleet-grid">
+        <div className="monitoring-fleet-column">
+          <div className="monitoring-fleet-column-head">
+            <strong>Drivers</strong>
+          </div>
+          <div
+            className="monitoring-driver-profile-row"
+            style={{ display: "flex", gap: 8, overflowX: "auto", overflowY: "hidden", padding: "2px 2px 10px" }}
+          >
+            {props.loading ? (
+              <div className="monitoring-fleet-empty">Loading available drivers...</div>
+            ) : props.drivers.length ? (
+              props.drivers.map((driver) => (
+                <article
+                  key={String(driver._id)}
+                  className="monitoring-driver-profile"
+                  tabIndex={0}
+                  aria-label={`${driver.name}, ${driver.status}`}
+                  title={formatDriverHoverDetails(driver)}
+                  style={{
+                    position: "relative",
+                    flex: "0 0 74px",
+                    display: "grid",
+                    justifyItems: "center",
+                    alignContent: "start",
+                    gap: 4,
+                    minHeight: 96,
+                    padding: 2,
+                    borderRadius: 12,
+                    outline: "none",
+                  }}
+                >
+                  <span
+                    className="monitoring-driver-status"
+                    style={{
+                      ...getDriverStatusStyle(driver.status),
+                      maxWidth: 70,
+                      padding: "2px 6px",
+                      borderRadius: 999,
+                      fontSize: 9,
+                      fontWeight: 800,
+                      lineHeight: 1.2,
+                      textAlign: "center",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {driver.status}
+                  </span>
+                  <div
+                    className="monitoring-driver-avatar"
+                    aria-hidden="true"
+                    style={{
+                      width: 44,
+                      height: 44,
+                      display: "grid",
+                      placeItems: "center",
+                      borderRadius: 999,
+                      border: "1px solid rgba(var(--brand-900-rgb), 0.18)",
+                      background: "rgba(var(--brand-900-rgb), 0.1)",
+                      color: "var(--foreground)",
+                      fontSize: 14,
+                      fontWeight: 900,
+                      letterSpacing: 0,
+                    }}
+                  >
+                    {getFleetInitials(driver.name)}
+                  </div>
+                  <strong
+                    className="monitoring-driver-name"
+                    style={{
+                      width: "100%",
+                      color: "var(--foreground)",
+                      fontSize: 11,
+                      lineHeight: 1.25,
+                      textAlign: "center",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {driver.name}
+                  </strong>
+                </article>
+              ))
+            ) : (
+              <div className="monitoring-fleet-empty">No drivers have been added yet.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="monitoring-fleet-column">
+          <div className="monitoring-fleet-column-head">
+            <strong>Available Vehicles</strong>
+            <Chip label={String(props.vehicles.length)} />
+          </div>
+          <div
+            className="monitoring-fleet-list monitoring-vehicle-scroll-list"
+            style={{
+              display: "grid",
+              gap: 6,
+              maxHeight: 128,
+              overflowY: "auto",
+              overflowX: "hidden",
+              paddingRight: 4,
+              minHeight: 0,
+            }}
+          >
+            {props.loading ? (
+              <div className="monitoring-fleet-empty">Loading available vehicles...</div>
+            ) : props.vehicles.length ? (
+              props.vehicles.map((vehicle) => (
+                <article key={String(vehicle._id)} className="monitoring-fleet-card">
+                  <div className="monitoring-fleet-card-main">
+                    <strong>{vehicle.name}</strong>
+                    <span>
+                      {vehicle.vehicleType} | {vehicle.plateNumber}
+                    </span>
+                    {vehicle.capacity ? <span>Capacity: {vehicle.capacity}</span> : null}
+                  </div>
+                  <Chip label={vehicle.status} />
+                </article>
+              ))
+            ) : (
+              <div className="monitoring-fleet-empty">No vehicles are marked available right now.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FleetManagementModal(props: {
+  open: boolean;
+  loading: boolean;
+  drivers: FleetDriverAvailabilityRow[];
+  vehicles: FleetVehicleAvailabilityRow[];
+  driverForm: FleetDriverFormState;
+  vehicleForm: FleetVehicleFormState;
+  editingDriverId: Id<"fleetDrivers"> | null;
+  editingVehicleId: Id<"fleetVehicles"> | null;
+  saving: boolean;
+  error: string;
+  onClose: () => void;
+  onDriverFormChange: (form: FleetDriverFormState) => void;
+  onVehicleFormChange: (form: FleetVehicleFormState) => void;
+  onSaveDriver: () => void;
+  onSaveVehicle: () => void;
+  onEditDriver: (driver: FleetDriverAvailabilityRow) => void;
+  onEditVehicle: (vehicle: FleetVehicleAvailabilityRow) => void;
+  onDeleteDriver: (driver: FleetDriverAvailabilityRow) => void;
+  onDeleteVehicle: (vehicle: FleetVehicleAvailabilityRow) => void;
+  onResetDriver: () => void;
+  onResetVehicle: () => void;
+}) {
+  if (!props.open) return null;
+
+  return (
+    <MonitoringFormModal open={props.open} onClose={props.onClose} width={1080}>
+      <section className="saas-card monitoring-form-card monitoring-fleet-manage-card">
+        <div className="monitoring-form-head">
+          <div className="type-section-title">Fleet Management</div>
+          <div className="type-helper">HR/Admin and Admin can add, edit, or remove drivers and vehicles.</div>
+        </div>
+        <FormErrorBanner message={props.error} />
+
+        <div className="monitoring-fleet-manage-grid">
+          <section className="monitoring-fleet-manage-section">
+            <div className="monitoring-fleet-column-head">
+              <strong>{props.editingDriverId ? "Edit Driver" : "Add Driver"}</strong>
+              {props.editingDriverId ? (
+                <button type="button" className="btn-secondary" onClick={props.onResetDriver} disabled={props.saving}>
+                  New Driver
+                </button>
+              ) : null}
+            </div>
+            <div className="monitoring-form-grid">
+              <FieldGroup label="Driver Name" required>
+                <input
+                  className="input-base"
+                  value={props.driverForm.name}
+                  onChange={(event) => props.onDriverFormChange({ ...props.driverForm, name: event.target.value })}
+                  placeholder="Full name"
+                />
+              </FieldGroup>
+              <FieldGroup label="Position">
+                <input
+                  className="input-base"
+                  value={props.driverForm.position}
+                  onChange={(event) => props.onDriverFormChange({ ...props.driverForm, position: event.target.value })}
+                  placeholder="Company Driver"
+                />
+              </FieldGroup>
+              <FieldGroup label="Contact Number">
+                <input
+                  className="input-base"
+                  value={props.driverForm.contactNumber}
+                  onChange={(event) =>
+                    props.onDriverFormChange({ ...props.driverForm, contactNumber: event.target.value })
+                  }
+                  placeholder="Mobile number"
+                />
+              </FieldGroup>
+              <FieldGroup label="Status" required>
+                <select
+                  className="input-base"
+                  value={props.driverForm.status}
+                  onChange={(event) => props.onDriverFormChange({ ...props.driverForm, status: event.target.value })}
+                >
+                  {FLEET_DRIVER_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </FieldGroup>
+            </div>
+            <FieldGroup label="Notes">
+              <textarea
+                className="input-base monitoring-form-textarea"
+                value={props.driverForm.notes}
+                onChange={(event) => props.onDriverFormChange({ ...props.driverForm, notes: event.target.value })}
+                placeholder="Optional notes"
+              />
+            </FieldGroup>
+            <div className="monitoring-form-actions">
+              <button type="button" className="btn-primary" onClick={props.onSaveDriver} disabled={props.saving}>
+                {props.saving ? "Saving..." : props.editingDriverId ? "Save Driver" : "Add Driver"}
+              </button>
+            </div>
+
+            <div className="monitoring-fleet-manage-list">
+              {props.loading ? (
+                <div className="monitoring-fleet-empty">Loading drivers...</div>
+              ) : props.drivers.length ? (
+                props.drivers.map((driver) => (
+                  <article key={driver._id} className="monitoring-fleet-manage-row">
+                    <div className="monitoring-fleet-card-main">
+                      <strong>{driver.name}</strong>
+                      <span>{[driver.position, driver.contactNumber].filter(Boolean).join(" | ") || "No details"}</span>
+                    </div>
+                    <Chip label={driver.status} />
+                    <div className="monitoring-fleet-row-actions">
+                      <button type="button" className="btn-secondary" onClick={() => props.onEditDriver(driver)}>
+                        Edit
+                      </button>
+                      <button type="button" className="btn-secondary" onClick={() => props.onDeleteDriver(driver)}>
+                        Remove
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="monitoring-fleet-empty">No drivers added yet.</div>
+              )}
+            </div>
+          </section>
+
+          <section className="monitoring-fleet-manage-section">
+            <div className="monitoring-fleet-column-head">
+              <strong>{props.editingVehicleId ? "Edit Vehicle" : "Add Vehicle"}</strong>
+              {props.editingVehicleId ? (
+                <button type="button" className="btn-secondary" onClick={props.onResetVehicle} disabled={props.saving}>
+                  New Vehicle
+                </button>
+              ) : null}
+            </div>
+            <div className="monitoring-form-grid">
+              <FieldGroup label="Vehicle Name" required>
+                <input
+                  className="input-base"
+                  value={props.vehicleForm.name}
+                  onChange={(event) => props.onVehicleFormChange({ ...props.vehicleForm, name: event.target.value })}
+                  placeholder="Toyota Hiace"
+                />
+              </FieldGroup>
+              <FieldGroup label="Plate Number" required>
+                <input
+                  className="input-base"
+                  value={props.vehicleForm.plateNumber}
+                  onChange={(event) =>
+                    props.onVehicleFormChange({ ...props.vehicleForm, plateNumber: event.target.value })
+                  }
+                  placeholder="ABC 1234"
+                />
+              </FieldGroup>
+              <FieldGroup label="Type" required>
+                <input
+                  className="input-base"
+                  value={props.vehicleForm.vehicleType}
+                  onChange={(event) =>
+                    props.onVehicleFormChange({ ...props.vehicleForm, vehicleType: event.target.value })
+                  }
+                  placeholder="Van, Sedan, Pickup"
+                />
+              </FieldGroup>
+              <FieldGroup label="Capacity">
+                <input
+                  className="input-base"
+                  type="number"
+                  min="1"
+                  value={props.vehicleForm.capacity}
+                  onChange={(event) =>
+                    props.onVehicleFormChange({ ...props.vehicleForm, capacity: event.target.value })
+                  }
+                  placeholder="Seats"
+                />
+              </FieldGroup>
+              <FieldGroup label="Status" required>
+                <select
+                  className="input-base"
+                  value={props.vehicleForm.status}
+                  onChange={(event) => props.onVehicleFormChange({ ...props.vehicleForm, status: event.target.value })}
+                >
+                  {FLEET_VEHICLE_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </FieldGroup>
+            </div>
+            <FieldGroup label="Notes">
+              <textarea
+                className="input-base monitoring-form-textarea"
+                value={props.vehicleForm.notes}
+                onChange={(event) => props.onVehicleFormChange({ ...props.vehicleForm, notes: event.target.value })}
+                placeholder="Optional notes"
+              />
+            </FieldGroup>
+            <div className="monitoring-form-actions">
+              <button type="button" className="btn-primary" onClick={props.onSaveVehicle} disabled={props.saving}>
+                {props.saving ? "Saving..." : props.editingVehicleId ? "Save Vehicle" : "Add Vehicle"}
+              </button>
+            </div>
+
+            <div className="monitoring-fleet-manage-list">
+              {props.loading ? (
+                <div className="monitoring-fleet-empty">Loading vehicles...</div>
+              ) : props.vehicles.length ? (
+                props.vehicles.map((vehicle) => (
+                  <article key={vehicle._id} className="monitoring-fleet-manage-row">
+                    <div className="monitoring-fleet-card-main">
+                      <strong>{vehicle.name}</strong>
+                      <span>
+                        {vehicle.vehicleType} | {vehicle.plateNumber}
+                        {vehicle.capacity ? ` | ${vehicle.capacity} seats` : ""}
+                      </span>
+                    </div>
+                    <Chip label={vehicle.status} />
+                    <div className="monitoring-fleet-row-actions">
+                      <button type="button" className="btn-secondary" onClick={() => props.onEditVehicle(vehicle)}>
+                        Edit
+                      </button>
+                      <button type="button" className="btn-secondary" onClick={() => props.onDeleteVehicle(vehicle)}>
+                        Remove
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="monitoring-fleet-empty">No vehicles added yet.</div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <div className="monitoring-form-actions">
+          <button type="button" className="btn-secondary" onClick={props.onClose} disabled={props.saving}>
+            Close
+          </button>
+        </div>
+      </section>
+    </MonitoringFormModal>
+  );
+}
+
+function FleetAssignmentModal(props: {
+  open: boolean;
+  ticket: FleetAssignmentTicket | null;
+  form: FleetAssignmentFormState;
+  drivers: FleetDriverAvailabilityRow[];
+  vehicles: FleetVehicleAvailabilityRow[];
+  saving: boolean;
+  error: string;
+  onClose: () => void;
+  onFormChange: (form: FleetAssignmentFormState) => void;
+  onSave: () => void;
+}) {
+  if (!props.open || !props.ticket) return null;
+
+  const driverOptions = props.drivers.filter(
+    (driver) => driver.status === "Available" || String(driver._id) === props.form.driverId,
+  );
+  const vehicleOptions = props.vehicles.filter(
+    (vehicle) => vehicle.status === "Available" || String(vehicle._id) === props.form.vehicleId,
+  );
+
+  return (
+    <MonitoringFormModal open={props.open} onClose={props.onClose} width={720}>
+      <section className="saas-card monitoring-form-card">
+        <div className="monitoring-form-head">
+          <div className="type-section-title">Assign Driver and Vehicle</div>
+          <div className="type-helper">
+            {props.ticket.ticketNumber} | {props.ticket.title}
+          </div>
+        </div>
+        <FormErrorBanner message={props.error} />
+
+        <div className="monitoring-form-grid">
+          <FieldGroup label="Driver" required>
+            <select
+              className="input-base"
+              value={props.form.driverId}
+              onChange={(event) => props.onFormChange({ ...props.form, driverId: event.target.value })}
+            >
+              <option value="">Select driver</option>
+              {driverOptions.map((driver) => (
+                <option key={driver._id} value={String(driver._id)}>
+                  {driver.name} | {driver.status}
+                </option>
+              ))}
+            </select>
+          </FieldGroup>
+
+          <FieldGroup label="Vehicle" required>
+            <select
+              className="input-base"
+              value={props.form.vehicleId}
+              onChange={(event) => props.onFormChange({ ...props.form, vehicleId: event.target.value })}
+            >
+              <option value="">Select vehicle</option>
+              {vehicleOptions.map((vehicle) => (
+                <option key={vehicle._id} value={String(vehicle._id)}>
+                  {vehicle.name} | {vehicle.plateNumber} | {vehicle.status}
+                </option>
+              ))}
+            </select>
+          </FieldGroup>
+        </div>
+
+        {props.ticket.fleetDriverName || props.ticket.fleetVehicleName ? (
+          <div className="monitoring-fleet-assignment-current">
+            Current assignment: {[props.ticket.fleetDriverName, props.ticket.fleetVehicleName].filter(Boolean).join(" | ")}
+          </div>
+        ) : null}
+
+        <div className="monitoring-form-actions">
+          <button type="button" className="btn-secondary" onClick={props.onClose} disabled={props.saving}>
+            Cancel
+          </button>
+          <button type="button" className="btn-primary" onClick={props.onSave} disabled={props.saving}>
+            {props.saving ? "Saving..." : "Save Assignment"}
+          </button>
+        </div>
+      </section>
+    </MonitoringFormModal>
   );
 }
 
@@ -370,6 +1035,83 @@ function FilterCheckIcon() {
         d="M2.5 6.1L4.9 8.5L9.5 3.9"
         stroke="currentColor"
         strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function FleetAssignIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5 20a7 7 0 0 1 14 0"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TravelDoneIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M5 12.5l4.2 4.2L19 7"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ViewTicketIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 12s3.4-6 9.5-6s9.5 6 9.5 6s-3.4 6-9.5 6s-9.5-6-9.5-6Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 15a3 3 0 1 0 0-6a3 3 0 0 0 0 6Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ReopenTicketIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 10a8 8 0 1 1 2.3 5.7"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 10V5m0 5h5"
+        stroke="currentColor"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -647,9 +1389,22 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const assets = useQuery(api.hardwareInventory.listAll, {});
+  const fleetAvailability = useQuery(
+    api.fleet.listAvailability,
+    canSeeHrAdminQueue ? { includeUnavailable: true } : "skip",
+  );
   const syncAutoClose = useMutation(api.monitoring.syncAutoClose);
   const createTicket = useMutation(api.monitoring.createTicket);
   const updateTicket = useMutation(api.monitoring.updateTicket);
+  const createFleetDriver = useMutation(api.fleet.createDriver);
+  const updateFleetDriver = useMutation(api.fleet.updateDriver);
+  const deleteFleetDriver = useMutation(api.fleet.deleteDriver);
+  const createFleetVehicle = useMutation(api.fleet.createVehicle);
+  const updateFleetVehicle = useMutation(api.fleet.updateVehicle);
+  const deleteFleetVehicle = useMutation(api.fleet.deleteVehicle);
+  const assignTravelOrderFleet = useMutation(api.fleet.assignTravelOrderFleet);
+  const markTravelOrderDone = useMutation(api.fleet.markTravelOrderDone);
+  const reopenTravelOrder = useMutation(api.fleet.reopenTravelOrder);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const [activeTab, setActiveTab] = useState<MonitoringTab>(() => {
     const requestedTab = searchParams?.get("tab") ?? null;
@@ -664,6 +1419,8 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [requestStatusFilters, setRequestStatusFilters] = useState<ReadonlyArray<string>>([]);
   const [internetStatusFilters, setInternetStatusFilters] = useState<ReadonlyArray<string>>([]);
   const [meetingStatusFilters, setMeetingStatusFilters] = useState<ReadonlyArray<string>>([]);
+  const [hrAdminDateFilter, setHrAdminDateFilter] = useState("");
+  const [hrAdminArchiveView, setHrAdminArchiveView] = useState<HrAdminArchiveView>("active");
   const [filterNeedsApproval, setFilterNeedsApproval] = useState(false);
   const [filterMissingReport, setFilterMissingReport] = useState(false);
   const [filterForRevision, setFilterForRevision] = useState(false);
@@ -683,6 +1440,22 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [requestTableError, setRequestTableError] = useState("");
   const [meetingStatusSavingId, setMeetingStatusSavingId] = useState("");
   const [meetingStatusDrafts, setMeetingStatusDrafts] = useState<Record<string, string>>({});
+  const [showFleetManage, setShowFleetManage] = useState(false);
+  const [fleetSaving, setFleetSaving] = useState(false);
+  const [fleetError, setFleetError] = useState("");
+  const [fleetDriverForm, setFleetDriverForm] = useState<FleetDriverFormState>(defaultFleetDriverForm);
+  const [fleetVehicleForm, setFleetVehicleForm] = useState<FleetVehicleFormState>(defaultFleetVehicleForm);
+  const [editingFleetDriverId, setEditingFleetDriverId] = useState<Id<"fleetDrivers"> | null>(null);
+  const [editingFleetVehicleId, setEditingFleetVehicleId] = useState<Id<"fleetVehicles"> | null>(null);
+  const [showFleetAssignment, setShowFleetAssignment] = useState(false);
+  const [fleetAssignmentTicket, setFleetAssignmentTicket] = useState<FleetAssignmentTicket | null>(null);
+  const [fleetAssignmentForm, setFleetAssignmentForm] =
+    useState<FleetAssignmentFormState>(defaultFleetAssignmentForm);
+  const [fleetAssignmentSaving, setFleetAssignmentSaving] = useState(false);
+  const [fleetAssignmentError, setFleetAssignmentError] = useState("");
+  const [prioritySavingId, setPrioritySavingId] = useState("");
+  const [travelDoneSavingId, setTravelDoneSavingId] = useState("");
+  const [travelReopenSavingId, setTravelReopenSavingId] = useState("");
   const issueAttachmentRef = useRef<HTMLInputElement | null>(null);
   const borrowingAttachmentRef = useRef<HTMLInputElement | null>(null);
   const deferredIssueSearch = useDeferredValue(issueSearch);
@@ -739,9 +1512,13 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const hrAdminRequestRows = [...(issueRows ?? [])]
     .filter((row) => getServiceGroupForCategory(row.category) === "HR/Admin")
     .filter((row) => {
-      if (requestStatusFilters.length === 0) return true;
-      const requestState = getDisplayStatusLabel(row.status, row.category) === "Closed" ? "Closed" : "Open";
-      return requestStatusFilters.includes(requestState);
+      const displayStatus = getTravelOrderDisplayStatus(row);
+      const archived = displayStatus === "Fulfilled" || displayStatus === "Closed" || displayStatus === "Done";
+      return hrAdminArchiveView === "archive" ? archived : !archived;
+    })
+    .filter((row) => {
+      if (!hrAdminDateFilter) return true;
+      return formatDateFilterValue(row.requestReceivedAt) === hrAdminDateFilter;
     })
     .sort((left, right) => right.updatedAt - left.updatedAt);
   const meetingStatusFilterValues = [...getMeetingRequestStatusOptions(), "Closed"];
@@ -786,7 +1563,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
       (row) =>
         getServiceGroupForCategory(row.category) === "HR/Admin" &&
         !(row.notificationSeenByGroups ?? []).includes("HR/Admin") &&
-        getDisplayStatusLabel(row.status, row.category) === "New",
+        getTravelOrderDisplayStatus(row) === "New",
     ).length,
     meetings: (notificationIssueRows ?? []).filter(
       (row) =>
@@ -827,13 +1604,28 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
       : activeTab === "borrowing"
         ? "No borrowing requests match the current filters."
         : activeTab === "hrAdmin"
-          ? "No HR/Admin requests match the current filters."
+          ? hrAdminArchiveView === "archive"
+            ? "No archived HR/Admin requests match the current filters."
+            : "No active HR/Admin requests match the current filters."
           : "No IT tickets match the current filters.";
   const requestMetaColumnLabel =
-    activeTab === "meetings" ? "Meeting Mode" : activeTab === "borrowing" ? "Linked Assets" : "Approval";
-  const showRequestTypeColumn = activeTab !== "meetings";
+    activeTab === "meetings"
+      ? "Meeting Mode"
+      : activeTab === "borrowing"
+        ? "Linked Assets"
+        : activeTab === "hrAdmin"
+          ? "Fleet Assignment"
+          : "Approval";
+  const showRequestTypeColumn = activeTab !== "meetings" && activeTab !== "hrAdmin";
   const showPriorityColumn = activeTab !== "meetings";
-  const requestColumnCount = 7 + (showRequestTypeColumn ? 1 : 0) + (showPriorityColumn ? 1 : 0);
+  const showFleetActionColumn = activeTab === "hrAdmin";
+  const showScheduleColumn = activeTab !== "hrAdmin";
+  const requestColumnCount =
+    6 +
+    (showRequestTypeColumn ? 1 : 0) +
+    (showPriorityColumn ? 1 : 0) +
+    (showFleetActionColumn ? 1 : 0) +
+    (showScheduleColumn ? 1 : 0);
   const requestFilterCount = [filterNeedsApproval, filterMissingReport, filterForRevision].filter(Boolean).length;
   const requestFilterSummary = requestFilterCount === 0 ? "Select" : String(requestFilterCount);
   const requestFilterOptions: ReadonlyArray<ToolbarFilterOption> = [
@@ -940,6 +1732,9 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     },
   ];
   const internetStatusFilterSummary = internetStatusFilters.length === 0 ? "Select" : String(internetStatusFilters.length);
+  const fleetDrivers = (fleetAvailability?.drivers ?? []) as FleetDriverAvailabilityRow[];
+  const fleetVehicles = (fleetAvailability?.vehicles ?? []) as FleetVehicleAvailabilityRow[];
+  const availableFleetVehicles = fleetVehicles.filter((vehicle) => vehicle.status === "Available");
   const selectedMeetingLocations = meetingForm.meetingLocation
     .split(",")
     .map((value) => value.trim())
@@ -1333,6 +2128,228 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     setShowBorrowingCreate(true);
   }
 
+  function resetFleetDriverForm() {
+    setEditingFleetDriverId(null);
+    setFleetDriverForm(defaultFleetDriverForm);
+    setFleetError("");
+  }
+
+  function resetFleetVehicleForm() {
+    setEditingFleetVehicleId(null);
+    setFleetVehicleForm(defaultFleetVehicleForm);
+    setFleetError("");
+  }
+
+  function editFleetDriver(driver: FleetDriverAvailabilityRow) {
+    setEditingFleetDriverId(driver._id);
+    setFleetDriverForm({
+      name: driver.name,
+      position: driver.position ?? "",
+      contactNumber: driver.contactNumber ?? "",
+      status: driver.status,
+      notes: driver.notes ?? "",
+    });
+    setFleetError("");
+  }
+
+  function editFleetVehicle(vehicle: FleetVehicleAvailabilityRow) {
+    setEditingFleetVehicleId(vehicle._id);
+    setFleetVehicleForm({
+      name: vehicle.name,
+      plateNumber: vehicle.plateNumber,
+      vehicleType: vehicle.vehicleType,
+      capacity: vehicle.capacity ? String(vehicle.capacity) : "",
+      status: vehicle.status,
+      notes: vehicle.notes ?? "",
+    });
+    setFleetError("");
+  }
+
+  async function handleSaveFleetDriver() {
+    try {
+      setFleetSaving(true);
+      setFleetError("");
+      const payload = {
+        name: fleetDriverForm.name,
+        position: fleetDriverForm.position || undefined,
+        contactNumber: fleetDriverForm.contactNumber || undefined,
+        status: fleetDriverForm.status,
+        notes: fleetDriverForm.notes || undefined,
+      };
+
+      if (editingFleetDriverId) {
+        await updateFleetDriver({ driverId: editingFleetDriverId, ...payload });
+      } else {
+        await createFleetDriver(payload);
+      }
+
+      resetFleetDriverForm();
+    } catch (error) {
+      setFleetError(error instanceof Error ? error.message : "Driver save failed.");
+    } finally {
+      setFleetSaving(false);
+    }
+  }
+
+  async function handleSaveFleetVehicle() {
+    try {
+      setFleetSaving(true);
+      setFleetError("");
+      const capacity = fleetVehicleForm.capacity.trim() ? Number(fleetVehicleForm.capacity) : undefined;
+      const payload = {
+        name: fleetVehicleForm.name,
+        plateNumber: fleetVehicleForm.plateNumber,
+        vehicleType: fleetVehicleForm.vehicleType,
+        capacity,
+        status: fleetVehicleForm.status,
+        notes: fleetVehicleForm.notes || undefined,
+      };
+
+      if (editingFleetVehicleId) {
+        await updateFleetVehicle({ vehicleId: editingFleetVehicleId, ...payload });
+      } else {
+        await createFleetVehicle(payload);
+      }
+
+      resetFleetVehicleForm();
+    } catch (error) {
+      setFleetError(error instanceof Error ? error.message : "Vehicle save failed.");
+    } finally {
+      setFleetSaving(false);
+    }
+  }
+
+  async function handleDeleteFleetDriver(driver: FleetDriverAvailabilityRow) {
+    if (!window.confirm(`Remove driver "${driver.name}" from the fleet list?`)) return;
+    try {
+      setFleetSaving(true);
+      setFleetError("");
+      await deleteFleetDriver({ driverId: driver._id });
+      if (editingFleetDriverId === driver._id) {
+        resetFleetDriverForm();
+      }
+    } catch (error) {
+      setFleetError(error instanceof Error ? error.message : "Driver remove failed.");
+    } finally {
+      setFleetSaving(false);
+    }
+  }
+
+  async function handleDeleteFleetVehicle(vehicle: FleetVehicleAvailabilityRow) {
+    if (!window.confirm(`Remove vehicle "${vehicle.name}" from the fleet list?`)) return;
+    try {
+      setFleetSaving(true);
+      setFleetError("");
+      await deleteFleetVehicle({ vehicleId: vehicle._id });
+      if (editingFleetVehicleId === vehicle._id) {
+        resetFleetVehicleForm();
+      }
+    } catch (error) {
+      setFleetError(error instanceof Error ? error.message : "Vehicle remove failed.");
+    } finally {
+      setFleetSaving(false);
+    }
+  }
+
+  function openFleetAssignmentModal(ticket: FleetAssignmentTicket) {
+    setFleetAssignmentTicket(ticket);
+    setFleetAssignmentForm({
+      driverId: ticket.fleetDriverId ? String(ticket.fleetDriverId) : "",
+      vehicleId: ticket.fleetVehicleId ? String(ticket.fleetVehicleId) : "",
+    });
+    setFleetAssignmentError("");
+    setShowFleetAssignment(true);
+  }
+
+  function closeFleetAssignmentModal() {
+    setShowFleetAssignment(false);
+    setFleetAssignmentTicket(null);
+    setFleetAssignmentForm(defaultFleetAssignmentForm);
+    setFleetAssignmentError("");
+  }
+
+  async function handleSaveFleetAssignment() {
+    if (!fleetAssignmentTicket) return;
+
+    try {
+      setFleetAssignmentSaving(true);
+      setFleetAssignmentError("");
+      if (!fleetAssignmentForm.driverId) {
+        throw new Error("Select a driver.");
+      }
+      if (!fleetAssignmentForm.vehicleId) {
+        throw new Error("Select a vehicle.");
+      }
+
+      await assignTravelOrderFleet({
+        ticketId: fleetAssignmentTicket._id,
+        driverId: fleetAssignmentForm.driverId as Id<"fleetDrivers">,
+        vehicleId: fleetAssignmentForm.vehicleId as Id<"fleetVehicles">,
+        actorName,
+      });
+      closeFleetAssignmentModal();
+    } catch (error) {
+      setFleetAssignmentError(error instanceof Error ? error.message : "Fleet assignment failed.");
+    } finally {
+      setFleetAssignmentSaving(false);
+    }
+  }
+
+  async function handleTravelOrderPriorityChange(ticketId: Id<"monitoringTickets">, priority: string) {
+    try {
+      setPrioritySavingId(String(ticketId));
+      setRequestTableError("");
+      await updateTicket({
+        ticketId,
+        actorName,
+        priority,
+      });
+    } catch (error) {
+      setRequestTableError(error instanceof Error ? error.message : "Priority update failed.");
+    } finally {
+      setPrioritySavingId("");
+    }
+  }
+
+  async function handleMarkTravelDone(ticketId: Id<"monitoringTickets">) {
+    if (!window.confirm("Mark this travel order as done? The assigned driver and vehicle will become available again.")) {
+      return;
+    }
+
+    try {
+      setTravelDoneSavingId(String(ticketId));
+      setRequestTableError("");
+      await markTravelOrderDone({
+        ticketId,
+        actorName,
+      });
+    } catch (error) {
+      setRequestTableError(error instanceof Error ? error.message : "Unable to mark travel as done.");
+    } finally {
+      setTravelDoneSavingId("");
+    }
+  }
+
+  async function handleReopenTravelOrder(ticketId: Id<"monitoringTickets">) {
+    if (!window.confirm("Reopen this archived travel order? Its previous driver and vehicle will be reserved again if available.")) {
+      return;
+    }
+
+    try {
+      setTravelReopenSavingId(String(ticketId));
+      setRequestTableError("");
+      await reopenTravelOrder({
+        ticketId,
+        actorName,
+      });
+      setHrAdminArchiveView("active");
+    } catch (error) {
+      setRequestTableError(error instanceof Error ? error.message : "Unable to reopen travel order.");
+    } finally {
+      setTravelReopenSavingId("");
+    }
+  }
+
   return (
     <div className="monitoring-page" style={{ display: "grid", gap: 18 }}>
       <section
@@ -1363,32 +2380,34 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
         className="panel monitoring-tab-panel"
         style={{ padding: 16, display: "grid", gap: 14, border: "none", boxShadow: "none", borderRadius: 0, background: "transparent" }}
       >
-        <div className="monitoring-tab-strip" role="tablist" aria-label="Monitoring sections">
-          {visibleMonitoringTabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === tab.key}
-              className={`monitoring-tab-btn${activeTab === tab.key ? " active" : ""}${
-                tabNotificationCounts[tab.key] > 0 ? " has-notification" : ""
-              }`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              <span className="monitoring-tab-copy">
-                <span className="monitoring-tab-label-row">
-                  <span className="monitoring-tab-label">{tab.label}</span>
-                  {tabNotificationCounts[tab.key] > 0 ? (
-                    <span className="monitoring-tab-badge" aria-label={`${tabNotificationCounts[tab.key]} new items`}>
-                      {tabNotificationCounts[tab.key]}
-                    </span>
-                  ) : null}
+        {visibleMonitoringTabs.length > 1 ? (
+          <div className="monitoring-tab-strip" role="tablist" aria-label="Monitoring sections">
+            {visibleMonitoringTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.key}
+                className={`monitoring-tab-btn${activeTab === tab.key ? " active" : ""}${
+                  tabNotificationCounts[tab.key] > 0 ? " has-notification" : ""
+                }`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                <span className="monitoring-tab-copy">
+                  <span className="monitoring-tab-label-row">
+                    <span className="monitoring-tab-label">{tab.label}</span>
+                    {tabNotificationCounts[tab.key] > 0 ? (
+                      <span className="monitoring-tab-badge" aria-label={`${tabNotificationCounts[tab.key]} new items`}>
+                        {tabNotificationCounts[tab.key]}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="monitoring-tab-description">{tab.description}</span>
                 </span>
-                <span className="monitoring-tab-description">{tab.description}</span>
-              </span>
-            </button>
-          ))}
-        </div>
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <MonitoringFormModal open={showIssueCreate && activeTab === "issues"} onClose={() => setShowIssueCreate(false)} width={920}>
           <section className="saas-card monitoring-form-card">
@@ -2037,6 +3056,46 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           </section>
         </MonitoringFormModal>
 
+        <FleetManagementModal
+          open={showFleetManage}
+          loading={fleetAvailability === undefined}
+          drivers={fleetDrivers}
+          vehicles={fleetVehicles}
+          driverForm={fleetDriverForm}
+          vehicleForm={fleetVehicleForm}
+          editingDriverId={editingFleetDriverId}
+          editingVehicleId={editingFleetVehicleId}
+          saving={fleetSaving}
+          error={fleetError}
+          onClose={() => {
+            setShowFleetManage(false);
+            setFleetError("");
+          }}
+          onDriverFormChange={setFleetDriverForm}
+          onVehicleFormChange={setFleetVehicleForm}
+          onSaveDriver={() => void handleSaveFleetDriver()}
+          onSaveVehicle={() => void handleSaveFleetVehicle()}
+          onEditDriver={editFleetDriver}
+          onEditVehicle={editFleetVehicle}
+          onDeleteDriver={(driver) => void handleDeleteFleetDriver(driver)}
+          onDeleteVehicle={(vehicle) => void handleDeleteFleetVehicle(vehicle)}
+          onResetDriver={resetFleetDriverForm}
+          onResetVehicle={resetFleetVehicleForm}
+        />
+
+        <FleetAssignmentModal
+          open={showFleetAssignment}
+          ticket={fleetAssignmentTicket}
+          form={fleetAssignmentForm}
+          drivers={fleetDrivers}
+          vehicles={fleetVehicles}
+          saving={fleetAssignmentSaving}
+          error={fleetAssignmentError}
+          onClose={closeFleetAssignmentModal}
+          onFormChange={setFleetAssignmentForm}
+          onSave={() => void handleSaveFleetAssignment()}
+        />
+
         {activeTab === "internet" ? (
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -2131,6 +3190,19 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           </div>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
+            {activeTab === "hrAdmin" ? (
+              <FleetAvailabilitySection
+                loading={fleetAvailability === undefined}
+                drivers={fleetDrivers}
+                vehicles={availableFleetVehicles}
+                canManage={canSeeHrAdminQueue}
+                onManage={() => {
+                  setFleetError("");
+                  setShowFleetManage(true);
+                }}
+              />
+            ) : null}
+
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", flex: "1 1 560px", alignItems: "flex-end" }}>
                 <div className="search-field monitoring-toolbar-search" style={{ maxWidth: 252, width: "100%" }}>
@@ -2163,19 +3235,57 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     />
                   </>
                 ) : null}
-                <ToolbarFilterDropdown
-                  label="Status"
-                  summary={activeTab === "meetings" ? meetingStatusFilterSummary : requestStatusFilterSummary}
-                  ariaLabel={activeTab === "meetings" ? "Meeting status filter" : "Request status filter"}
-                  options={activeTab === "meetings" ? meetingStatusFilterOptions : requestStatusOptions}
-                  active={activeTab === "meetings" ? meetingStatusFilters.length > 0 : requestStatusFilters.length > 0}
-                  minWidth={104}
-                  keepOpenOnSelect
-                  showCheckboxes
-                  showLabelInTrigger
-                  compact
-                />
+                {activeTab === "hrAdmin" ? (
+                  <div className="monitoring-date-filter">
+                    <input
+                      id="hr-admin-date-filter"
+                      className="input-base"
+                      type="date"
+                      value={hrAdminDateFilter}
+                      onChange={(event) => setHrAdminDateFilter(event.target.value)}
+                      aria-label="Filter HR/Admin requests by submitted date"
+                    />
+                    {hrAdminDateFilter ? (
+                      <button type="button" className="btn-secondary" onClick={() => setHrAdminDateFilter("")}>
+                        Clear
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <ToolbarFilterDropdown
+                    label="Status"
+                    summary={activeTab === "meetings" ? meetingStatusFilterSummary : requestStatusFilterSummary}
+                    ariaLabel={activeTab === "meetings" ? "Meeting status filter" : "Request status filter"}
+                    options={activeTab === "meetings" ? meetingStatusFilterOptions : requestStatusOptions}
+                    active={activeTab === "meetings" ? meetingStatusFilters.length > 0 : requestStatusFilters.length > 0}
+                    minWidth={104}
+                    keepOpenOnSelect
+                    showCheckboxes
+                    showLabelInTrigger
+                    compact
+                  />
+                )}
               </div>
+              {activeTab === "hrAdmin" ? (
+                <div className="asset-master-view-filters monitoring-archive-tabs" aria-label="HR/Admin request view">
+                  <button
+                    type="button"
+                    aria-pressed={hrAdminArchiveView === "active"}
+                    className={`asset-master-view-filter${hrAdminArchiveView === "active" ? " active" : ""}`}
+                    onClick={() => setHrAdminArchiveView("active")}
+                  >
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={hrAdminArchiveView === "archive"}
+                    className={`asset-master-view-filter${hrAdminArchiveView === "archive" ? " active" : ""}`}
+                    onClick={() => setHrAdminArchiveView("archive")}
+                  >
+                    Archive
+                  </button>
+                </div>
+              ) : null}
               {activeTab === "meetings" ? (
                 <button
                   type="button"
@@ -2218,26 +3328,31 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   <tr>
                     <th>{activeTab === "issues" ? "Ticket" : "Request"}</th>
                     {showRequestTypeColumn ? <th>Type</th> : null}
-                    <th>{activeTab === "meetings" ? "Section" : "Category"}</th>
+                    <th>{activeTab === "meetings" ? "Section" : activeTab === "hrAdmin" ? "Travel Purpose" : "Category"}</th>
                     <th>Requester</th>
-                    <th>Schedule</th>
+                    {showScheduleColumn ? <th>Schedule</th> : null}
                     {showPriorityColumn ? <th>Priority</th> : null}
                     <th>Status</th>
                     <th>{requestMetaColumnLabel}</th>
-                    <th>Last Updated</th>
+                    <th>{activeTab === "hrAdmin" ? "Travel Time" : "Last Updated"}</th>
+                    {showFleetActionColumn ? <th>Action</th> : null}
                   </tr>
                 </thead>
                 <tbody>
                   {requestRows.map((row) => {
                     const rowId = String(row._id);
-                    const displayStatus = getDisplayStatusLabel(row.status, row.category);
+                    const displayStatus = getTravelOrderDisplayStatus(row);
                     const rowServiceGroup = getServiceGroupForCategory(row.category);
+                    const isTravelOrderDone =
+                      row.category === MONITORING_TRAVEL_ORDER_CATEGORY &&
+                      (displayStatus === "Fulfilled" || displayStatus === "Closed");
                     const isUnopenedRequest =
                       displayStatus === "New" && !(row.notificationSeenByGroups ?? []).includes(rowServiceGroup);
                     const requestListTitle =
                       activeTab === "meetings" ? getMeetingRequestListTitle(row.title, row.meetingStartAt) : row.title;
                     const borrowingRequestType = formatRequesterRequestType(row);
                     const borrowingAssetLabel = formatRequesterAssetLabel(row);
+                    const travelSchedule = getTravelScheduleFromDetails(row.requestDetails);
                     const editableMeetingStatusOptions = Array.from(
                       new Set([
                         ...getMeetingRequestStatusOptions(),
@@ -2286,37 +3401,66 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                           <td>{activeTab === "borrowing" ? borrowingRequestType : row.workType}</td>
                         ) : null}
                         <td>
-                          {activeTab === "meetings"
-                            ? row.requesterSection || "-"
-                            : activeTab === "borrowing"
-                              ? borrowingAssetLabel
-                              : row.category}
-                        </td>
-                        <td>{row.requesterName}</td>
-                        <td>
-                          {row.meetingStartAt ? (
-                            <div style={{ display: "grid", gap: 4 }}>
-                              <span>{formatDateTime(row.meetingStartAt)}</span>
-                              {row.meetingEndAt ? (
-                                <span style={{ color: "var(--muted)", fontSize: 12 }}>{formatDateTime(row.meetingEndAt)}</span>
-                              ) : null}
-                            </div>
-                          ) : row.expectedReturnAt ? (
-                            <div style={{ display: "grid", gap: 4 }}>
-                              <span>{formatDateTime(row.expectedReturnAt)}</span>
-                              <span style={{ color: "var(--muted)", fontSize: 12 }}>
-                                {row.requestedBorrowDate
-                                  ? `Borrow ${formatDateTime(row.requestedBorrowDate)}`
-                                  : "Expected return"}
-                              </span>
-                            </div>
+                          {activeTab === "meetings" ? (
+                            row.requesterSection || "-"
+                          ) : activeTab === "hrAdmin" ? (
+                            <span style={{ display: "block", maxWidth: 260, color: "var(--foreground)" }}>
+                              {row.category === MONITORING_TRAVEL_ORDER_CATEGORY
+                                ? getTravelPurposeFromDetails(row.requestDetails)
+                                : row.requestDetails || "-"}
+                            </span>
+                          ) : activeTab === "borrowing" ? (
+                            borrowingAssetLabel
                           ) : (
-                            "-"
+                            row.category
                           )}
                         </td>
-                        {showPriorityColumn ? (
+                        <td>{row.requesterName}</td>
+                        {showScheduleColumn ? (
                           <td>
-                            {row.priority ? <Chip label={row.priority} /> : "-"}
+                            {row.meetingStartAt ? (
+                              <div style={{ display: "grid", gap: 4 }}>
+                                <span>{formatDateTime(row.meetingStartAt)}</span>
+                                {row.meetingEndAt ? (
+                                  <span style={{ color: "var(--muted)", fontSize: 12 }}>{formatDateTime(row.meetingEndAt)}</span>
+                                ) : null}
+                              </div>
+                            ) : row.expectedReturnAt ? (
+                              <div style={{ display: "grid", gap: 4 }}>
+                                <span>{formatDateTime(row.expectedReturnAt)}</span>
+                                <span style={{ color: "var(--muted)", fontSize: 12 }}>
+                                  {row.requestedBorrowDate
+                                    ? `Borrow ${formatDateTime(row.requestedBorrowDate)}`
+                                    : "Expected return"}
+                                </span>
+                              </div>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                        ) : null}
+                        {showPriorityColumn ? (
+                          <td onClick={(event) => event.stopPropagation()}>
+                            {activeTab === "hrAdmin" && row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
+                              <select
+                                className="input-base"
+                                value={row.priority ?? "P4"}
+                                onChange={(event) => void handleTravelOrderPriorityChange(row._id, event.target.value)}
+                                disabled={prioritySavingId === rowId}
+                                aria-label={`Priority for ${row.ticketNumber}`}
+                                style={{ minHeight: 32, width: 82, fontSize: 12, padding: "0 26px 0 10px" }}
+                              >
+                                {MONITORING_PRIORITY_OPTIONS.map((priorityOption) => (
+                                  <option key={priorityOption} value={priorityOption}>
+                                    {priorityOption}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : row.priority ? (
+                              <Chip label={row.priority} />
+                            ) : (
+                              "-"
+                            )}
                           </td>
                         ) : null}
                         <td onClick={(event) => event.stopPropagation()}>
@@ -2345,11 +3489,109 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                   : row.requestedItemsText
                                     ? "Needs asset matching"
                                     : "-"
-                                : row.approvalRequired
-                                  ? <Chip label={row.approvalStage} />
-                                  : "-"}
+                                  : activeTab === "hrAdmin" && row.category === MONITORING_TRAVEL_ORDER_CATEGORY
+                                    ? row.fleetDriverName || row.fleetVehicleName
+                                      ? (
+                                          <div style={{ display: "grid", gap: 4 }}>
+                                            <span>{row.fleetDriverName ?? "No driver"}</span>
+                                            <span style={{ color: "var(--muted)", fontSize: 12 }}>
+                                              {row.fleetVehicleName
+                                                ? `${row.fleetVehicleName}${row.fleetVehiclePlateNumber ? ` | ${row.fleetVehiclePlateNumber}` : ""}`
+                                                : "No vehicle"}
+                                            </span>
+                                          </div>
+                                        )
+                                      : "Needs fleet assignment"
+                                    : row.approvalRequired
+                                      ? <Chip label={row.approvalStage} />
+                                      : "-"}
                         </td>
-                        <td>{formatDateTime(row.updatedAt)}</td>
+                        <td>
+                          {activeTab === "hrAdmin" && row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
+                            <div className="monitoring-travel-time-cell">
+                              <span>
+                                <strong>Dep</strong>
+                                <em>{formatCompactTravelDate(travelSchedule.departure)}</em>
+                              </span>
+                              <span>
+                                <strong>Ret</strong>
+                                <em>{formatCompactTravelDate(travelSchedule.returnAt)}</em>
+                              </span>
+                            </div>
+                          ) : (
+                            formatDateTime(row.updatedAt)
+                          )}
+                        </td>
+                        {showFleetActionColumn ? (
+                          <td onClick={(event) => event.stopPropagation()}>
+                            {row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
+                              <div className="monitoring-table-actions">
+                                {hrAdminArchiveView === "archive" ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="monitoring-icon-action-btn"
+                                      aria-label={`View ${row.ticketNumber}`}
+                                      title="View details"
+                                      onClick={() => router.push(`/monitoring/${row._id}`)}
+                                    >
+                                      <ViewTicketIcon />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="monitoring-icon-action-btn is-warning"
+                                      aria-label={`Reopen ${row.ticketNumber}`}
+                                      title="Reopen travel order"
+                                      disabled={travelReopenSavingId === rowId}
+                                      onClick={() => void handleReopenTravelOrder(row._id)}
+                                    >
+                                      <ReopenTicketIcon />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="monitoring-icon-action-btn"
+                                      aria-label={
+                                        row.fleetDriverId && row.fleetVehicleId
+                                          ? `Edit fleet assignment for ${row.ticketNumber}`
+                                          : `Assign fleet for ${row.ticketNumber}`
+                                      }
+                                      title={row.fleetDriverId && row.fleetVehicleId ? "Edit fleet" : "Assign fleet"}
+                                      onClick={() =>
+                                        openFleetAssignmentModal({
+                                          _id: row._id,
+                                          ticketNumber: row.ticketNumber,
+                                          title: row.title,
+                                          fleetDriverId: row.fleetDriverId,
+                                          fleetDriverName: row.fleetDriverName,
+                                          fleetVehicleId: row.fleetVehicleId,
+                                          fleetVehicleName: row.fleetVehicleName,
+                                          fleetVehiclePlateNumber: row.fleetVehiclePlateNumber,
+                                        })
+                                      }
+                                    >
+                                      <FleetAssignIcon />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="monitoring-icon-action-btn is-success"
+                                      aria-label={`Mark ${row.ticketNumber} travel done`}
+                                      title="Mark travel done"
+                                      disabled={isTravelOrderDone || travelDoneSavingId === rowId}
+                                      onClick={() => void handleMarkTravelDone(row._id)}
+                                    >
+                                      <TravelDoneIcon />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}

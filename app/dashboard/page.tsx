@@ -9,7 +9,8 @@ import FileUploadCard from "../hardware-inventory/file-upload-card";
 import { HARDWARE_BORROW_CONDITION_OPTIONS } from "@/lib/hardwareBorrowConditions";
 import { HARDWARE_STATUSES, type HardwareStatus } from "@/lib/hardwareStatuses";
 import { MONITORING_BORROWING_REQUEST_CATEGORY } from "@/lib/monitoring";
-import { normalizeUserRole } from "@/lib/roles";
+import { normalizeServiceGroups, normalizeUserRole } from "@/lib/roles";
+import { getServiceGroupForCategory } from "@/lib/serviceGroups";
 import RequesterDashboard from "./requester-dashboard";
 import DashboardStaffDropdown from "./staff-dropdown";
 
@@ -488,6 +489,12 @@ function DashboardCalendarAgendaCard({ event, compactTimeLabel = false }: { even
 export default function DashboardPage() {
   const currentUser = useCurrentUser();
   const currentRole = normalizeUserRole(currentUser?.role);
+  const currentServiceGroups = normalizeServiceGroups(currentRole, currentUser?.serviceGroups);
+  const hasItDashboardAccess = currentRole === "admin" || currentServiceGroups.includes("IT");
+  const isHrAdminCalendarOnlyDashboard =
+    currentRole !== "requester" && !hasItDashboardAccess && currentServiceGroups.includes("HR/Admin");
+  const shouldLoadHardwareDashboardData = currentRole === "requester" || hasItDashboardAccess;
+  const shouldLoadSupportCalendar = !isHrAdminCalendarOnlyDashboard;
   const [calendarMonth, setCalendarMonth] = useState(() => getCalendarMonthStart(new Date()));
   const [selectedMeetingDay, setSelectedMeetingDay] = useState(() => getCalendarDateKey(new Date()));
   const [isCalendarDetailOpen, setIsCalendarDetailOpen] = useState(false);
@@ -499,23 +506,33 @@ export default function DashboardPage() {
   const [supportEventSaving, setSupportEventSaving] = useState(false);
   const [supportEventError, setSupportEventError] = useState("");
   const meetingCalendarRange = getCalendarGridRange(calendarMonth);
-  const allRows = useQuery(api.hardwareInventory.listAll, {});
-  const openBorrowingRequests = useQuery(api.monitoring.list, {
-    view: "issues",
-    showClosed: false,
-  });
+  const allRows = useQuery(api.hardwareInventory.listAll, shouldLoadHardwareDashboardData ? {} : "skip");
+  const openBorrowingRequests = useQuery(
+    api.monitoring.list,
+    shouldLoadHardwareDashboardData
+      ? {
+          view: "issues",
+          showClosed: false,
+        }
+      : "skip",
+  );
   const monitoringCalendarFeed = useQuery(api.monitoring.getMeetingCalendar, {
     rangeStart: meetingCalendarRange.gridStart.getTime(),
     rangeEnd: meetingCalendarRange.gridEnd.getTime(),
   }) as DashboardCalendarEvent[] | undefined;
-  const monitoringOverview = useQuery(api.monitoring.getOverview, {});
-  const supportCalendarFeed = useQuery(api.dashboardCalendar.listSupportEvents, {
-    rangeStart: meetingCalendarRange.gridStart.getTime(),
-    rangeEnd: meetingCalendarRange.gridEnd.getTime(),
-  }) as DashboardCalendarEvent[] | undefined;
+  const monitoringOverview = useQuery(api.monitoring.getOverview, hasItDashboardAccess ? {} : "skip");
+  const supportCalendarFeed = useQuery(
+    api.dashboardCalendar.listSupportEvents,
+    shouldLoadSupportCalendar
+      ? {
+          rangeStart: meetingCalendarRange.gridStart.getTime(),
+          rangeEnd: meetingCalendarRange.gridEnd.getTime(),
+        }
+      : "skip",
+  ) as DashboardCalendarEvent[] | undefined;
   const activityFeed = useQuery(
     (api.hardwareInventory as Record<string, unknown>)["listRecentActivity"] as never,
-    { limit: 8 } as never,
+    (hasItDashboardAccess ? { limit: 8 } : "skip") as never,
   ) as unknown as HardwareActivityRecord[] | undefined;
   const migrateLegacy = useMutation(api.hardwareInventory.migrateLegacy);
   const createSupportEvent = useMutation(api.dashboardCalendar.createSupportEvent);
@@ -556,19 +573,25 @@ export default function DashboardPage() {
   const migrationRan = useRef(false);
   const workspaceSectionRef = useRef<HTMLElement | null>(null);
   const calendarFeed = useMemo(() => {
-    if (monitoringCalendarFeed === undefined || supportCalendarFeed === undefined) return undefined;
+    if (monitoringCalendarFeed === undefined) return undefined;
+    if (shouldLoadSupportCalendar && supportCalendarFeed === undefined) return undefined;
     return [
       ...monitoringCalendarFeed.map((event) => ({ ...event, href: `/monitoring/${event._id}` })),
-      ...supportCalendarFeed,
+      ...(supportCalendarFeed ?? []),
     ].sort((left, right) => left.eventStartAt - right.eventStartAt);
-  }, [monitoringCalendarFeed, supportCalendarFeed]);
+  }, [monitoringCalendarFeed, shouldLoadSupportCalendar, supportCalendarFeed]);
+  const dashboardCalendarFeed = useMemo(() => {
+    if (calendarFeed === undefined) return undefined;
+    if (!isHrAdminCalendarOnlyDashboard) return calendarFeed;
+    return calendarFeed.filter((event) => getServiceGroupForCategory(event.category) === "HR/Admin");
+  }, [calendarFeed, isHrAdminCalendarOnlyDashboard]);
 
   useEffect(() => {
     const selectedDate = parseCalendarDateKey(selectedMeetingDay);
     if (isSameCalendarMonth(selectedDate, calendarMonth)) return;
 
     const today = new Date();
-    const monthEvents = (calendarFeed ?? []).filter((item) =>
+    const monthEvents = (dashboardCalendarFeed ?? []).filter((item) =>
       isSameCalendarMonth(new Date(item.eventStartAt), calendarMonth),
     );
     const fallbackDate =
@@ -579,7 +602,7 @@ export default function DashboardPage() {
           : calendarMonth;
 
     setSelectedMeetingDay(getCalendarDateKey(fallbackDate));
-  }, [calendarFeed, calendarMonth, selectedMeetingDay]);
+  }, [dashboardCalendarFeed, calendarMonth, selectedMeetingDay]);
 
   useEffect(() => {
     if (migrationRan.current) return;
@@ -1174,7 +1197,7 @@ export default function DashboardPage() {
   const eventsByDay = useMemo(() => {
     const grouped = new Map<string, DashboardCalendarEvent[]>();
 
-    for (const item of calendarFeed ?? []) {
+    for (const item of dashboardCalendarFeed ?? []) {
       for (const dayKey of getMeetingSpanDateKeys(item.eventStartAt, item.eventEndAt)) {
         const entries = grouped.get(dayKey) ?? [];
         entries.push(item);
@@ -1187,7 +1210,7 @@ export default function DashboardPage() {
     }
 
     return grouped;
-  }, [calendarFeed]);
+  }, [dashboardCalendarFeed]);
   const selectedMeetingDate = useMemo(() => parseCalendarDateKey(selectedMeetingDay), [selectedMeetingDay]);
   const selectedDayEvents = useMemo(
     () => eventsByDay.get(selectedMeetingDay) ?? [],
@@ -1199,6 +1222,16 @@ export default function DashboardPage() {
   );
   const calendarMonthLabel = formatCalendarMonthLabel(calendarMonth);
   const selectedDayLabel = formatCalendarDateLabel(selectedMeetingDate);
+  const dashboardCalendarTitle = isHrAdminCalendarOnlyDashboard ? "HR/Admin Calendar" : "Monitoring Calendar";
+  const dashboardCalendarCopy = isHrAdminCalendarOnlyDashboard
+    ? "Travel orders and HR/Admin service requests scheduled for follow-up."
+    : "Live Monitoring timeline for tickets, meetings, borrowing requests, internet outages, and IT support assignments.";
+  const dashboardCalendarEmptyCopy = isHrAdminCalendarOnlyDashboard
+    ? "No HR/Admin records are scheduled for this day yet."
+    : "No monitoring records are scheduled for this day yet.";
+  const dashboardCalendarLoadingCopy = isHrAdminCalendarOnlyDashboard
+    ? "Loading HR/Admin records..."
+    : "Loading monitoring records...";
   function openCalendarDetail(dayKey: string) {
     setSelectedMeetingDay(dayKey);
     setIsCalendarDetailOpen(true);
@@ -1294,6 +1327,7 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-page">
+      {!isHrAdminCalendarOnlyDashboard ? (
       <section className="panel dashboard-top-card">
         <div className="dashboard-top-card-head">
           <div className="dashboard-heading">
@@ -1330,15 +1364,16 @@ export default function DashboardPage() {
           </div>
         </div>
       </section>
+      ) : null}
 
       <div className="dashboard-row dashboard-row-primary">
         <div className="panel dashboard-panel dashboard-primary-panel" style={{ padding: 16 }}>
           <div className="dashboard-calendar-layout">
             <div className="dashboard-calendar-head">
               <div>
-                <h3 className="type-section-title" style={{ marginBottom: 6 }}>Monitoring Calendar</h3>
+                <h3 className="type-section-title" style={{ marginBottom: 6 }}>{dashboardCalendarTitle}</h3>
                 <p className="type-section-copy" style={{ margin: 0 }}>
-                  Live Monitoring timeline for tickets, meetings, borrowing requests, internet outages, and IT support assignments.
+                  {dashboardCalendarCopy}
                 </p>
               </div>
             </div>
@@ -1370,9 +1405,11 @@ export default function DashboardPage() {
                     </button>
                   </div>
                   <div className="dashboard-calendar-head-actions">
+                    {!isHrAdminCalendarOnlyDashboard ? (
                     <button type="button" className="btn-primary" onClick={openSupportEventCreate}>
                       Add Event
                     </button>
+                    ) : null}
                     <button
                       type="button"
                       className="btn-secondary"
@@ -1487,12 +1524,12 @@ export default function DashboardPage() {
                 {selectedDayEvents.map((event) => (
                   <DashboardCalendarAgendaCard key={event._id} event={event} />
                 ))}
-                {calendarFeed === undefined ? (
-                  <div className="dashboard-calendar-empty">Loading monitoring records...</div>
+                {dashboardCalendarFeed === undefined ? (
+                  <div className="dashboard-calendar-empty">{dashboardCalendarLoadingCopy}</div>
                 ) : null}
-                {calendarFeed !== undefined && !selectedDayEvents.length ? (
+                {dashboardCalendarFeed !== undefined && !selectedDayEvents.length ? (
                   <div className="dashboard-calendar-empty">
-                    No monitoring records are scheduled for this day yet.
+                    {dashboardCalendarEmptyCopy}
                   </div>
                 ) : null}
               </div>
@@ -1501,7 +1538,7 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {showSupportEventCreate ? (
+      {!isHrAdminCalendarOnlyDashboard && showSupportEventCreate ? (
         <div className="dashboard-calendar-modal" role="dialog" aria-modal="true" aria-label="Add IT support event">
           <button
             type="button"
@@ -1648,7 +1685,7 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {claimConditionInventoryId ? (
+      {!isHrAdminCalendarOnlyDashboard && claimConditionInventoryId ? (
         <div className="dashboard-calendar-modal" role="dialog" aria-modal="true" aria-label="Confirm release condition">
           <button
             type="button"
@@ -1743,7 +1780,7 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {returnConditionInventoryId ? (
+      {!isHrAdminCalendarOnlyDashboard && returnConditionInventoryId ? (
         <div className="dashboard-calendar-modal" role="dialog" aria-modal="true" aria-label="Confirm returned condition">
           <button
             type="button"
@@ -1880,6 +1917,7 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
+      {!isHrAdminCalendarOnlyDashboard ? (
       <div className="dashboard-row dashboard-row-secondary">
         <div className="panel dashboard-panel dashboard-activity-panel" style={{ padding: 16 }}>
           <div
@@ -1994,7 +2032,9 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      ) : null}
 
+      {!isHrAdminCalendarOnlyDashboard ? (
       <section ref={workspaceSectionRef} className="panel dashboard-panel dashboard-showcase-workspace">
         <div className="dashboard-showcase-panel-head">
           <div>
@@ -2196,6 +2236,7 @@ export default function DashboardPage() {
           renderGroupedTables(groupedRows)
         )}
       </section>
+      ) : null}
     </div>
   );
 }

@@ -57,6 +57,7 @@ export const SERVICE_REQUEST_STATUSES = [
   "Pending Approval",
   "For Revision",
   "In Progress",
+  "Assigned",
   "Pending",
   "Fulfilled",
   "Closed",

@@ -119,6 +119,34 @@ function formatText(value?: string) {
   return value && value.trim() ? value : "-";
 }
 
+function getRecordText(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function getSummaryPart(summary: string | undefined, prefix: string) {
+  return summary
+    ?.split("|")
+    .map((part) => part.trim())
+    .find((part) => part.toLowerCase().startsWith(prefix.toLowerCase()));
+}
+
+function getSummaryValue(summary: string | undefined, prefix: string) {
+  return getSummaryPart(summary, prefix)?.replace(/^[^:]+:\s*/, "").trim();
+}
+
+function getComponentSummaryValue(summary: string | undefined, componentName: string) {
+  const part = summary
+    ?.split("|")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.toLowerCase().startsWith(componentName.toLowerCase()) && entry.includes(":"));
+  return part?.replace(/^[^:]+:\s*/, "").trim();
+}
+
+function buildDetailLines(lines: Array<string | undefined>) {
+  return lines.filter(Boolean).join("\n") || undefined;
+}
+
 function formatActivityTime(value: number) {
   return new Date(value).toLocaleString("en-US", {
     month: "short",
@@ -248,13 +276,21 @@ function DetailItem({
   label,
   value,
   multiline = false,
+  flat = false,
 }: {
   label: string;
   value?: string;
   multiline?: boolean;
+  flat?: boolean;
 }) {
   return (
-    <div className="saas-card" style={{ padding: 12, minHeight: multiline ? 84 : undefined }}>
+    <div
+      className={flat ? undefined : "saas-card"}
+      style={{
+        padding: flat ? "4px 2px" : 12,
+        minHeight: multiline ? 84 : undefined,
+      }}
+    >
       <div style={{ fontSize: "var(--type-label)", color: "var(--muted)", marginBottom: 6, fontWeight: 600 }}>
         {label}
       </div>
@@ -262,6 +298,42 @@ function DetailItem({
         {formatText(value)}
       </div>
     </div>
+  );
+}
+
+function AssetImagePreview({ storageId, alt }: { storageId: Id<"_storage">; alt: string }) {
+  const imageUrl = useQuery(api.hardwareInventory.getImageUrl, { storageId });
+
+  if (!imageUrl) {
+    return (
+      <div
+        style={{
+          minHeight: 160,
+          display: "grid",
+          placeItems: "center",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          color: "var(--muted)",
+        }}
+      >
+        Loading image...
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={imageUrl}
+      alt={alt}
+      style={{
+        width: "100%",
+        height: 180,
+        borderRadius: 12,
+        border: "1px solid var(--border)",
+        objectFit: "cover",
+      }}
+    />
   );
 }
 
@@ -334,10 +406,6 @@ export default function HardwareInventoryDetailPage() {
     droneFlightReportStorageId: never;
     returnCondition: string;
   }) => Promise<unknown>;
-  const imageUrl = useQuery(
-    api.hardwareInventory.getImageUrl,
-    row && row.imageStorageId ? { storageId: row.imageStorageId } : "skip",
-  );
   const turnoverFormUrl = useQuery(
     api.hardwareInventory.getImageUrl,
     row && row.turnoverFormStorageId ? { storageId: row.turnoverFormStorageId } : "skip",
@@ -368,8 +436,8 @@ export default function HardwareInventoryDetailPage() {
   const [returnDroneError, setReturnDroneError] = useState("");
   const [returnDroneCondition, setReturnDroneCondition] = useState<string>(HARDWARE_BORROW_CONDITION_OPTIONS[0]);
   const [actionToast, setActionToast] = useState<{ id: number; message: string } | null>(null);
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
-  const [clearImage, setClearImage] = useState(false);
+  const [selectedImageFiles, setSelectedImageFiles] = useState<File[]>([]);
+  const [removedImageStorageIds, setRemovedImageStorageIds] = useState<Id<"_storage">[]>([]);
   const [selectedReceivingFormFile, setSelectedReceivingFormFile] = useState<File | null>(null);
   const [clearReceivingForm, setClearReceivingForm] = useState(false);
   const [selectedTurnoverFormFile, setSelectedTurnoverFormFile] = useState<File | null>(null);
@@ -439,8 +507,57 @@ export default function HardwareInventoryDetailPage() {
   const assetStatus = normalizeHardwareStatusValue(asset.status) ?? "Available";
   const isDesktopAsset = asset.assetType === "Desktop/PC";
   const isDroneAsset = asset.assetType === "Drone";
+  const assetRecord = asset as Record<string, unknown>;
+  const assetImageStorageIds = Array.from(
+    new Set(
+      ((assetRecord.imageStorageIds as Id<"_storage">[] | undefined) ??
+        (asset.imageStorageId ? [asset.imageStorageId] : [])).filter(
+        (storageId) => !removedImageStorageIds.includes(storageId),
+      ),
+    ),
+  );
+  const desktopSpecsTier = getRecordText(assetRecord, "specsTier") ?? getSummaryValue(asset.specifications, "Specs Tier");
+  const desktopSystemUnitTag =
+    getRecordText(assetRecord, "desktopSystemUnitAssetTag") ??
+    getSummaryPart(asset.specifications, "System Unit")?.match(/\(([^)]+)\)/)?.[1];
+  const desktopSystemUnitInternalSpecs =
+    getRecordText(assetRecord, "desktopSystemUnitSpecs") ?? getComponentSummaryValue(asset.specifications, "System Unit");
+  const desktopSystemUnitDetails = buildDetailLines([
+    desktopSystemUnitTag ? `Asset Tag: ${desktopSystemUnitTag}` : undefined,
+    getRecordText(assetRecord, "desktopCaseBrand") ? `Case Brand: ${getRecordText(assetRecord, "desktopCaseBrand")}` : undefined,
+  ]);
+  const desktopMonitorDetails = buildDetailLines([
+    getRecordText(assetRecord, "desktopMonitorAssetTag") ? `Asset Tag: ${getRecordText(assetRecord, "desktopMonitorAssetTag")}` : undefined,
+    getRecordText(assetRecord, "desktopMonitorSpecs") ?? getComponentSummaryValue(asset.specifications, "Monitor")
+      ? `Specifications: ${getRecordText(assetRecord, "desktopMonitorSpecs") ?? getComponentSummaryValue(asset.specifications, "Monitor")}`
+      : undefined,
+    getRecordText(assetRecord, "desktopMonitorSerialNumber") ?? getSummaryValue(asset.specifications, "Monitor Serial Number")
+      ? `Serial Number: ${getRecordText(assetRecord, "desktopMonitorSerialNumber") ?? getSummaryValue(asset.specifications, "Monitor Serial Number")}`
+      : undefined,
+    getRecordText(assetRecord, "desktopMonitorConsumables") ?? getSummaryValue(asset.specifications, "Monitor Consumables")
+      ? `Consumables: ${getRecordText(assetRecord, "desktopMonitorConsumables") ?? getSummaryValue(asset.specifications, "Monitor Consumables")}`
+      : undefined,
+  ]);
+  const desktopMouseDetails = buildDetailLines([
+    getRecordText(assetRecord, "desktopMouseAssetTag") ? `Asset Tag: ${getRecordText(assetRecord, "desktopMouseAssetTag")}` : undefined,
+    getRecordText(assetRecord, "desktopMouseSpecs") ?? getComponentSummaryValue(asset.specifications, "Mouse")
+      ? `Specifications: ${getRecordText(assetRecord, "desktopMouseSpecs") ?? getComponentSummaryValue(asset.specifications, "Mouse")}`
+      : undefined,
+    getRecordText(assetRecord, "desktopMouseSerialNumber") ?? getSummaryValue(asset.specifications, "Mouse Serial Number")
+      ? `Serial Number: ${getRecordText(assetRecord, "desktopMouseSerialNumber") ?? getSummaryValue(asset.specifications, "Mouse Serial Number")}`
+      : undefined,
+  ]);
+  const desktopKeyboardDetails = buildDetailLines([
+    getRecordText(assetRecord, "desktopKeyboardAssetTag") ? `Asset Tag: ${getRecordText(assetRecord, "desktopKeyboardAssetTag")}` : undefined,
+    getRecordText(assetRecord, "desktopKeyboardSpecs") ?? getComponentSummaryValue(asset.specifications, "Keyboard")
+      ? `Specifications: ${getRecordText(assetRecord, "desktopKeyboardSpecs") ?? getComponentSummaryValue(asset.specifications, "Keyboard")}`
+      : undefined,
+    getRecordText(assetRecord, "desktopKeyboardSerialNumber") ?? getSummaryValue(asset.specifications, "Keyboard Serial Number")
+      ? `Serial Number: ${getRecordText(assetRecord, "desktopKeyboardSerialNumber") ?? getSummaryValue(asset.specifications, "Keyboard Serial Number")}`
+      : undefined,
+  ]);
   const workstationComponents =
-    (((asset as Record<string, unknown>).workstationComponents as WorkstationComponent[] | undefined) ?? []).filter(
+    ((assetRecord.workstationComponents as WorkstationComponent[] | undefined) ?? []).filter(
       (component) => component.assetTag || component.componentType || component.specifications,
     );
 
@@ -468,8 +585,8 @@ export default function HardwareInventoryDetailPage() {
       remarks: asset.remarks ?? "",
     });
     setFormError("");
-    setSelectedImageFile(null);
-    setClearImage(false);
+    setSelectedImageFiles([]);
+    setRemovedImageStorageIds([]);
     setSelectedReceivingFormFile(null);
     setClearReceivingForm(false);
     setSelectedTurnoverFormFile(null);
@@ -489,6 +606,15 @@ export default function HardwareInventoryDetailPage() {
       droneFlightReportInputRef.current.value = "";
     }
     setIsEditing(true);
+  }
+
+  function cancelEditor() {
+    setIsEditing(false);
+    setSelectedImageFiles([]);
+    setRemovedImageStorageIds([]);
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
   }
 
   function showActionToast(message: string, persistForNextPage = false) {
@@ -545,8 +671,8 @@ export default function HardwareInventoryDetailPage() {
 
     try {
       setIsSaving(true);
-      let imageStorageId: Id<"_storage"> | undefined;
-      if (selectedImageFile) {
+      const uploadedImageStorageIds: Id<"_storage">[] = [];
+      for (const selectedImageFile of selectedImageFiles) {
         const uploadUrl = await generateUploadUrl();
         const uploadResult = await fetch(uploadUrl, {
           method: "POST",
@@ -563,8 +689,18 @@ export default function HardwareInventoryDetailPage() {
         if (!uploadData.storageId) {
           throw new Error("Asset image upload failed.");
         }
-        imageStorageId = uploadData.storageId;
+        uploadedImageStorageIds.push(uploadData.storageId);
       }
+      const existingImageStorageIds = Array.from(
+        new Set(
+          (((asset as Record<string, unknown>).imageStorageIds as Id<"_storage">[] | undefined) ??
+            (asset.imageStorageId ? [asset.imageStorageId] : [])).filter(
+            (storageId) => !removedImageStorageIds.includes(storageId),
+          ),
+        ),
+      );
+      const imageStorageIds = [...existingImageStorageIds, ...uploadedImageStorageIds];
+      const imageStorageId = imageStorageIds[0];
       let receivingFormStorageIdToSave: Id<"_storage"> | undefined;
       if (selectedReceivingFormFile) {
         const uploadUrl = await generateUploadUrl();
@@ -644,16 +780,17 @@ export default function HardwareInventoryDetailPage() {
         warranty: form.warranty,
         remarks: form.remarks || undefined,
         imageStorageId,
+        imageStorageIds,
         receivingFormStorageId: receivingFormStorageIdToSave,
         turnoverFormStorageId,
         droneFlightReportStorageId: droneFlightReportStorageIdToSave,
-        clearImage,
+        clearImage: imageStorageIds.length === 0,
         clearReceivingForm,
         clearTurnoverForm,
         clearDroneFlightReport,
       });
-      setSelectedImageFile(null);
-      setClearImage(false);
+      setSelectedImageFiles([]);
+      setRemovedImageStorageIds([]);
       setSelectedReceivingFormFile(null);
       setClearReceivingForm(false);
       setSelectedTurnoverFormFile(null);
@@ -866,7 +1003,7 @@ export default function HardwareInventoryDetailPage() {
             ) : (
               <button
                 className="asset-action-btn"
-                onClick={() => setIsEditing(false)}
+                onClick={cancelEditor}
                 type="button"
                 aria-label="Cancel Editing"
                 title="Cancel Editing"
@@ -938,26 +1075,19 @@ export default function HardwareInventoryDetailPage() {
       {!isEditing ? (
         <div style={{ display: "grid", gap: 12 }}>
           <section className="panel" style={{ padding: 14 }}>
-            <div className="type-subsection-title" style={{ marginBottom: 10 }}>Asset Image</div>
-            {asset.imageStorageId ? (
-              imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={imageUrl}
-                  alt={`${asset.assetTag} asset image`}
-                  style={{
-                    width: "100%",
-                    maxWidth: 360,
-                    borderRadius: 12,
-                    border: "1px solid var(--border)",
-                    objectFit: "cover",
-                  }}
-                />
-              ) : (
-                <div style={{ color: "var(--muted)" }}>Loading image...</div>
-              )
+            <div className="type-subsection-title" style={{ marginBottom: 10 }}>Asset Images</div>
+            {assetImageStorageIds.length ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 240px))", gap: 10 }}>
+                {assetImageStorageIds.map((storageId, index) => (
+                  <AssetImagePreview
+                    key={String(storageId)}
+                    storageId={storageId}
+                    alt={`${asset.assetTag} asset image ${index + 1}`}
+                  />
+                ))}
+              </div>
             ) : (
-              <div style={{ color: "var(--muted)" }}>No image uploaded.</div>
+              <div style={{ color: "var(--muted)" }}>No images uploaded.</div>
             )}
           </section>
           {isDroneAsset && workstationComponents.length ? (
@@ -1188,21 +1318,34 @@ export default function HardwareInventoryDetailPage() {
               gap: 10,
             }}
           >
-            <DetailItem label="Asset Type" value={asset.assetType} />
-            <DetailItem label="Asset Name / Description" value={asset.assetNameDescription} />
-            <DetailItem label="Serial Number" value={asset.serialNumber} />
-            <DetailItem label="Specifications" value={asset.specifications} multiline />
-            <DetailItem label="Location" value={asset.location ?? asset.locationPersonAssigned} />
-            <DetailItem label="Department" value={asset.department} />
-            <DetailItem label="Turnover To" value={asset.assignedTo ?? asset.turnoverTo} />
-            <DetailItem label="Borrower" value={asset.borrower} />
+            <DetailItem label="Asset Type" value={asset.assetType} flat />
+            <DetailItem label="Asset Name / Description" value={asset.assetNameDescription} flat />
+            <DetailItem label="Serial Number" value={asset.serialNumber} flat />
+            {isDesktopAsset ? (
+              <>
+                <DetailItem label="Specs Tier" value={desktopSpecsTier} flat />
+                <DetailItem label="System Unit" value={desktopSystemUnitDetails} multiline flat />
+                <DetailItem label="System Unit Internal Specs" value={desktopSystemUnitInternalSpecs} multiline flat />
+                <DetailItem label="Monitor" value={desktopMonitorDetails} multiline flat />
+                <DetailItem label="Mouse" value={desktopMouseDetails} multiline flat />
+                <DetailItem label="Keyboard" value={desktopKeyboardDetails} multiline flat />
+              </>
+            ) : (
+              <DetailItem label="Specifications" value={asset.specifications} multiline flat />
+            )}
+            <DetailItem label="Location" value={asset.location ?? asset.locationPersonAssigned} flat />
+            <DetailItem label="Department" value={asset.department} flat />
+            <DetailItem label="Turnover To" value={asset.assignedTo ?? asset.turnoverTo} flat />
+            <DetailItem label="Borrower" value={asset.borrower} flat />
             <DetailItem
               label="Release Condition"
               value={((asset as Record<string, unknown>).borrowReleaseCondition as string | undefined) ?? "-"}
+              flat
             />
             <DetailItem
               label="Returned Condition"
               value={((asset as Record<string, unknown>).borrowReturnCondition as string | undefined) ?? "-"}
+              flat
             />
             <DetailItem
               label={isDesktopAsset ? "Turnover Date" : "Assigned Date"}
@@ -1212,10 +1355,11 @@ export default function HardwareInventoryDetailPage() {
                     asset.assignedDate
                   : asset.assignedDate
               }
+              flat
             />
-            <DetailItem label="Purchase Date" value={asset.purchaseDate} />
-            <DetailItem label="Warranty" value={asset.warranty} />
-            <DetailItem label="Remarks" value={asset.remarks} multiline />
+            <DetailItem label="Purchase Date" value={asset.purchaseDate} flat />
+            <DetailItem label="Warranty" value={asset.warranty} flat />
+            <DetailItem label="Remarks" value={asset.remarks} multiline flat />
           </section>
 
           <section className="panel" style={{ padding: 14 }}>
@@ -1227,8 +1371,8 @@ export default function HardwareInventoryDetailPage() {
                 gap: 8,
               }}
             >
-              <DetailItem label="Created At" value={formatDate(asset.createdAt)} />
-              <DetailItem label="Updated At" value={formatDate(asset.updatedAt)} />
+              <DetailItem label="Created At" value={formatDate(asset.createdAt)} flat />
+              <DetailItem label="Updated At" value={formatDate(asset.updatedAt)} flat />
             </div>
           </section>
           <section className="panel" style={{ padding: 14 }}>
@@ -1435,43 +1579,59 @@ export default function HardwareInventoryDetailPage() {
               />
             </EditField>
             <div style={{ display: "grid", gap: 6 }}>
+              {assetImageStorageIds.length ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+                  {assetImageStorageIds.map((storageId, index) => (
+                    <div key={String(storageId)} style={{ display: "grid", gap: 6 }}>
+                      <AssetImagePreview storageId={storageId} alt={`${asset.assetTag} asset image ${index + 1}`} />
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => {
+                          setRemovedImageStorageIds((current) => [...current, storageId]);
+                        }}
+                      >
+                        Remove Image
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <FileUploadCard
-                label="Asset Image"
+                label="Add Asset Images"
                 inputRef={imageInputRef}
                 accept="image/*"
+                multiple
                 onFileChange={(file) => {
-                  setSelectedImageFile(file);
-                  if (file) {
-                    setClearImage(false);
-                  }
+                  setSelectedImageFiles(file ? [file] : []);
                 }}
-                hasAttachment={Boolean(selectedImageFile || (asset.imageStorageId && !clearImage))}
+                onFilesChange={(files) => {
+                  setSelectedImageFiles(files);
+                }}
+                file={selectedImageFiles[0] ?? null}
+                hasAttachment={selectedImageFiles.length > 0}
                 displayName={
-                  selectedImageFile
-                    ? selectedImageFile.name
-                    : asset.imageStorageId && !clearImage
-                      ? "Current asset image"
-                      : "Asset image"
+                  selectedImageFiles.length > 1
+                    ? `${selectedImageFiles.length} new images selected`
+                    : selectedImageFiles[0]
+                      ? selectedImageFiles[0].name
+                      : "Asset images"
                 }
                 helperText={
-                  selectedImageFile
-                    ? "New image selected. Save to replace the current image."
-                    : asset.imageStorageId && !clearImage
-                      ? "An asset image is already attached."
+                  selectedImageFiles.length > 1
+                    ? selectedImageFiles.map((file) => file.name).join(", ")
+                    : assetImageStorageIds.length
+                      ? "Choose images to add to the gallery."
                       : "No image attached."
                 }
                 badge="IMG"
-                ariaLabel="Asset image upload"
+                ariaLabel="Asset images upload"
                 onRemove={() => {
-                  if (selectedImageFile) {
-                    setSelectedImageFile(null);
+                  if (selectedImageFiles.length) {
+                    setSelectedImageFiles([]);
                     if (imageInputRef.current) {
                       imageInputRef.current.value = "";
                     }
-                    return;
-                  }
-                  if (asset.imageStorageId) {
-                    setClearImage(true);
                   }
                 }}
               />
@@ -1617,7 +1777,7 @@ export default function HardwareInventoryDetailPage() {
           {formError ? <p style={{ color: "#b91c1c", margin: 0 }}>{formError}</p> : null}
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button className="btn-secondary" onClick={() => setIsEditing(false)} type="button">
+            <button className="btn-secondary" onClick={cancelEditor} type="button">
               Cancel
             </button>
             <button className="btn-primary" onClick={handleSave} disabled={isSaving} type="button">
