@@ -2690,6 +2690,79 @@ a {
   white-space: nowrap;
 }
 
+.hw-form-sections {
+  display: grid;
+  gap: 20px;
+}
+
+.hw-form-section {
+  display: grid;
+  gap: 10px;
+}
+
+.hw-form-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.hw-form-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.hw-form-grid--3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.hw-form-grid--4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.hw-form-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.hw-form-field--span2 {
+  grid-column: span 2;
+}
+
+.hw-form-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.hw-form-req {
+  color: #dc2626;
+}
+
+@media (max-width: 860px) {
+  .hw-form-grid--3,
+  .hw-form-grid--4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .hw-form-field--span2 {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 540px) {
+  .hw-form-grid--3,
+  .hw-form-grid--4 {
+    grid-template-columns: 1fr;
+  }
+  .hw-form-field--span2 {
+    grid-column: span 1;
+  }
+}
+
 .hardware-register-body {
   display: grid;
   gap: 14px;
@@ -3057,7 +3130,8 @@ a {
 .register-pill-tabs {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 22px;
+  gap: 4px;
+  align-items: center;
   width: fit-content;
   max-width: 100%;
   padding: 0;
@@ -3065,28 +3139,27 @@ a {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  overflow-x: visible;
 }
 
-.register-pill-tab {
+.register-pill-tabs .register-pill-tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 0;
   min-height: auto;
   border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 0 0 11px;
+  border-radius: 999px;
+  padding: 6px 16px;
   background: transparent;
-  color: #98a2b3;
-  font-size: 14px;
+  color: #94a3b8;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  position: relative;
   transition:
     background-color var(--interaction-duration) var(--interaction-ease),
-    border-color var(--interaction-duration) var(--interaction-ease),
-    color var(--interaction-duration) var(--interaction-ease),
-    box-shadow var(--interaction-duration) var(--interaction-ease);
+    color var(--interaction-duration) var(--interaction-ease);
 }
 
 .register-pill-tab-inner {
@@ -3097,22 +3170,24 @@ a {
   white-space: nowrap;
 }
 
-.register-pill-tab:not(.active):hover {
-  background: transparent;
-  color: #344054;
+.register-pill-tabs .register-pill-tab:not(.active):not(.is-active):hover {
+  color: #475569;
 }
 
-.register-pill-tab.active {
-  background: transparent;
-  color: #4f6cf7;
-  border-bottom-color: #4f7cff;
-  box-shadow: none;
+.register-pill-tabs .register-pill-tab.active,
+.register-pill-tabs .register-pill-tab.is-active {
+  background: #4f7cff;
+  color: #ffffff;
 }
 
-.register-pill-tab:focus-visible {
+/* neutralise the underline pseudo-element from operations-reference-tab */
+.register-pill-tabs .register-pill-tab.is-active::after {
+  display: none;
+}
+
+.register-pill-tabs .register-pill-tab:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.18);
-  border-radius: 10px;
+  box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.25);
 }
 
 .register-tab-stack {
@@ -7567,25 +7642,24 @@ select.status-select optgroup {
 }
 
 :root[data-theme="dark"] .register-pill-tabs {
-  border-color: transparent;
   background: transparent;
   box-shadow: none;
 }
 
-:root[data-theme="dark"] .register-pill-tab {
+:root[data-theme="dark"] .register-pill-tabs .register-pill-tab {
   background: transparent;
-  color: #95a4ba;
+  color: #556070;
 }
 
-:root[data-theme="dark"] .register-pill-tab:not(.active):hover {
-  background: transparent;
-  color: #e6edf7;
+:root[data-theme="dark"] .register-pill-tabs .register-pill-tab:not(.active):not(.is-active):hover {
+  color: #a0b0c8;
 }
 
-:root[data-theme="dark"] .register-pill-tab.active {
-  background: transparent;
-  color: #73a7ff;
-  border-bottom-color: #4f7cff;
+:root[data-theme="dark"] .register-pill-tabs .register-pill-tab.active,
+:root[data-theme="dark"] .register-pill-tabs .register-pill-tab.is-active {
+  background: #4f7cff;
+  color: #ffffff;
+  box-shadow: none;
   box-shadow: none;
 }
 
@@ -12467,6 +12541,16 @@ select.status-select optgroup {
   color: #92400e;
 }
 
+.monitoring-icon-action-btn.is-destructive {
+  color: #991b1b;
+}
+
+.monitoring-icon-action-btn.is-destructive:hover:not(:disabled) {
+  border-color: #fca5a5;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .monitoring-icon-action-btn:disabled {
   cursor: not-allowed;
   opacity: 0.42;
@@ -13031,6 +13115,255 @@ select.status-select optgroup {
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   background: var(--surface);
+}
+
+.monitoring-detail-it-setup {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-setup {
+  border-color: #1e3a5f;
+  background: #0f172a;
+}
+
+.monitoring-detail-it-setup-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.monitoring-detail-it-setup-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.monitoring-detail-asset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 10px;
+  border-radius: 6px;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #1e3a5f;
+}
+
+.monitoring-detail-asset-chip-label {
+  color: #4b5563;
+  margin-left: 2px;
+}
+
+.monitoring-detail-asset-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.12);
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  width: 16px;
+  height: 16px;
+  color: #374151;
+  margin-left: 3px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.monitoring-detail-asset-chip-remove:hover {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.15);
+}
+
+:root[data-theme="dark"] .monitoring-detail-asset-chip {
+  background: #1e3a5f;
+  border-color: #1d4ed8;
+  color: #bfdbfe;
+}
+
+:root[data-theme="dark"] .monitoring-detail-asset-chip-label {
+  color: #94a3b8;
+}
+
+:root[data-theme="dark"] .monitoring-detail-asset-chip-remove {
+  background: rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+}
+
+:root[data-theme="dark"] .monitoring-detail-asset-chip-remove:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.18);
+}
+
+.monitoring-detail-it-request-summary {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid #bfdbfe;
+  margin-top: 10px;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-request-summary {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: #1e3a5f;
+}
+
+.monitoring-detail-it-request-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.monitoring-detail-it-request-label {
+  font-weight: 700;
+  color: #1d4ed8;
+  flex-shrink: 0;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-request-label {
+  color: #93c5fd;
+}
+
+.monitoring-detail-it-request-value {
+  color: var(--text);
+  word-break: break-word;
+}
+
+.monitoring-detail-it-validation-error {
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  font-size: 13px;
+  color: #b91c1c;
+  line-height: 1.5;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-validation-error {
+  background: rgba(185, 28, 28, 0.1);
+  border-color: rgba(252, 165, 165, 0.25);
+  color: #fca5a5;
+}
+
+.monitoring-detail-it-checklist {
+  margin-top: 12px;
+  border-top: 1px solid #bfdbfe;
+  padding-top: 10px;
+}
+
+.monitoring-detail-it-checklist-head {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4b5563;
+  margin-bottom: 6px;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-checklist-head {
+  color: #9ca3af;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-checklist {
+  border-top-color: #1e3a5f;
+}
+
+.monitoring-detail-it-checklist-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.monitoring-detail-it-checklist-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 6px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.monitoring-detail-it-checklist-item.covered {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.monitoring-detail-it-checklist-item.missing {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-checklist-item.covered {
+  background: rgba(21, 128, 61, 0.12);
+  border-color: rgba(187, 247, 208, 0.2);
+  color: #86efac;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-checklist-item.missing {
+  background: rgba(146, 64, 14, 0.12);
+  border-color: rgba(253, 230, 138, 0.2);
+  color: #fbbf24;
+}
+
+.monitoring-detail-it-reminder {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  font-size: 13px;
+  color: #78350f;
+  line-height: 1.45;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-reminder {
+  background: rgba(146, 64, 14, 0.1);
+  border-color: rgba(253, 230, 138, 0.2);
+  color: #fbbf24;
+}
+
+.monitoring-detail-it-reminder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  margin-bottom: 7px;
+}
+
+.monitoring-detail-it-reminder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.monitoring-detail-it-reminder-chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  font-size: 12px;
+  font-weight: 500;
+  color: #92400e;
+}
+
+:root[data-theme="dark"] .monitoring-detail-it-reminder-chip {
+  background: rgba(146, 64, 14, 0.15);
+  border-color: rgba(252, 211, 77, 0.25);
+  color: #fbbf24;
 }
 
 .monitoring-detail-section-compact {

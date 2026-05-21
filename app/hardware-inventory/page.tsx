@@ -725,7 +725,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. SN-DRN001"
               value={droneKitForm.droneUnitSerialNumber}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -741,7 +741,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. DJI Mini 3 Pro, 4K camera"
               value={droneKitForm.droneUnitSpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -808,7 +808,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. SN-BAT001"
               value={droneKitForm.batterySerialNumber}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -824,7 +824,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. 2453 mAh, 15.4V LiPo"
               value={droneKitForm.batterySpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -897,7 +897,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. 9.4 x 3 cm folding props"
               value={droneKitForm.propellerSpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -970,7 +970,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. SN-CHG001"
               value={droneKitForm.chargerSerialNumber}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -986,7 +986,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. 65W USB-C charger"
               value={droneKitForm.chargerSpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -1059,7 +1059,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. SN-CTL001"
               value={droneKitForm.controllerSerialNumber}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -1075,7 +1075,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. DJI RC-N1 remote controller"
               value={droneKitForm.controllerSpecs}
               onChange={(e) =>
                 setDroneKitForm((prev) => ({
@@ -1151,7 +1151,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. SN-MON001"
               value={desktopForm.monitorSerialNumber}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1167,7 +1167,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. LG 22MP 1080p, 21.5 inch"
               value={desktopForm.monitorSpecs}
               onChange={(e) =>
                 setDesktopForm((prev) => ({ ...prev, monitorSpecs: e.target.value }))
@@ -1180,7 +1180,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. power cable, HDMI cable"
               value={desktopForm.monitorConsumables}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1217,7 +1217,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. SN-MSE001"
               value={desktopForm.mouseSerialNumber ?? ""}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1233,7 +1233,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. Logitech M280 wireless"
               value={desktopForm.mouseSpecs}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1270,7 +1270,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. SN-KBD001"
               value={desktopForm.keyboardSerialNumber ?? ""}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1286,7 +1286,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. HP K1500 USB keyboard"
               value={desktopForm.keyboardSpecs}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1323,7 +1323,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. Intel Core i5, 8GB RAM, 512GB SSD"
               value={desktopForm.systemUnitSpecs}
               onChange={(e) =>
                 setDesktopForm((prev) => ({
@@ -1890,10 +1890,6 @@ export default function HardwareInventoryPage() {
               <div className="operations-reference-title-row">
                 <h1 className="operations-reference-title hardware-register-title">Hardware Asset Register</h1>
               </div>
-              <p className="hardware-register-copy">
-                Minimize this form while reviewing the master table, then expand it whenever you need to register a new
-                asset.
-              </p>
             </div>
             <button
               type="button"
@@ -2032,7 +2028,7 @@ export default function HardwareInventoryPage() {
               <ChecklistSelect
                 value={form.assetType}
                 options={assetTypeSelectOptions}
-                placeholder=""
+                placeholder="Select type"
                 ariaLabel="Asset type"
                 onChange={(value) => setForm((prev) => ({ ...prev, assetType: value }))}
               />
@@ -2045,7 +2041,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder=""
+                placeholder="e.g. Lenovo ThinkPad L14 Gen 3"
                 value={form.assetNameDescription}
                 onChange={(e) =>
                   setForm((prev) => ({ ...prev, assetNameDescription: e.target.value }))
@@ -2060,7 +2056,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder=""
+                placeholder="e.g. Intel i5, 8GB RAM, 256GB SSD"
                 value={form.specifications}
                 onChange={(e) => setForm((prev) => ({ ...prev, specifications: e.target.value }))}
               />
@@ -2074,7 +2070,7 @@ export default function HardwareInventoryPage() {
               <ChecklistSelect
                 value={specTier}
                 options={specsTierSelectOptions}
-                placeholder=""
+                placeholder="Select tier"
                 ariaLabel="Specs tier"
                 onChange={(value) => setSpecTier(value as SpecsTier | "")}
               />
@@ -2087,7 +2083,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder=""
+                placeholder="e.g. SN-00123456"
                 value={form.serialNumber}
                 onChange={(e) => setForm((prev) => ({ ...prev, serialNumber: e.target.value }))}
               />
@@ -2100,7 +2096,7 @@ export default function HardwareInventoryPage() {
             <ChecklistSelect
               value={form.locationPersonAssigned}
               options={locationSelectOptions}
-              placeholder=""
+              placeholder="Select location"
               ariaLabel="Location"
               onChange={(value) => setForm((prev) => ({ ...prev, locationPersonAssigned: value }))}
             />
@@ -2112,7 +2108,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder=""
+                placeholder="Person or unit name"
                 value={form.personAssigned}
                 onChange={(e) =>
                   setForm((prev) => ({
@@ -2129,7 +2125,7 @@ export default function HardwareInventoryPage() {
               </label>
               <input
                 className="input-base"
-                placeholder=""
+                placeholder="Name of receiving personnel"
                 value={droneKitForm.receivedBy}
                 onChange={(e) =>
                   setDroneKitForm((prev) => ({
@@ -2148,7 +2144,7 @@ export default function HardwareInventoryPage() {
               <ChecklistSelect
                 value={form.department}
                 options={departmentSelectOptions}
-                placeholder=""
+                placeholder="Select department"
                 ariaLabel="Department"
                 onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
               />
@@ -2161,7 +2157,7 @@ export default function HardwareInventoryPage() {
             <ChecklistSelect
               value={form.status}
               options={assetStatusSelectOptions}
-              placeholder=""
+              placeholder="Select status"
               ariaLabel="Status"
               onChange={(value) => setForm((prev) => ({ ...prev, status: value as FormState["status"] }))}
             />
@@ -2174,7 +2170,7 @@ export default function HardwareInventoryPage() {
                 </label>
                 <input
                   className="input-base"
-                  placeholder=""
+                  placeholder="Full name of borrower"
                   value={form.status === "Borrowed" ? form.borrower : ""}
                   disabled={form.status !== "Borrowed"}
                   style={
@@ -2234,7 +2230,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="e.g. 1 year, Until Dec 2026"
               value={form.warranty}
               onChange={(e) => setForm((prev) => ({ ...prev, warranty: e.target.value }))}
             />
@@ -2251,7 +2247,7 @@ export default function HardwareInventoryPage() {
             </label>
             <input
               className="input-base"
-              placeholder=""
+              placeholder="Any notes or observations"
               value={form.remarks}
               onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))}
             />
@@ -2321,7 +2317,7 @@ export default function HardwareInventoryPage() {
                         <ChecklistSelect
                           value={component.componentType}
                           options={componentTypeSelectOptions}
-                          placeholder=""
+                          placeholder="Select type"
                           ariaLabel={`Component type for extra component ${index + 1}`}
                           onChange={(value) =>
                             setDesktopForm((prev) => ({
@@ -2341,7 +2337,7 @@ export default function HardwareInventoryPage() {
                         </label>
                         <input
                           className="input-base"
-                          placeholder=""
+                          placeholder="e.g. model, size, specs"
                           value={component.specifications}
                           onChange={(e) =>
                             setDesktopForm((prev) => ({
