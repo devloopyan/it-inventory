@@ -13,6 +13,7 @@ import type * as assets from "../assets.js";
 import type * as borrowers from "../borrowers.js";
 import type * as clearanceForms from "../clearanceForms.js";
 import type * as dashboardCalendar from "../dashboardCalendar.js";
+import type * as departments from "../departments.js";
 import type * as digitalInventory from "../digitalInventory.js";
 import type * as fleet from "../fleet.js";
 import type * as hardwareInventory from "../hardwareInventory.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   borrowers: typeof borrowers;
   clearanceForms: typeof clearanceForms;
   dashboardCalendar: typeof dashboardCalendar;
+  departments: typeof departments;
   digitalInventory: typeof digitalInventory;
   fleet: typeof fleet;
   hardwareInventory: typeof hardwareInventory;

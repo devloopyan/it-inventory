@@ -606,30 +606,81 @@ function FleetAvailabilitySection(props: {
             <Chip label={String(props.vehicles.length)} />
           </div>
           <div
-            className="monitoring-fleet-list monitoring-vehicle-scroll-list"
-            style={{
-              display: "grid",
-              gap: 6,
-              maxHeight: 128,
-              overflowY: "auto",
-              overflowX: "hidden",
-              paddingRight: 4,
-              minHeight: 0,
-            }}
+            className="monitoring-vehicle-scroll-list"
+            style={{ display: "flex", gap: 8, overflowX: "auto", overflowY: "hidden", padding: "2px 2px 10px" }}
           >
             {props.loading ? (
               <div className="monitoring-fleet-empty">Loading available vehicles...</div>
             ) : props.vehicles.length ? (
               props.vehicles.map((vehicle) => (
-                <article key={String(vehicle._id)} className="monitoring-fleet-card">
-                  <div className="monitoring-fleet-card-main">
-                    <strong>{vehicle.name}</strong>
-                    <span>
-                      {vehicle.vehicleType} | {vehicle.plateNumber}
-                    </span>
-                    {vehicle.capacity ? <span>Capacity: {vehicle.capacity}</span> : null}
+                <article
+                  key={String(vehicle._id)}
+                  className="monitoring-driver-profile"
+                  tabIndex={0}
+                  aria-label={`${vehicle.name}, ${vehicle.status}`}
+                  title={[vehicle.vehicleType, vehicle.plateNumber, vehicle.capacity ? `Capacity: ${vehicle.capacity}` : null].filter(Boolean).join(" | ")}
+                  style={{
+                    position: "relative",
+                    flex: "0 0 74px",
+                    display: "grid",
+                    justifyItems: "center",
+                    alignContent: "start",
+                    gap: 4,
+                    minHeight: 96,
+                    padding: 2,
+                    borderRadius: 12,
+                    outline: "none",
+                  }}
+                >
+                  <span
+                    style={{
+                      maxWidth: 70,
+                      padding: "2px 6px",
+                      borderRadius: 999,
+                      fontSize: 9,
+                      fontWeight: 800,
+                      lineHeight: 1.2,
+                      textAlign: "center",
+                      whiteSpace: "nowrap",
+                      background: vehicle.status === "Available" ? "rgba(34,197,94,0.15)" : "rgba(var(--brand-900-rgb),0.08)",
+                      color: vehicle.status === "Available" ? "rgb(21,128,61)" : "var(--foreground)",
+                    }}
+                  >
+                    {vehicle.status}
+                  </span>
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      width: 44,
+                      height: 44,
+                      display: "grid",
+                      placeItems: "center",
+                      borderRadius: 999,
+                      border: "1px solid rgba(var(--brand-900-rgb), 0.18)",
+                      background: "rgba(var(--brand-900-rgb), 0.1)",
+                      color: "var(--foreground)",
+                    }}
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M5 11L7 5H17L19 11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                      <rect x="2" y="11" width="20" height="7" rx="2" stroke="currentColor" strokeWidth="1.7" />
+                      <circle cx="6.5" cy="18.5" r="1.5" stroke="currentColor" strokeWidth="1.5" />
+                      <circle cx="17.5" cy="18.5" r="1.5" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="M2 14H22" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
                   </div>
-                  <Chip label={vehicle.status} />
+                  <strong
+                    style={{
+                      width: "100%",
+                      color: "var(--foreground)",
+                      fontSize: 11,
+                      lineHeight: 1.25,
+                      textAlign: "center",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {vehicle.name}
+                  </strong>
                 </article>
               ))
             ) : (
@@ -1421,6 +1472,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [meetingStatusFilters, setMeetingStatusFilters] = useState<ReadonlyArray<string>>([]);
   const [hrAdminDateFilter, setHrAdminDateFilter] = useState("");
   const [hrAdminArchiveView, setHrAdminArchiveView] = useState<HrAdminArchiveView>("active");
+  const [meetingArchiveView, setMeetingArchiveView] = useState<"active" | "archive">("active");
   const [filterNeedsApproval, setFilterNeedsApproval] = useState(false);
   const [filterMissingReport, setFilterMissingReport] = useState(false);
   const [filterForRevision, setFilterForRevision] = useState(false);
@@ -1465,10 +1517,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
 
   useEffect(() => {
     const requestedTab = searchParams?.get("tab") ?? null;
-    if (isMonitoringTab(requestedTab) && requestedTab !== activeTab) {
+    if (isMonitoringTab(requestedTab)) {
       setActiveTab(requestedTab);
     }
-  }, [activeTab, searchParams]);
+  }, [searchParams]);
 
   useEffect(() => {
     if (visibleMonitoringTabs.some((tab) => tab.key === activeTab)) return;
@@ -1524,6 +1576,11 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const meetingStatusFilterValues = [...getMeetingRequestStatusOptions(), "Closed"];
   const meetingRequestRows = [...(issueRows ?? [])]
     .filter((row) => row.category === MONITORING_MEETING_REQUEST_CATEGORY)
+    .filter((row) => {
+      const normalized = normalizeMeetingRequestStatusValue(row.status);
+      const isDone = normalized === "Done" || row.status === "Closed";
+      return meetingArchiveView === "archive" ? isDone : !isDone;
+    })
     .filter((row) =>
       meetingStatusFilters.length === 0
         ? true
@@ -1600,7 +1657,9 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           : "Search requester, ticket #, concern";
   const requestEmptyState =
     activeTab === "meetings"
-      ? "No meeting requests match the current filters."
+      ? meetingArchiveView === "archive"
+        ? "No archived meeting requests match the current filters."
+        : "No active meeting requests match the current filters."
       : activeTab === "borrowing"
         ? "No borrowing requests match the current filters."
         : activeTab === "hrAdmin"
@@ -3287,27 +3346,24 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                 </div>
               ) : null}
               {activeTab === "meetings" ? (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  style={{ minHeight: 40, paddingInline: 16, marginLeft: "auto" }}
-                  onClick={() => {
-                    setFormError("");
-                    setShowMeetingCreate(true);
-                  }}
-                >
-                  Create
-                </button>
-              ) : null}
-              {activeTab === "issues" ? (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  style={{ minHeight: 40, paddingInline: 16, marginLeft: "auto" }}
-                  onClick={() => openIssueTicketModal()}
-                >
-                  Create Ticket
-                </button>
+                <div className="asset-master-view-filters monitoring-archive-tabs" aria-label="Meeting request view">
+                  <button
+                    type="button"
+                    aria-pressed={meetingArchiveView === "active"}
+                    className={`asset-master-view-filter${meetingArchiveView === "active" ? " active" : ""}`}
+                    onClick={() => setMeetingArchiveView("active")}
+                  >
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={meetingArchiveView === "archive"}
+                    className={`asset-master-view-filter${meetingArchiveView === "archive" ? " active" : ""}`}
+                    onClick={() => setMeetingArchiveView("archive")}
+                  >
+                    Archive
+                  </button>
+                </div>
               ) : null}
               {activeTab === "borrowing" ? (
                 <button
@@ -3328,7 +3384,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   <tr>
                     <th>{activeTab === "issues" ? "Ticket" : "Request"}</th>
                     {showRequestTypeColumn ? <th>Type</th> : null}
-                    <th>{activeTab === "meetings" ? "Section" : activeTab === "hrAdmin" ? "Travel Purpose" : "Category"}</th>
+                    <th>{activeTab === "meetings" ? "Meeting Title" : activeTab === "hrAdmin" ? "Travel Purpose" : "Category"}</th>
                     <th>Requester</th>
                     {showScheduleColumn ? <th>Schedule</th> : null}
                     {showPriorityColumn ? <th>Priority</th> : null}
@@ -3402,7 +3458,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                         ) : null}
                         <td>
                           {activeTab === "meetings" ? (
-                            row.requesterSection || "-"
+                            row.title || "-"
                           ) : activeTab === "hrAdmin" ? (
                             <span style={{ display: "block", maxWidth: 260, color: "var(--foreground)" }}>
                               {row.category === MONITORING_TRAVEL_ORDER_CATEGORY

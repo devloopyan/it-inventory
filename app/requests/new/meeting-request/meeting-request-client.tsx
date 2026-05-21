@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentUser } from "@/app/current-user-context";
@@ -13,6 +13,9 @@ import {
 } from "@/lib/monitoring";
 
 const REQUEST_SOURCE = "Requests Portal";
+const CONFERENCE_ROOM = "Main conference room";
+const WEEK_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"] as const;
+const TIME_SLOTS = [8, 9, 10, 11, 12, 13, 14, 15, 16] as const;
 
 function toTimestamp(value: string) {
   const timestamp = new Date(value).getTime();
@@ -23,12 +26,35 @@ function formatDateTime(value: number) {
   return new Date(value).toLocaleString();
 }
 
+function hourLabel(h: number) {
+  return h < 12 ? `${h} AM` : `${h - 12} PM`;
+}
+
+function toInputValue(day: Date, hour: number) {
+  const d = new Date(day);
+  d.setHours(hour, 0, 0, 0);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:00`;
+}
+
+function slotOverlaps(
+  bookings: Array<{ meetingStartAt: number; meetingEndAt: number }>,
+  day: Date,
+  hour: number,
+) {
+  const s = new Date(day); s.setHours(hour, 0, 0, 0);
+  const e = new Date(day); e.setHours(hour + 1, 0, 0, 0);
+  return bookings.some((b) => b.meetingStartAt < e.getTime() && b.meetingEndAt > s.getTime());
+}
+
 export default function MeetingRequestClient() {
   const router = useRouter();
   const currentUser = useCurrentUser();
   const createTicket = useMutation(api.monitoring.createTicket);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const attendeeLookupRef = useRef<HTMLDivElement | null>(null);
+  const systemUsers = useQuery(api.users.list, {});
 
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
   const department = currentUser?.department ?? "";
@@ -42,11 +68,36 @@ export default function MeetingRequestClient() {
   const [meetingLocation, setMeetingLocation] = useState("");
   const [attendeeCount, setAttendeeCount] = useState("");
   const [supportNeeded, setSupportNeeded] = useState("");
-  const [additionalNotes, setAdditionalNotes] = useState("");
+  const [taggedAttendees, setTaggedAttendees] = useState<string[]>([]);
+  const [attendeeInput, setAttendeeInput] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [pendingStart, setPendingStart] = useState<{ dayIdx: number; hour: number } | null>(null);
   const missingDepartment = !department.trim();
+  const meetingStartTs = toTimestamp(meetingStart);
+  const meetingEndTs = toTimestamp(meetingEnd);
+  const showRoomPanel = meetingMode === "Onsite" || meetingMode === "Hybrid";
+
+  const refDate = meetingStartTs ? new Date(meetingStartTs) : new Date();
+  const refDay = refDate.getDay();
+  const weekMonday = new Date(refDate);
+  weekMonday.setDate(refDate.getDate() + (refDay === 0 ? -6 : 1 - refDay));
+  weekMonday.setHours(0, 0, 0, 0);
+  const weekDays = Array.from({ length: 5 }, (_, i) => {
+    const d = new Date(weekMonday);
+    d.setDate(weekMonday.getDate() + i);
+    return d;
+  });
+  const calStart = new Date(weekDays[0]); calStart.setHours(8, 0, 0, 0);
+  const calEnd = new Date(weekDays[4]); calEnd.setHours(17, 0, 0, 0);
+  const roomBookings = useQuery(
+    api.monitoring.listRoomBookings,
+    showRoomPanel
+      ? { rangeStart: calStart.getTime(), rangeEnd: calEnd.getTime() }
+      : "skip",
+  );
+  const confBookings = (roomBookings ?? []).filter((b) => b.meetingLocation === CONFERENCE_ROOM);
 
   useEffect(() => {
     if (!requesterName.trim() && currentUser?.displayName) {
@@ -59,6 +110,37 @@ export default function MeetingRequestClient() {
       setSection(currentUser.section);
     }
   }, [currentUser?.section, section]);
+
+  const [attendeeLookupOpen, setAttendeeLookupOpen] = useState(false);
+
+  useEffect(() => {
+    if (!attendeeLookupOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (!attendeeLookupRef.current?.contains(event.target as Node)) {
+        setAttendeeLookupOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [attendeeLookupOpen]);
+
+  const attendeeSuggestions = (systemUsers ?? []).filter(
+    (u) =>
+      u.active !== false &&
+      u.displayName !== requesterName &&
+      !taggedAttendees.includes(u.displayName) &&
+      u.displayName.toLowerCase().includes(attendeeInput.toLowerCase()),
+  );
+
+  function handleSelectAttendee(displayName: string) {
+    setTaggedAttendees((prev) => [...prev, displayName]);
+    setAttendeeInput("");
+    setAttendeeLookupOpen(false);
+  }
+
+  function handleRemoveAttendee(name: string) {
+    setTaggedAttendees((prev) => prev.filter((a) => a !== name));
+  }
 
   function handleBack() {
     if (window.history.length > 1) {
@@ -104,7 +186,6 @@ export default function MeetingRequestClient() {
       const trimmedMeetingLocation = meetingLocation.trim();
       const trimmedAttendeeCount = attendeeCount.trim();
       const trimmedSupportNeeded = supportNeeded.trim();
-      const trimmedAdditionalNotes = additionalNotes.trim();
 
       if (!trimmedRequesterName) {
         throw new Error("Requester name is required.");
@@ -153,8 +234,8 @@ export default function MeetingRequestClient() {
         `Schedule: ${scheduleText}.`,
         `${meetingMode} meeting at ${trimmedMeetingLocation}.`,
         `Expected attendees: ${trimmedAttendeeCount}.`,
+        taggedAttendees.length ? `Tagged attendees: ${taggedAttendees.join(", ")}.` : "",
         `Support needed: ${trimmedSupportNeeded}.`,
-        trimmedAdditionalNotes ? `Additional notes: ${trimmedAdditionalNotes}.` : "",
         trimmedSection ? `Section: ${trimmedSection}.` : "",
       ].filter(Boolean).join("\n");
       const requestSnapshot = [
@@ -167,9 +248,10 @@ export default function MeetingRequestClient() {
         `Schedule: ${scheduleText}`,
         `Location / platform: ${trimmedMeetingLocation}`,
         `Expected attendees: ${trimmedAttendeeCount}`,
+        taggedAttendees.length ? `Tagged attendees: ${taggedAttendees.join(", ")}` : "",
         `Support needed: ${trimmedSupportNeeded}`,
-        "Approval required: No",
-        "Workflow: New -> Reserved -> Ready -> Done",
+        "Approval required: Yes (Data Hub / OSMD)",
+        "Workflow: New (submitted) → Reserved (Data Hub approves) → Ready (IT assigns assets) → Done",
       ].filter(Boolean).join("\n");
 
       await createTicket({
@@ -294,6 +376,98 @@ export default function MeetingRequestClient() {
             />
           </label>
 
+          {showRoomPanel ? (
+            <div className="request-form-field request-form-field-wide" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>
+                Main Conference Room — Weekly Availability
+              </span>
+              <div style={{ overflowX: "auto" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "44px repeat(5, 1fr)", gap: 3, minWidth: 380 }}>
+                  {/* Header row */}
+                  <div />
+                  {weekDays.map((day, i) => (
+                    <div key={i} style={{ textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--muted-strong, #64748b)", paddingBottom: 4 }}>
+                      {WEEK_LABELS[i]}<br />
+                      <span style={{ fontSize: 10, fontWeight: 400 }}>{day.getMonth() + 1}/{day.getDate()}</span>
+                    </div>
+                  ))}
+
+                  {/* Time slot rows */}
+                  {TIME_SLOTS.map((hour) => (
+                    <React.Fragment key={hour}>
+                      <div style={{ fontSize: 10, color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 4, height: 28 }}>
+                        {hourLabel(hour)}
+                      </div>
+                      {weekDays.map((day, di) => {
+                        const busy = slotOverlaps(confBookings, day, hour);
+                        const isPendingStart = pendingStart?.dayIdx === di && pendingStart.hour === hour;
+                        const isConfirmed = Boolean(meetingStartTs) && slotOverlaps(
+                          [{ meetingStartAt: meetingStartTs!, meetingEndAt: meetingEndTs ?? meetingStartTs! + 3600000 }],
+                          day, hour,
+                        );
+                        return (
+                          <button
+                            key={`slot-${hour}-${di}`}
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              if (busy) return;
+                              if (!pendingStart) {
+                                setPendingStart({ dayIdx: di, hour });
+                                setMeetingStart("");
+                                setMeetingEnd("");
+                                setMeetingLocation("");
+                              } else if (pendingStart.dayIdx === di && pendingStart.hour === hour) {
+                                setPendingStart(null);
+                              } else if (pendingStart.dayIdx === di && hour > pendingStart.hour) {
+                                setMeetingStart(toInputValue(day, pendingStart.hour));
+                                setMeetingEnd(toInputValue(day, hour + 1));
+                                setMeetingLocation(CONFERENCE_ROOM);
+                                setPendingStart(null);
+                              } else {
+                                setPendingStart({ dayIdx: di, hour });
+                                setMeetingStart("");
+                                setMeetingEnd("");
+                                setMeetingLocation("");
+                              }
+                            }}
+                            title={
+                              busy ? "Occupied" :
+                              isPendingStart ? "Start selected — click a later slot on the same day to set end time" :
+                              isConfirmed ? "Confirmed booking" :
+                              pendingStart?.dayIdx === di && hour > pendingStart.hour
+                                ? `Set end to ${hourLabel(hour + 1)}`
+                                : `Book from ${hourLabel(hour)}`
+                            }
+                            style={{
+                              height: 28,
+                              borderRadius: 4,
+                              border: isPendingStart || isConfirmed ? "2px solid #4f46e5" : "1.5px solid transparent",
+                              background: isPendingStart ? "#eef2ff" : isConfirmed ? "#c7d2fe" : busy ? "#fee2e2" : "#dcfce7",
+                              color: isPendingStart ? "#4338ca" : isConfirmed ? "#3730a3" : busy ? "#dc2626" : "#16a34a",
+                              cursor: busy ? "not-allowed" : "pointer",
+                              fontSize: 9,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {busy ? "Busy" : isConfirmed ? "✓" : isPendingStart ? "●" : ""}
+                          </button>
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+              <small className="request-form-help">
+                {pendingStart
+                  ? "Start selected (●). Now click an end slot on the same day to confirm the range."
+                  : meetingStartTs && meetingLocation === CONFERENCE_ROOM
+                    ? "Time set via calendar. Click any slot to start over."
+                    : "1st click = start time · 2nd click (same day, later slot) = end time."}
+              </small>
+            </div>
+          ) : null}
+
           <label className="request-form-field">
             <span>Location / Platform</span>
             <input
@@ -314,6 +488,105 @@ export default function MeetingRequestClient() {
             />
           </label>
 
+          <div className="request-form-field request-form-field-wide">
+            <span>Tag Attendees</span>
+            <div ref={attendeeLookupRef} style={{ position: "relative" }}>
+              <input
+                className="input-base"
+                value={attendeeInput}
+                onChange={(event) => {
+                  setAttendeeInput(event.target.value);
+                  setAttendeeLookupOpen(true);
+                }}
+                onFocus={() => setAttendeeLookupOpen(true)}
+                placeholder="Search for a person in the system…"
+                autoComplete="off"
+              />
+              {attendeeLookupOpen && attendeeInput.trim() && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 4px)",
+                    left: 0,
+                    right: 0,
+                    background: "var(--dropdown-menu-bg)",
+                    border: "1px solid var(--dropdown-menu-border)",
+                    borderRadius: 10,
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+                    zIndex: 50,
+                    maxHeight: 200,
+                    overflowY: "auto",
+                  }}
+                >
+                  {attendeeSuggestions.length === 0 ? (
+                    <div style={{ padding: "10px 14px", fontSize: 13, color: "var(--muted)" }}>
+                      No matching users found.
+                    </div>
+                  ) : (
+                    attendeeSuggestions.map((user) => (
+                      <button
+                        key={String(user._id)}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); handleSelectAttendee(user.displayName); }}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "9px 14px",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          fontSize: 13,
+                          color: "var(--foreground)",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 1,
+                        }}
+                        className="attendee-suggestion-row"
+                      >
+                        <span style={{ fontWeight: 600 }}>{user.displayName}</span>
+                        {user.department ? (
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>{user.department}{user.section ? ` · ${user.section}` : ""}</span>
+                        ) : null}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+            {taggedAttendees.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {taggedAttendees.map((name) => (
+                  <span
+                    key={name}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "3px 8px 3px 12px",
+                      borderRadius: 999,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      background: "rgba(var(--brand-900-rgb), 0.08)",
+                      color: "var(--foreground)",
+                      border: "1px solid rgba(var(--brand-900-rgb), 0.15)",
+                    }}
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttendee(name)}
+                      aria-label={`Remove ${name}`}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: "0 2px", lineHeight: 1, color: "var(--muted-strong)", fontSize: 16, display: "flex", alignItems: "center" }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <small className="request-form-help">Optional. Tag people in the system who will attend this meeting.</small>
+          </div>
+
           <label className="request-form-field request-form-field-wide">
             <span>Support Needed</span>
             <textarea
@@ -324,15 +597,6 @@ export default function MeetingRequestClient() {
             />
           </label>
 
-          <label className="request-form-field request-form-field-wide">
-            <span>Additional Notes</span>
-            <textarea
-              className="input-base request-form-textarea"
-              value={additionalNotes}
-              onChange={(event) => setAdditionalNotes(event.target.value)}
-              placeholder="Add special instructions, contact person, agenda link, or timing notes."
-            />
-          </label>
 
           <div className="request-form-field request-form-field-wide">
             <FileUploadCard

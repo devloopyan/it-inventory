@@ -2,7 +2,8 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 const USER_ROLES = ["admin", "service_staff", "it_staff", "approver", "requester"] as const;
-const SERVICE_GROUPS = ["IT", "HR/Admin"] as const;
+const DEFAULT_IT_GROUPS = ["IT"] as const;
+const ALL_DEFAULT_GROUPS = ["IT", "HR/Admin", "OSMD"] as const;
 const APPROVAL_SCOPES = ["Department", "IT", "HR/Admin"] as const;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 120_000;
@@ -10,7 +11,6 @@ const PASSWORD_HASH_ALGORITHM = "pbkdf2-sha256";
 const encoder = new TextEncoder();
 
 type UserRole = (typeof USER_ROLES)[number];
-type ServiceGroup = (typeof SERVICE_GROUPS)[number];
 type ApprovalScope = (typeof APPROVAL_SCOPES)[number];
 
 function normalizeRequired(value: string, label: string) {
@@ -68,13 +68,13 @@ function normalizeStringList<T extends readonly string[]>(values: string[] | und
   return next as Array<T[number]>;
 }
 
-function normalizeServiceGroups(role: UserRole, values?: string[]): ServiceGroup[] | undefined {
-  if (role === "admin") return [...SERVICE_GROUPS];
+function normalizeServiceGroups(role: UserRole, values?: string[]): string[] | undefined {
+  if (role === "admin") return [...ALL_DEFAULT_GROUPS];
 
-  const serviceGroups = normalizeStringList(values, SERVICE_GROUPS, "service group");
-  if (serviceGroups.length) return serviceGroups as ServiceGroup[];
+  const serviceGroups = Array.from(new Set((values ?? []).map((v) => v.trim()).filter(Boolean)));
+  if (serviceGroups.length) return serviceGroups;
 
-  if (role === "service_staff" || role === "it_staff") return ["IT"];
+  if (role === "service_staff" || role === "it_staff") return [...DEFAULT_IT_GROUPS];
   return undefined;
 }
 

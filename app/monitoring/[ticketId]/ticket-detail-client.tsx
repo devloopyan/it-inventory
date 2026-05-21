@@ -28,6 +28,8 @@ import {
   type MonitoringApprovalReference,
 } from "@/lib/monitoring";
 import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/requestDisplay";
+import { isAdminRole } from "@/lib/roles";
+import { useCurrentUser } from "@/app/current-user-context";
 
 type TicketDetailClientProps = {
   ticketId: Id<"monitoringTickets">;
@@ -41,6 +43,13 @@ type EditableMeetingAsset = {
 };
 
 const MEETING_PROGRESS_STEPS = ["New", "Reserved", "Ready", "Done"] as const;
+
+const MEETING_STEP_META: Record<string, { actor: string; desc: string }> = {
+  New:      { actor: "Data Hub",  desc: "Awaiting OSMD approval" },
+  Reserved: { actor: "IT Staff",  desc: "Assign assets & set up" },
+  Ready:    { actor: "Ready",     desc: "Setup complete" },
+  Done:     { actor: "Complete",  desc: "Recording required" },
+};
 
 const textareaStyle = {
   minHeight: 88,
@@ -146,6 +155,20 @@ function extractMeetingSupportNotes(requestDetails?: string) {
   return noteLine ? noteLine.replace(/^Additional notes:\s*/i, "").trim().replace(/\.$/, "") : "";
 }
 
+function extractTaggedAttendees(requestDetails?: string): string[] {
+  if (!requestDetails) return [];
+  const taggedLine = requestDetails
+    .split("\n")
+    .find((line) => /^tagged attendees:/i.test(line.trim()));
+  if (!taggedLine) return [];
+  return taggedLine
+    .replace(/^tagged attendees:\s*/i, "")
+    .replace(/\.$/, "")
+    .split(",")
+    .map((n) => n.trim())
+    .filter(Boolean);
+}
+
 function extractLabeledDetail(requestDetails: string | undefined, label: string) {
   if (!requestDetails) return "";
   const pattern = new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*(.*)$`, "i");
@@ -193,7 +216,12 @@ function buildMeetingRequestDetails(params: {
   meetingAttendeeCount: string;
   supportNotes: string;
   meetingAssets: EditableMeetingAsset[];
+  existingRequestDetails?: string;
 }) {
+  const taggedLine = params.existingRequestDetails
+    ?.split("\n")
+    .find((line) => /^tagged attendees:/i.test(line.trim()));
+
   return [
     `Meeting support requested for "${params.meetingTitle}".`,
     `Schedule: ${formatMeetingScheduleValue(params.meetingStart, params.meetingEnd)}.`,
@@ -202,6 +230,7 @@ function buildMeetingRequestDetails(params: {
     params.meetingAssets.length
       ? `Reserved assets: ${params.meetingAssets.map((item) => `${item.assetTag} | ${item.assetLabel}`).join(", ")}.`
       : undefined,
+    taggedLine ?? undefined,
     params.supportNotes ? `Additional notes: ${params.supportNotes}.` : undefined,
   ]
     .filter(Boolean)
@@ -545,6 +574,7 @@ function MeetingAssetLookup(props: {
 
 export default function TicketDetailClient({ ticketId, actorName }: TicketDetailClientProps) {
   const router = useRouter();
+  const currentUser = useCurrentUser();
   const detail = useQuery(api.monitoring.getById, { ticketId });
   const assets = useQuery(api.hardwareInventory.listAll, {});
   const updateTicket = useMutation(api.monitoring.updateTicket);
@@ -811,6 +841,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
             meetingAttendeeCount: trimmedMeetingAttendeeCount,
             supportNotes: trimmedMeetingSupportNotes,
             meetingAssets,
+            existingRequestDetails: detail.ticket.requestDetails,
           })
         : undefined;
 
@@ -1167,10 +1198,13 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
           : "Work Ticket";
   const displayTitle = isMeetingRequest ? getEditableMeetingTitle(ticket.title, ticket.meetingStartAt) : ticket.title;
   const travelOrderDetails = isTravelOrder ? getTravelOrderDetails(ticket.requestDetails) : null;
+  const canEditTravelOrder = isAdminRole(currentUser?.role);
   const meetingRecordingAttachment = attachments.find((attachment) => attachment.kind === "Meeting Recording");
   const supportingAttachments = attachments.filter((attachment) => attachment.kind !== "Meeting Recording");
   const selectedStatus = isMeetingRequest ? normalizeMeetingRequestStatus(status) : status;
   const meetingProgress = isMeetingRequest ? getMeetingProgress(selectedStatus) : null;
+  const taggedAttendees = isMeetingRequest ? extractTaggedAttendees(ticket.requestDetails) : [];
+  const meetingSupportNotesDisplay = isMeetingRequest ? extractMeetingSupportNotes(ticket.requestDetails) : "";
   const statusOptions = isMeetingRequest
     ? [...getMeetingRequestStatusOptions(), ...(selectedStatus === "Closed" ? ["Closed" as const] : [])]
     : getMonitoringStatusOptions(workflowType);
@@ -1224,6 +1258,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     .slice(0, 8);
   const canSubmitApproval =
     !isMeetingRequest &&
+    !isTravelOrder &&
     workflowType === "serviceRequest" &&
     ticket.approvalRequired &&
     (ticket.approvalStage === "Not Submitted" || ticket.approvalStage === "For Revision");
@@ -1241,6 +1276,41 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
           ? "/monitoring?tab=internet"
           : "/monitoring";
   const backLabel = isMeetingRequest ? "Back to Meeting Requests" : "Back to Monitoring";
+
+  let meetingRoutingBanner: ReactNode = null;
+  if (isMeetingRequest && !isDetailEditing && selectedStatus !== "Closed" && selectedStatus !== "Done") {
+    if (selectedStatus === "New") {
+      meetingRoutingBanner = (
+        <div style={{ margin: "0 0 12px", padding: "10px 16px", borderRadius: 8, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1d4ed8", fontSize: 13, display: "flex", alignItems: "center", gap: 10 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+            <path d="M12 8V12M12 16H12.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          <span><strong>Awaiting Data Hub (OSMD) approval.</strong> Once approved, IT Staff will be notified to assign assets and set up.</span>
+        </div>
+      );
+    } else if (selectedStatus === "Reserved") {
+      meetingRoutingBanner = (
+        <div style={{ margin: "0 0 12px", padding: "10px 16px", borderRadius: 8, background: "#fff7ed", border: "1px solid #fed7aa", color: "#92400e", fontSize: 13, display: "flex", alignItems: "center", gap: 10 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+            <path d="M8 12L11 15L16 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span><strong>Data Hub approved.</strong> IT Staff to link equipment and complete setup before the meeting.</span>
+        </div>
+      );
+    } else if (selectedStatus === "Ready") {
+      meetingRoutingBanner = (
+        <div style={{ margin: "0 0 12px", padding: "10px 16px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", fontSize: 13, display: "flex", alignItems: "center", gap: 10 }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
+            <path d="M8 12L11 15L16 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span><strong>IT setup complete.</strong> All assets linked — ready for the meeting.</span>
+        </div>
+      );
+    }
+  }
 
   return (
     <div className="monitoring-page monitoring-detail-page">
@@ -1276,7 +1346,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 />
               </svg>
             </Link>
-            {!isDetailEditing ? (
+            {!isDetailEditing && (!isTravelOrder || canEditTravelOrder) ? (
               <button
                 className="asset-action-btn asset-action-btn-primary"
                 onClick={handleEditDetails}
@@ -1392,6 +1462,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
         </header>
 
         {feedback ? <div className="monitoring-detail-feedback">{feedback}</div> : null}
+        {meetingRoutingBanner}
 
         <div className="monitoring-detail-body">
           <main className="monitoring-detail-main">
@@ -1413,6 +1484,28 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                       </option>
                     ))}
                   </select>
+                  {isMeetingRequest && selectedStatus === "New" ? (
+                    <small style={{ fontSize: 12, color: "#1d4ed8", marginTop: 4, display: "block" }}>
+                      Waiting for Data Hub (OSMD) to review and approve the request.
+                    </small>
+                  ) : null}
+                  {isMeetingRequest && selectedStatus === "Reserved" ? (
+                    <small style={{ fontSize: 12, color: "#92400e", marginTop: 4, display: "block" }}>
+                      {meetingAssets.length === 0
+                        ? "Data Hub approved — link equipment below before marking Ready."
+                        : `Data Hub approved — ${meetingAssets.length} asset${meetingAssets.length === 1 ? "" : "s"} linked.`}
+                    </small>
+                  ) : null}
+                  {isMeetingRequest && selectedStatus === "Ready" ? (
+                    <small style={{ fontSize: 12, color: "#6d28d9", marginTop: 4, display: "block" }}>
+                      IT setup complete — meeting is ready to proceed.
+                    </small>
+                  ) : null}
+                  {isMeetingRequest && selectedStatus === "Done" && !meetingRecordingAttachment && !meetingRecordingFile ? (
+                    <small style={{ fontSize: 12, color: "#b45309", marginTop: 4, display: "block" }}>
+                      Attach the meeting recording before saving.
+                    </small>
+                  ) : null}
                 </FieldBlock>
                 {isMeetingRequest ? (
                   <>
@@ -1499,7 +1592,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                     </FieldBlock>
                   </>
                 ) : null}
-                {!isMeetingRequest && !isBorrowingRequest ? (
+                {!isMeetingRequest && !isBorrowingRequest && !isTravelOrder ? (
                   <>
                     <FieldBlock label="Impact">
                       <select className="input-base" value={impact} onChange={(event) => setImpact(event.target.value)}>
@@ -1521,7 +1614,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                     </FieldBlock>
                   </>
                 ) : null}
-                {!isMeetingRequest && !isBorrowingRequest ? (
+                {!isMeetingRequest && !isBorrowingRequest && !isTravelOrder ? (
                   <FieldBlock label="Linked Asset">
                     <select className="input-base" value={assetId} onChange={(event) => setAssetId(event.target.value)}>
                       <option value="">No linked asset</option>
@@ -1641,7 +1734,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               ) : null}
 
               <div className="monitoring-detail-note-stack">
-                {!isMeetingRequest ? (
+                {!isMeetingRequest && !isTravelOrder ? (
                   <FieldBlock label="Resolution / Action Taken">
                     <textarea
                       className="input-base"
@@ -1674,7 +1767,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                     onChange={(event) => setFulfillmentNote(event.target.value)}
                   />
                 </FieldBlock>
-                {!isMeetingRequest ? (
+                {!isMeetingRequest && !isTravelOrder ? (
                   <FieldBlock label="Cause / Action Taken">
                     <textarea
                       className="input-base"
@@ -1698,7 +1791,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 ) : null}
               </div>
 
-              {!isMeetingRequest ? (
+              {!isMeetingRequest && !isTravelOrder ? (
                 <label className="monitoring-detail-toggle">
                   <input type="checkbox" checked={majorIncident} onChange={(event) => setMajorIncident(event.target.checked)} />
                   <span>Major incident</span>
@@ -1712,6 +1805,34 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                   <button type="button" className="btn-primary" disabled={saving} onClick={() => void handleSave()}>
                     {saving ? "Saving..." : isMeetingRequest || isBorrowingRequest ? "Save Request" : "Save Ticket"}
                   </button>
+                </div>
+              </section>
+            ) : null}
+
+            {isMeetingRequest && !isDetailEditing ? (
+              <section className="monitoring-detail-section">
+                <div className="type-subsection-title">Meeting Details</div>
+                <div className="monitoring-detail-stack">
+                  <DetailTextRow label="Requester" value={ticket.requesterName} />
+                  {ticket.requesterSection ? <DetailTextRow label="Section" value={ticket.requesterSection} /> : null}
+                  {ticket.requesterDepartment ? <DetailTextRow label="Department" value={ticket.requesterDepartment} /> : null}
+                  <DetailTextRow
+                    label="Schedule"
+                    value={
+                      ticket.meetingStartAt
+                        ? `${formatDateTime(ticket.meetingStartAt)}${ticket.meetingEndAt ? ` to ${formatDateTime(ticket.meetingEndAt)}` : ""}`
+                        : "-"
+                    }
+                  />
+                  <DetailTextRow label="Mode" value={ticket.meetingMode ?? "-"} />
+                  <DetailTextRow label="Location / Platform" value={ticket.meetingLocation ?? "-"} />
+                  <DetailTextRow label="Expected Attendees" value={ticket.meetingAttendeeCount ?? "-"} />
+                  {taggedAttendees.length ? (
+                    <DetailTextRow label="Tagged Attendees" value={taggedAttendees.join(", ")} />
+                  ) : null}
+                  {meetingSupportNotesDisplay ? (
+                    <DetailTextRow label="Support Notes" value={meetingSupportNotesDisplay} />
+                  ) : null}
                 </div>
               </section>
             ) : null}
@@ -1732,7 +1853,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               </section>
             ) : null}
 
-            {!isMeetingRequest ? (
+            {!isMeetingRequest && !isTravelOrder ? (
               <section className="monitoring-detail-section">
                 <div className="type-subsection-title">Request Details</div>
                 <p className="monitoring-detail-copy">{ticket.requestDetails}</p>
@@ -1828,46 +1949,68 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
             </section>
           ) : null}
 
-          {isMeetingRequest && meetingProgress ? (
-            <section className="monitoring-detail-section monitoring-detail-section-compact">
-              <div className="type-section-title">Progress</div>
-              <div className="monitoring-detail-progress-stepper" aria-label="Meeting request progress">
-                {MEETING_PROGRESS_STEPS.map((step, index) => (
-                  <div
-                    key={step}
-                    className={`monitoring-detail-progress-item${
-                      index < meetingProgress.currentIndex ? " is-complete" : ""
-                    }${index === meetingProgress.currentIndex ? " is-current" : ""}`}
-                  >
-                    {index > 0 ? (
-                      <span
-                        className={`monitoring-detail-progress-connector${
-                          index <= meetingProgress.currentIndex ? " is-complete" : ""
-                        }`}
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                    <span className="monitoring-detail-progress-marker" aria-hidden="true">
-                      {index < meetingProgress.currentIndex ? (
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                          <path
-                            d="M2 5.25L4.125 7.25L8 3"
-                            stroke="currentColor"
-                            strokeWidth="1.6"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
+          {isMeetingRequest && meetingProgress ? (() => {
+            const STEP_COLORS = ["#3b82f6", "#f97316", "#7c3aed", "#16a34a"] as const;
+            return (
+              <section className="monitoring-detail-section monitoring-detail-section-compact">
+                <div className="type-section-title">Progress</div>
+                <div className="monitoring-detail-progress-stepper" aria-label="Meeting request progress">
+                  {MEETING_PROGRESS_STEPS.map((step, index) => {
+                    const isComplete = index < meetingProgress.currentIndex;
+                    const isCurrent = index === meetingProgress.currentIndex;
+                    const stepColor = STEP_COLORS[index];
+                    return (
+                      <div
+                        key={step}
+                        className={`monitoring-detail-progress-item${isComplete ? " is-complete" : ""}${isCurrent ? " is-current" : ""}`}
+                      >
+                        {index > 0 ? (
+                          <span
+                            className={`monitoring-detail-progress-connector${index <= meetingProgress.currentIndex ? " is-complete" : ""}`}
+                            aria-hidden="true"
                           />
-                        </svg>
-                      ) : index === meetingProgress.currentIndex ? (
-                        <span className="monitoring-detail-progress-marker-dot" />
-                      ) : null}
-                    </span>
-                    <span className="monitoring-detail-progress-label">{step}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
+                        ) : null}
+                        <span
+                          className="monitoring-detail-progress-marker"
+                          style={isCurrent ? {
+                            borderColor: stepColor,
+                            background: "var(--surface)",
+                            color: "#fff",
+                          } : undefined}
+                          aria-hidden="true"
+                        >
+                          {isComplete ? (
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                              <path d="M2 5.25L4.125 7.25L8 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          ) : isCurrent ? (
+                            <span className="monitoring-detail-progress-marker-dot" style={{ background: stepColor }} />
+                          ) : null}
+                        </span>
+                        <span
+                          className="monitoring-detail-progress-label"
+                          style={isCurrent ? { color: stepColor, fontWeight: 700 } : undefined}
+                        >
+                          {step}
+                        </span>
+                        {MEETING_STEP_META[step] ? (
+                          <span style={{
+                            fontSize: 10,
+                            color: isCurrent ? stepColor : "var(--muted)",
+                            marginTop: 2,
+                            textAlign: "center",
+                            lineHeight: 1.3,
+                          }}>
+                            {MEETING_STEP_META[step].desc}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })() : null}
 
           <section className="monitoring-detail-section monitoring-detail-section-compact">
             <div className="type-section-title">Attachments</div>
@@ -1921,19 +2064,21 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
             ) : null}
 
               <div className="monitoring-detail-upload-block">
-                <FileUploadCard
-                  label="Engineer's Report"
-                  inputRef={attachmentRef}
-                  accept="*/*"
-                  onFileChange={setAttachmentFile}
-                  file={attachmentFile}
-                  hasAttachment={Boolean(attachmentFile)}
-                  displayName={attachmentFile?.name ?? "No file selected"}
-                  helperText="Save to upload."
-                  badge="1"
-                  ariaLabel="Supporting attachment"
-                  onRemove={() => setAttachmentFile(null)}
-                />
+                {!isTravelOrder && !isMeetingRequest ? (
+                  <FileUploadCard
+                    label="Engineer's Report"
+                    inputRef={attachmentRef}
+                    accept="*/*"
+                    onFileChange={setAttachmentFile}
+                    file={attachmentFile}
+                    hasAttachment={Boolean(attachmentFile)}
+                    displayName={attachmentFile?.name ?? "No file selected"}
+                    helperText="Save to upload."
+                    badge="1"
+                    ariaLabel="Supporting attachment"
+                    onRemove={() => setAttachmentFile(null)}
+                  />
+                ) : null}
                 {!isMeetingRequest && supportingAttachments.length ? (
                   <div className="monitoring-detail-file-list">
                     {supportingAttachments.map((attachment) => (

@@ -21,6 +21,11 @@ export default defineSchema({
     .index("by_username", ["username"])
     .index("by_role", ["role"])
     .index("by_active", ["active"]),
+  departments: defineTable({
+    name: v.string(),
+    active: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_active", ["active"]),
   assets: defineTable({
     assetTag: v.string(),
     category: v.string(),

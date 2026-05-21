@@ -619,29 +619,40 @@ function resolveWorkflowStatus(args: {
   return INCIDENT_STATUSES[0];
 }
 
-function normalizeMeetingRequestTicketForRead(ticket: MonitoringTicketDoc): MonitoringTicketDoc {
-  if (ticket.category !== MONITORING_MEETING_REQUEST_CATEGORY) {
-    return ticket;
+function normalizeTicketForRead(ticket: MonitoringTicketDoc): MonitoringTicketDoc {
+  if (ticket.category === MONITORING_TRAVEL_ORDER_CATEGORY) {
+    return {
+      ...ticket,
+      requiresPurchase: false,
+      requiresReplacement: false,
+      requiresSensitiveAccess: false,
+      approvalRequired: false,
+      approvalStage: "Not Required",
+    };
   }
 
-  return {
-    ...ticket,
-    requiresPurchase: false,
-    requiresReplacement: false,
-    requiresSensitiveAccess: false,
-    approvalRequired: false,
-    approvalStage: "Not Required",
-    majorIncident: false,
-    incidentReportRequired: false,
-    status: normalizeMeetingRequestStatusValue(ticket.status) ?? ticket.status,
-  };
+  if (ticket.category === MONITORING_MEETING_REQUEST_CATEGORY) {
+    return {
+      ...ticket,
+      requiresPurchase: false,
+      requiresReplacement: false,
+      requiresSensitiveAccess: false,
+      approvalRequired: false,
+      approvalStage: "Not Required",
+      majorIncident: false,
+      incidentReportRequired: false,
+      status: normalizeMeetingRequestStatusValue(ticket.status) ?? ticket.status,
+    };
+  }
+
+  return ticket;
 }
 
 async function enrichTicketForDetail(
   ctx: QueryCtx,
   ticket: MonitoringTicketDoc,
 ) {
-  const normalizedTicket = normalizeMeetingRequestTicketForRead(ticket);
+  const normalizedTicket = normalizeTicketForRead(ticket);
   const approvalHistory = await ctx.db
     .query("monitoringApprovalHistory")
     .withIndex("by_ticketId", (q) => q.eq("ticketId", ticket._id))
@@ -704,7 +715,7 @@ export const list = query({
   handler: async (ctx, args) => {
     const search = args.search?.trim().toLowerCase() ?? "";
     const showClosed = Boolean(args.showClosed);
-    const rows = (await ctx.db.query("monitoringTickets").collect()).map(normalizeMeetingRequestTicketForRead);
+    const rows = (await ctx.db.query("monitoringTickets").collect()).map(normalizeTicketForRead);
 
     const filtered = rows
       .filter((row) => {
@@ -730,7 +741,7 @@ export const getOverview = query({
   handler: async (ctx) => {
     const now = Date.now();
     const [tickets, holidaySet] = await Promise.all([
-      ctx.db.query("monitoringTickets").collect().then((rows) => rows.map(normalizeMeetingRequestTicketForRead)),
+      ctx.db.query("monitoringTickets").collect().then((rows) => rows.map(normalizeTicketForRead)),
       getHolidaySet(ctx),
     ]);
 
@@ -779,7 +790,7 @@ export const getMeetingCalendar = query({
     rangeEnd: v.number(),
   },
   handler: async (ctx, args) => {
-    const rows = (await ctx.db.query("monitoringTickets").collect()).map(normalizeMeetingRequestTicketForRead);
+    const rows = (await ctx.db.query("monitoringTickets").collect()).map(normalizeTicketForRead);
 
     return rows
       .filter((row) => {
@@ -861,6 +872,159 @@ export const getMeetingCalendar = query({
         };
       })
       .sort((left, right) => left.eventStartAt - right.eventStartAt);
+  },
+});
+
+export const listBorrowingNotifications = query({
+  args: { requesterName: v.string() },
+  handler: async (ctx, args) => {
+    const tickets = await ctx.db
+      .query("monitoringTickets")
+      .withIndex("by_updatedAt")
+      .order("desc")
+      .collect();
+
+    return tickets
+      .filter(
+        (t) =>
+          (t.category === MONITORING_BORROWING_REQUEST_CATEGORY || Boolean(t.borrowingItems?.length)) &&
+          t.status !== "Closed" &&
+          t.expectedReturnAt != null &&
+          t.requesterName.toLowerCase() === args.requesterName.toLowerCase(),
+      )
+      .map((t) => ({
+        _id: t._id,
+        title: t.title,
+        ticketNumber: t.ticketNumber,
+        requesterName: t.requesterName,
+        expectedReturnAt: t.expectedReturnAt as number,
+        status: t.status,
+        borrowingItems: (t.borrowingItems ?? []).map((item) => ({
+          assetTag: item.assetTag,
+          assetLabel: item.assetLabel,
+          returnedAt: item.returnedAt,
+        })),
+      }));
+  },
+});
+
+export const listRoomBookings = query({
+  args: {
+    rangeStart: v.number(),
+    rangeEnd: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const tickets = await ctx.db.query("monitoringTickets").collect();
+    return tickets
+      .filter((t) => {
+        if (t.category !== MONITORING_MEETING_REQUEST_CATEGORY) return false;
+        const normalizedStatus = normalizeMeetingRequestStatusValue(t.status) ?? t.status;
+        if (normalizedStatus === "Done" || t.status === "Closed") return false;
+        if (!t.meetingStartAt || !t.meetingEndAt || !t.meetingLocation) return false;
+        if (t.meetingLocation !== "Main conference room") return false;
+        return t.meetingStartAt < args.rangeEnd && t.meetingEndAt > args.rangeStart;
+      })
+      .map((t) => ({
+        meetingLocation: t.meetingLocation as string,
+        meetingStartAt: t.meetingStartAt as number,
+        meetingEndAt: t.meetingEndAt as number,
+      }));
+  },
+});
+
+export const listMeetingInvitations = query({
+  args: { displayName: v.string() },
+  handler: async (ctx, args) => {
+    const name = args.displayName.trim().toLowerCase();
+    if (!name) return [];
+
+    const tickets = await ctx.db
+      .query("monitoringTickets")
+      .withIndex("by_updatedAt")
+      .order("desc")
+      .collect();
+
+    return tickets
+      .filter((t) => {
+        if (t.category !== MONITORING_MEETING_REQUEST_CATEGORY) return false;
+        if (t.status === "Closed" || t.status === "Done") return false;
+        if (!t.requestDetails) return false;
+        const taggedLine = t.requestDetails
+          .split("\n")
+          .find((line) => /^tagged attendees:/i.test(line.trim()));
+        if (!taggedLine) return false;
+        const taggedNames = taggedLine
+          .replace(/^tagged attendees:\s*/i, "")
+          .replace(/\.$/, "")
+          .split(",")
+          .map((n) => n.trim().toLowerCase());
+        return taggedNames.includes(name);
+      })
+      .map((t) => ({
+        _id: t._id,
+        title: t.title,
+        ticketNumber: t.ticketNumber,
+        requesterName: t.requesterName,
+        meetingStartAt: t.meetingStartAt,
+        meetingEndAt: t.meetingEndAt,
+        meetingLocation: t.meetingLocation,
+        status: t.status,
+      }));
+  },
+});
+
+export const listPendingMeetingApprovals = query({
+  args: {},
+  handler: async (ctx) => {
+    const tickets = await ctx.db
+      .query("monitoringTickets")
+      .withIndex("by_updatedAt")
+      .order("desc")
+      .collect();
+    return tickets
+      .filter((t) => {
+        if (t.category !== MONITORING_MEETING_REQUEST_CATEGORY) return false;
+        const status = normalizeMeetingRequestStatusValue(t.status) ?? t.status;
+        return status === "New";
+      })
+      .map((t) => ({
+        _id: t._id,
+        ticketNumber: t.ticketNumber,
+        title: t.title,
+        requesterName: t.requesterName,
+        requesterDepartment: t.requesterDepartment,
+        meetingStartAt: t.meetingStartAt,
+        meetingLocation: t.meetingLocation,
+        createdAt: t.createdAt,
+      }));
+  },
+});
+
+export const listMeetingRequestsForIT = query({
+  args: {},
+  handler: async (ctx) => {
+    const tickets = await ctx.db
+      .query("monitoringTickets")
+      .withIndex("by_updatedAt")
+      .order("desc")
+      .collect();
+    return tickets
+      .filter((t) => {
+        if (t.category !== MONITORING_MEETING_REQUEST_CATEGORY) return false;
+        const status = normalizeMeetingRequestStatusValue(t.status) ?? t.status;
+        return status === "Reserved";
+      })
+      .map((t) => ({
+        _id: t._id,
+        ticketNumber: t.ticketNumber,
+        title: t.title,
+        requesterName: t.requesterName,
+        requesterDepartment: t.requesterDepartment,
+        meetingStartAt: t.meetingStartAt,
+        meetingLocation: t.meetingLocation,
+        hasAssets: Boolean(t.meetingAssetItems?.length),
+        createdAt: t.createdAt,
+      }));
   },
 });
 
@@ -997,8 +1161,8 @@ export const createTicket = mutation({
     const approvalRequired =
       workflowType === "serviceRequest" &&
       !isMeetingRequest &&
-      (isTravelOrderRequest ||
-        isItExemptionRequest ||
+      !isTravelOrderRequest &&
+      (isItExemptionRequest ||
         isApprovalRequired({
           requiresPurchase,
           requiresReplacement,
@@ -1426,8 +1590,8 @@ export const updateTicket = mutation({
     const nextApprovalRequired =
       workflowType === "serviceRequest" &&
       !isMeetingRequest &&
-      (ticketIsTravelOrderRequest ||
-        ticketIsItExemptionRequest ||
+      !ticketIsTravelOrderRequest &&
+      (ticketIsItExemptionRequest ||
         isApprovalRequired({
           requiresPurchase: nextRequiresPurchase,
           requiresReplacement: nextRequiresReplacement,
@@ -1823,6 +1987,9 @@ export const submitForApproval = mutation({
     if (ticket.category === MONITORING_MEETING_REQUEST_CATEGORY) {
       throw new Error("Meeting requests do not use the approval workflow.");
     }
+    if (ticket.category === MONITORING_TRAVEL_ORDER_CATEGORY) {
+      throw new Error("Travel orders do not use the approval workflow.");
+    }
     if (ticket.workflowType !== "serviceRequest" || !ticket.approvalRequired) {
       throw new Error("This ticket does not require approval.");
     }
@@ -1882,6 +2049,9 @@ export const recordApprovalDecision = mutation({
     }
     if (ticket.category === MONITORING_MEETING_REQUEST_CATEGORY) {
       throw new Error("Meeting requests do not use the approval workflow.");
+    }
+    if (ticket.category === MONITORING_TRAVEL_ORDER_CATEGORY) {
+      throw new Error("Travel orders do not use the approval workflow.");
     }
     if (ticket.workflowType !== "serviceRequest" || !ticket.approvalRequired) {
       throw new Error("This ticket does not use the approval workflow.");

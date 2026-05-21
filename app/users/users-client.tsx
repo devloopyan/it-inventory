@@ -5,7 +5,6 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { APPROVAL_SCOPES, USER_ROLES, type ApprovalScope, type UserRole } from "@/lib/roles";
-import { SERVICE_GROUPS, type ServiceGroup } from "@/lib/serviceGroups";
 
 type UserAccount = {
   _id: Id<"users">;
@@ -89,12 +88,17 @@ function buildUsernameSuggestion(displayName: string) {
 
 export default function UsersClient() {
   const users = useQuery(api.users.list, {});
+  const departments = useQuery(api.departments.list, {});
+  const addDepartment = useMutation(api.departments.add);
+  const removeDepartment = useMutation(api.departments.remove);
   const createUser = useMutation(api.users.create);
   const updateRole = useMutation(api.users.updateRole);
   const setActive = useMutation(api.users.setActive);
   const setPassword = useMutation(api.users.setPassword);
 
   const [form, setForm] = useState<UserFormState>(defaultFormState);
+  const [newDeptName, setNewDeptName] = useState("");
+  const [deptError, setDeptError] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -300,6 +304,58 @@ export default function UsersClient() {
         </div>
       </div>
 
+      <div className="panel" style={{ padding: "20px 24px", display: "grid", gap: 16 }}>
+        <div>
+          <h2 className="type-section-title">Departments / Service Groups</h2>
+          <p className="type-section-copy">These appear as options when assigning service groups to user accounts.</p>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          {(departments ?? []).map((dept) => (
+            <span key={dept} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, background: "var(--surface-raised)", border: "1px solid var(--border-subtle)", fontSize: 13 }}>
+              {dept}
+              <button
+                type="button"
+                aria-label={`Remove ${dept}`}
+                onClick={async () => {
+                  setDeptError("");
+                  try { await removeDepartment({ name: dept }); }
+                  catch (err) { setDeptError(err instanceof Error ? err.message : "Failed to remove."); }
+                }}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", lineHeight: 1, padding: 0, fontSize: 15 }}
+              >×</button>
+            </span>
+          ))}
+          {departments === undefined && <span className="type-helper">Loading…</span>}
+          {departments?.length === 0 && <span className="type-helper">No departments yet. Add one below.</span>}
+        </div>
+        {deptError ? <p style={{ color: "var(--destructive)", fontSize: 13, margin: 0 }}>{deptError}</p> : null}
+        <div style={{ display: "flex", gap: 8, maxWidth: 400 }}>
+          <input
+            className="input-base"
+            placeholder="New department name (e.g. Finance)"
+            value={newDeptName}
+            onChange={(e) => setNewDeptName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+          />
+          <button
+            type="button"
+            className="btn-primary"
+            style={{ whiteSpace: "nowrap" }}
+            onClick={async () => {
+              setDeptError("");
+              try {
+                await addDepartment({ name: newDeptName.trim() });
+                setNewDeptName("");
+              } catch (err) {
+                setDeptError(err instanceof Error ? err.message : "Failed to add.");
+              }
+            }}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
       <div className="users-layout">
         <div className="users-sidebar-column">
           <form className="panel users-form" onSubmit={handleCreateUser}>
@@ -401,7 +457,7 @@ export default function UsersClient() {
                 <span>Requests this user can help process.</span>
               </div>
               <div className="users-scope-options">
-                {SERVICE_GROUPS.map((serviceGroup) => (
+                {(departments ?? []).map((serviceGroup) => (
                   <label key={serviceGroup} className="users-scope-option">
                     <input
                       type="checkbox"
@@ -535,7 +591,7 @@ export default function UsersClient() {
                           <div className="users-access-group">
                             <span>Service</span>
                             <div className="users-access-options">
-                              {SERVICE_GROUPS.map((serviceGroup) => (
+                              {(departments ?? []).map((serviceGroup) => (
                                 <label key={serviceGroup} className="users-access-option">
                                   <input
                                     type="checkbox"
