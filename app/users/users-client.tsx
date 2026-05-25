@@ -4,7 +4,7 @@ import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { APPROVAL_SCOPES, USER_ROLES, type ApprovalScope, type UserRole } from "@/lib/roles";
+import { USER_ROLES, type UserRole } from "@/lib/roles";
 
 type UserAccount = {
   _id: Id<"users">;
@@ -14,7 +14,6 @@ type UserAccount = {
   email?: string;
   role: string;
   serviceGroups: string[];
-  approvalScopes: string[];
   department?: string;
   section?: string;
   active: boolean;
@@ -31,8 +30,7 @@ type UserFormState = {
   email: string;
   temporaryPassword: string;
   role: UserRole;
-  serviceGroups: ServiceGroup[];
-  approvalScopes: ApprovalScope[];
+  serviceGroups: string[];
   department: string;
   section: string;
 };
@@ -41,7 +39,7 @@ const roleOptions: Array<{ value: UserRole; label: string; description: string }
   { value: "admin", label: "Admin", description: "Full system access across users, assets, and workflows." },
   { value: "service_staff", label: "Service Staff", description: "Handles requests for assigned service groups." },
   { value: "it_staff", label: "IT Staff (legacy)", description: "Old IT staff role. Keep existing users working while we migrate." },
-  { value: "approver", label: "Approver", description: "Reviews requests for assigned approval scopes." },
+  { value: "approver", label: "Approver", description: "Reviews and approves meeting requests." },
   { value: "requester", label: "Requester", description: "Submits and tracks their own requests." },
 ];
 
@@ -52,7 +50,6 @@ const defaultFormState: UserFormState = {
   temporaryPassword: "",
   role: "requester",
   serviceGroups: [],
-  approvalScopes: [],
   department: "",
   section: "",
 };
@@ -134,21 +131,14 @@ export default function UsersClient() {
     });
   }
 
-  function toggleFormServiceGroup(serviceGroup: ServiceGroup) {
+  function toggleFormServiceGroup(serviceGroup: string) {
     setForm((current) => ({
       ...current,
       serviceGroups: toggleListValue(current.serviceGroups, serviceGroup),
     }));
   }
 
-  function toggleFormApprovalScope(approvalScope: ApprovalScope) {
-    setForm((current) => ({
-      ...current,
-      approvalScopes: toggleListValue(current.approvalScopes, approvalScope),
-    }));
-  }
-
-  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
+async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
       setIsSubmitting(true);
@@ -161,7 +151,6 @@ export default function UsersClient() {
         temporaryPassword: form.temporaryPassword,
         role: form.role,
         serviceGroups: form.serviceGroups,
-        approvalScopes: form.approvalScopes,
         department: form.department || undefined,
         section: form.section || undefined,
         createdBy: "IT Operations",
@@ -217,7 +206,6 @@ export default function UsersClient() {
         userId: user._id,
         role,
         serviceGroups: user.serviceGroups,
-        approvalScopes: user.approvalScopes,
       });
       setSuccessMessage("User role updated.");
     } catch (error) {
@@ -227,13 +215,7 @@ export default function UsersClient() {
     }
   }
 
-  async function handleAccessToggle(user: UserAccount, type: "serviceGroups", value: ServiceGroup): Promise<void>;
-  async function handleAccessToggle(user: UserAccount, type: "approvalScopes", value: ApprovalScope): Promise<void>;
-  async function handleAccessToggle(
-    user: UserAccount,
-    type: "serviceGroups" | "approvalScopes",
-    value: ServiceGroup | ApprovalScope,
-  ) {
+  async function handleAccessToggle(user: UserAccount, value: string) {
     try {
       setBusyUserId(user._id);
       setErrorMessage("");
@@ -241,14 +223,7 @@ export default function UsersClient() {
       await updateRole({
         userId: user._id,
         role: normalizeRoleForSelect(user.role),
-        serviceGroups:
-          type === "serviceGroups"
-            ? toggleListValue(user.serviceGroups as ServiceGroup[], value as ServiceGroup)
-            : user.serviceGroups,
-        approvalScopes:
-          type === "approvalScopes"
-            ? toggleListValue(user.approvalScopes as ApprovalScope[], value as ApprovalScope)
-            : user.approvalScopes,
+        serviceGroups: toggleListValue(user.serviceGroups, value),
       });
       setSuccessMessage("Workflow access updated.");
     } catch (error) {
@@ -430,13 +405,17 @@ export default function UsersClient() {
 
               <label className="users-field">
                 <span>Department</span>
-                <input
+                <select
                   className="input-base"
                   name="department"
                   value={form.department}
                   onChange={handleFieldChange}
-                  placeholder="Department"
-                />
+                >
+                  <option value="">— Select department —</option>
+                  {(departments ?? []).map((dept) => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
               </label>
             </div>
 
@@ -465,25 +444,6 @@ export default function UsersClient() {
                       onChange={() => toggleFormServiceGroup(serviceGroup)}
                     />
                     <span>{serviceGroup}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="users-scope-panel">
-              <div>
-                <strong>Approval Scopes</strong>
-                <span>Requests this user can approve.</span>
-              </div>
-              <div className="users-scope-options">
-                {APPROVAL_SCOPES.map((approvalScope) => (
-                  <label key={approvalScope} className="users-scope-option">
-                    <input
-                      type="checkbox"
-                      checked={form.approvalScopes.includes(approvalScope)}
-                      onChange={() => toggleFormApprovalScope(approvalScope)}
-                    />
-                    <span>{approvalScope}</span>
                   </label>
                 ))}
               </div>
@@ -596,26 +556,10 @@ export default function UsersClient() {
                                   <input
                                     type="checkbox"
                                     checked={user.serviceGroups.includes(serviceGroup)}
-                                    onChange={() => void handleAccessToggle(user, "serviceGroups", serviceGroup)}
+                                    onChange={() => void handleAccessToggle(user, serviceGroup)}
                                     disabled={busyUserId === user._id}
                                   />
                                   <span>{serviceGroup}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="users-access-group">
-                            <span>Approve</span>
-                            <div className="users-access-options">
-                              {APPROVAL_SCOPES.map((approvalScope) => (
-                                <label key={approvalScope} className="users-access-option">
-                                  <input
-                                    type="checkbox"
-                                    checked={user.approvalScopes.includes(approvalScope)}
-                                    onChange={() => void handleAccessToggle(user, "approvalScopes", approvalScope)}
-                                    disabled={busyUserId === user._id}
-                                  />
-                                  <span>{approvalScope}</span>
                                 </label>
                               ))}
                             </div>

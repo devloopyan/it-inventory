@@ -24,7 +24,7 @@ const assetTypeOptions = HARDWARE_ASSET_TYPES;
 const departmentOptions = HARDWARE_DEPARTMENTS;
 const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRID"] as const;
 const workstationTypes = ["Laptop", "Desktop/PC"] as const;
-const specsTierOptions = ["LOW", "MID", "HIGH-END"] as const;
+const specsTierOptions = ["BASIC", "STANDARD", "ADVANCED", "HIGH-PERFORMANCE"] as const;
 const componentTypeOptions = ["Monitor", "Headset", "Keyboard", "Mouse", "Speaker", "AVR", "Other"] as const;
 const INITIAL_VISIBLE_TABLE_ROWS = 20;
 const assetTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = assetTypeOptions.map((assetType) => ({
@@ -41,10 +41,28 @@ const locationSelectOptions: ReadonlyArray<ChecklistSelectOption> = locationOpti
   value: location,
   label: location,
 }));
-const specsTierSelectOptions: ReadonlyArray<ChecklistSelectOption> = specsTierOptions.map((tier) => ({
-  value: tier,
-  label: tier,
-}));
+const specsTierSelectOptions: ReadonlyArray<ChecklistSelectOption> = [
+  {
+    value: "BASIC",
+    label: "Tier 1 — BASIC",
+    description: "Light tasks (email, documents, browsing). Entry CPU, 8GB RAM, SSD, integrated graphics. For: receptionists, data entry, customer support.",
+  },
+  {
+    value: "STANDARD",
+    label: "Tier 2 — STANDARD",
+    description: "Daily office work and multitasking. Mid-range CPU, 16GB RAM, SSD. For: admin, HR, accounting, general marketing staff.",
+  },
+  {
+    value: "ADVANCED",
+    label: "Tier 3 — ADVANCED",
+    description: "Power users and heavier workloads. High mid-range CPU, 16–32GB RAM, SSD, optional GPU. For: analysts, supervisors, developers, content editors.",
+  },
+  {
+    value: "HIGH-PERFORMANCE",
+    label: "Tier 4 — HIGH-PERFORMANCE",
+    description: "Specialized, demanding tasks (editing, engineering, CAD). High-end CPU, 32GB+ RAM, SSD, dedicated GPU. For: designers, video editors, engineers, data specialists.",
+  },
+];
 const componentTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = componentTypeOptions.map((option) => ({
   value: option,
   label: option,
@@ -128,6 +146,11 @@ type FormState = {
   assetType: string;
   assetNameDescription: string;
   specifications: string;
+  specCpu: string;
+  specRam: string;
+  specStorage: string;
+  specGpu: string;
+  specMotherboard: string;
   serialNumber: string;
   locationPersonAssigned: string;
   personAssigned: string;
@@ -145,6 +168,11 @@ const defaultForm: FormState = {
   assetType: "",
   assetNameDescription: "",
   specifications: "",
+  specCpu: "",
+  specRam: "",
+  specStorage: "",
+  specGpu: "",
+  specMotherboard: "",
   serialNumber: "",
   locationPersonAssigned: "",
   personAssigned: "",
@@ -200,6 +228,20 @@ const defaultDroneKitComponentImageFiles: DroneKitComponentImageFiles = {
   propeller: null,
   charger: null,
   controller: null,
+};
+
+type DesktopComponentImageFiles = {
+  monitor: File | null;
+  systemUnit: File | null;
+  mouse: File | null;
+  keyboard: File | null;
+};
+
+const defaultDesktopComponentImageFiles: DesktopComponentImageFiles = {
+  monitor: null,
+  systemUnit: null,
+  mouse: null,
+  keyboard: null,
 };
 
 const statusStyles: Record<
@@ -357,17 +399,28 @@ function buildSystemUnitSpecs(args: Pick<
   }
 
   const specParts = [
-    `MOTHERBOARD: ${args.systemUnitMotherboard.trim()}`,
-    `CPU: ${args.systemUnitCpu.trim()}`,
-    `RAM: ${args.systemUnitRam.trim()}`,
-    `HDD: ${args.systemUnitHdd.trim()}`,
-    `SSD: ${args.systemUnitSsd.trim()}`,
-    `GRAPHICS CARD: ${args.systemUnitGraphicsCard.trim()}`,
-    `PSU: ${args.systemUnitPsu.trim()}`,
-    `CASE: ${args.systemUnitCase.trim()}`,
-  ];
+    args.systemUnitMotherboard.trim() && `MOBO: ${args.systemUnitMotherboard.trim()}`,
+    args.systemUnitCpu.trim() && `CPU: ${args.systemUnitCpu.trim()}`,
+    args.systemUnitRam.trim() && `RAM: ${args.systemUnitRam.trim()}`,
+    args.systemUnitHdd.trim() && `HDD: ${args.systemUnitHdd.trim()}`,
+    args.systemUnitSsd.trim() && `SSD: ${args.systemUnitSsd.trim()}`,
+    args.systemUnitGraphicsCard.trim() && `GPU: ${args.systemUnitGraphicsCard.trim()}`,
+    args.systemUnitPsu.trim() && `PSU: ${args.systemUnitPsu.trim()}`,
+    args.systemUnitCase.trim() && `Case: ${args.systemUnitCase.trim()}`,
+  ].filter(Boolean);
 
   return specParts.join(" | ");
+}
+
+function buildComputerSpecs(form: Pick<FormState, "specCpu" | "specRam" | "specStorage" | "specGpu" | "specMotherboard">) {
+  const parts = [
+    form.specCpu.trim() && `CPU: ${form.specCpu.trim()}`,
+    form.specRam.trim() && `RAM: ${form.specRam.trim()}`,
+    form.specStorage.trim() && `Storage: ${form.specStorage.trim()}`,
+    form.specGpu.trim() && `GPU: ${form.specGpu.trim()}`,
+    form.specMotherboard.trim() && `MOBO: ${form.specMotherboard.trim()}`,
+  ].filter(Boolean);
+  return parts.join(" | ");
 }
 
 function resolveExtraComponentAssetType(componentType?: string) {
@@ -554,6 +607,9 @@ export default function HardwareInventoryPage() {
   const [droneKitComponentImageFiles, setDroneKitComponentImageFiles] = useState(
     defaultDroneKitComponentImageFiles,
   );
+  const [desktopComponentImageFiles, setDesktopComponentImageFiles] = useState(
+    defaultDesktopComponentImageFiles,
+  );
   const [selectedReceivingFormFile, setSelectedReceivingFormFile] = useState<File | null>(null);
   const [selectedTurnoverFormFile, setSelectedTurnoverFormFile] = useState<File | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("assetTag");
@@ -597,10 +653,17 @@ export default function HardwareInventoryPage() {
   const propellerImageInputRef = useRef<HTMLInputElement | null>(null);
   const chargerImageInputRef = useRef<HTMLInputElement | null>(null);
   const controllerImageInputRef = useRef<HTMLInputElement | null>(null);
+  const monitorImageInputRef = useRef<HTMLInputElement | null>(null);
+  const systemUnitImageInputRef = useRef<HTMLInputElement | null>(null);
+  const mouseImageInputRef = useRef<HTMLInputElement | null>(null);
+  const keyboardImageInputRef = useRef<HTMLInputElement | null>(null);
   const receivingFormInputRef = useRef<HTMLInputElement | null>(null);
   const turnoverFormInputRef = useRef<HTMLInputElement | null>(null);
   const isDesktopWorkstation = registerMode === "workstation" && workstationType === "Desktop/PC";
   const isDroneKitMode = registerMode === "droneKit";
+  const isComputerAsset =
+    (registerMode === "workstation" && !isDesktopWorkstation) ||
+    (registerMode === "general" && (form.assetType === "Laptop" || form.assetType === "Desktop/PC"));
 
   function scrollToSection(sectionRef: RefObject<HTMLElement | null>) {
     if (typeof window === "undefined") return;
@@ -1190,6 +1253,25 @@ export default function HardwareInventoryPage() {
               }
             />
           </div>
+          <div className="workstation-card-field workstation-card-field--wide">
+            <FileUploadCard
+              compact
+              label="Component Image (optional)"
+              inputRef={monitorImageInputRef}
+              accept="image/*"
+              onFileChange={(file) => setDesktopComponentImageFiles((prev) => ({ ...prev, monitor: file }))}
+              file={desktopComponentImageFiles.monitor}
+              hasAttachment={Boolean(desktopComponentImageFiles.monitor)}
+              displayName={desktopComponentImageFiles.monitor?.name ?? "Monitor image"}
+              helperText=""
+              badge="IMG"
+              ariaLabel="Monitor image upload"
+              onRemove={desktopComponentImageFiles.monitor ? () => {
+                setDesktopComponentImageFiles((prev) => ({ ...prev, monitor: null }));
+                if (monitorImageInputRef.current) monitorImageInputRef.current.value = "";
+              } : undefined}
+            />
+          </div>
         </>
       ),
     },
@@ -1241,6 +1323,25 @@ export default function HardwareInventoryPage() {
                   mouseSpecs: e.target.value,
                 }))
               }
+            />
+          </div>
+          <div className="workstation-card-field workstation-card-field--wide">
+            <FileUploadCard
+              compact
+              label="Component Image (optional)"
+              inputRef={mouseImageInputRef}
+              accept="image/*"
+              onFileChange={(file) => setDesktopComponentImageFiles((prev) => ({ ...prev, mouse: file }))}
+              file={desktopComponentImageFiles.mouse}
+              hasAttachment={Boolean(desktopComponentImageFiles.mouse)}
+              displayName={desktopComponentImageFiles.mouse?.name ?? "Mouse image"}
+              helperText=""
+              badge="IMG"
+              ariaLabel="Mouse image upload"
+              onRemove={desktopComponentImageFiles.mouse ? () => {
+                setDesktopComponentImageFiles((prev) => ({ ...prev, mouse: null }));
+                if (mouseImageInputRef.current) mouseImageInputRef.current.value = "";
+              } : undefined}
             />
           </div>
         </>
@@ -1296,6 +1397,25 @@ export default function HardwareInventoryPage() {
               }
             />
           </div>
+          <div className="workstation-card-field workstation-card-field--wide">
+            <FileUploadCard
+              compact
+              label="Component Image (optional)"
+              inputRef={keyboardImageInputRef}
+              accept="image/*"
+              onFileChange={(file) => setDesktopComponentImageFiles((prev) => ({ ...prev, keyboard: file }))}
+              file={desktopComponentImageFiles.keyboard}
+              hasAttachment={Boolean(desktopComponentImageFiles.keyboard)}
+              displayName={desktopComponentImageFiles.keyboard?.name ?? "Keyboard image"}
+              helperText=""
+              badge="IMG"
+              ariaLabel="Keyboard image upload"
+              onRemove={desktopComponentImageFiles.keyboard ? () => {
+                setDesktopComponentImageFiles((prev) => ({ ...prev, keyboard: null }));
+                if (keyboardImageInputRef.current) keyboardImageInputRef.current.value = "";
+              } : undefined}
+            />
+          </div>
         </>
       ),
     },
@@ -1321,16 +1441,98 @@ export default function HardwareInventoryPage() {
             <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
               Specifications <span style={{ color: "#dc2626" }}>*</span>
             </label>
-            <input
-              className="input-base"
-              placeholder="e.g. Intel Core i5, 8GB RAM, 512GB SSD"
-              value={desktopForm.systemUnitSpecs}
-              onChange={(e) =>
-                setDesktopForm((prev) => ({
-                  ...prev,
-                  systemUnitSpecs: e.target.value,
-                }))
-              }
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 2 }}>
+              <div style={{ display: "grid", gap: 3 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>CPU</label>
+                <input
+                  className="input-base"
+                  placeholder="e.g. Intel Core i5-12400"
+                  value={desktopForm.systemUnitCpu}
+                  onChange={(e) => setDesktopForm((prev) => ({ ...prev, systemUnitCpu: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 3 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>RAM</label>
+                <input
+                  className="input-base"
+                  placeholder="e.g. 16GB DDR4"
+                  value={desktopForm.systemUnitRam}
+                  onChange={(e) => setDesktopForm((prev) => ({ ...prev, systemUnitRam: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 3 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>HDD</label>
+                <input
+                  className="input-base"
+                  placeholder="e.g. 1TB HDD"
+                  value={desktopForm.systemUnitHdd}
+                  onChange={(e) => setDesktopForm((prev) => ({ ...prev, systemUnitHdd: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 3 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>SSD</label>
+                <input
+                  className="input-base"
+                  placeholder="e.g. 256GB NVMe SSD"
+                  value={desktopForm.systemUnitSsd}
+                  onChange={(e) => setDesktopForm((prev) => ({ ...prev, systemUnitSsd: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 3 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>GPU</label>
+                <input
+                  className="input-base"
+                  placeholder="e.g. NVIDIA GTX 1650"
+                  value={desktopForm.systemUnitGraphicsCard}
+                  onChange={(e) => setDesktopForm((prev) => ({ ...prev, systemUnitGraphicsCard: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 3 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>PSU</label>
+                <input
+                  className="input-base"
+                  placeholder="e.g. 500W 80+ Bronze"
+                  value={desktopForm.systemUnitPsu}
+                  onChange={(e) => setDesktopForm((prev) => ({ ...prev, systemUnitPsu: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 3 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>Motherboard</label>
+                <input
+                  className="input-base"
+                  placeholder="e.g. ASUS B660M-K"
+                  value={desktopForm.systemUnitMotherboard}
+                  onChange={(e) => setDesktopForm((prev) => ({ ...prev, systemUnitMotherboard: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 3 }}>
+                <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>Case</label>
+                <input
+                  className="input-base"
+                  placeholder="e.g. Corsair 4000D ATX"
+                  value={desktopForm.systemUnitCase}
+                  onChange={(e) => setDesktopForm((prev) => ({ ...prev, systemUnitCase: e.target.value }))}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="workstation-card-field workstation-card-field--wide">
+            <FileUploadCard
+              compact
+              label="Component Image (optional)"
+              inputRef={systemUnitImageInputRef}
+              accept="image/*"
+              onFileChange={(file) => setDesktopComponentImageFiles((prev) => ({ ...prev, systemUnit: file }))}
+              file={desktopComponentImageFiles.systemUnit}
+              hasAttachment={Boolean(desktopComponentImageFiles.systemUnit)}
+              displayName={desktopComponentImageFiles.systemUnit?.name ?? "System unit image"}
+              helperText=""
+              badge="IMG"
+              ariaLabel="System unit image upload"
+              onRemove={desktopComponentImageFiles.systemUnit ? () => {
+                setDesktopComponentImageFiles((prev) => ({ ...prev, systemUnit: null }));
+                if (systemUnitImageInputRef.current) systemUnitImageInputRef.current.value = "";
+              } : undefined}
             />
           </div>
         </>
@@ -1562,8 +1764,10 @@ export default function HardwareInventoryPage() {
         })
       : isDroneKitMode
         ? droneKitSpecificationsToSave
-      : registerMode === "workstation" && specTier
-        ? `[${specTier}] ${form.specifications}`
+      : isComputerAsset
+        ? (registerMode === "workstation" && specTier
+            ? `[${specTier}] ${buildComputerSpecs(form)}`
+            : buildComputerSpecs(form))
         : form.specifications;
     const serialNumberToSave = isDesktopWorkstation
       ? `${assetTagToSave}-SERIAL`
@@ -1713,6 +1917,18 @@ export default function HardwareInventoryPage() {
             "Controller image upload failed.",
           )
         : undefined;
+      const desktopMonitorImageStorageId = isDesktopWorkstation
+        ? await uploadFileToStorage(desktopComponentImageFiles.monitor, "Monitor image upload failed.")
+        : undefined;
+      const desktopSystemUnitImageStorageId = isDesktopWorkstation
+        ? await uploadFileToStorage(desktopComponentImageFiles.systemUnit, "System unit image upload failed.")
+        : undefined;
+      const desktopMouseImageStorageId = isDesktopWorkstation
+        ? await uploadFileToStorage(desktopComponentImageFiles.mouse, "Mouse image upload failed.")
+        : undefined;
+      const desktopKeyboardImageStorageId = isDesktopWorkstation
+        ? await uploadFileToStorage(desktopComponentImageFiles.keyboard, "Keyboard image upload failed.")
+        : undefined;
       const receivingFormStorageId = await uploadFileToStorage(
         selectedReceivingFormFile,
         "Receiving form upload failed.",
@@ -1778,6 +1994,10 @@ export default function HardwareInventoryPage() {
         desktopKeyboardSpecs: isDesktopWorkstation
           ? desktopForm.keyboardSpecs || undefined
           : undefined,
+        desktopMonitorImageStorageId,
+        desktopSystemUnitImageStorageId,
+        desktopMouseImageStorageId,
+        desktopKeyboardImageStorageId,
         workstationComponents: isDesktopWorkstation
           ? desktopExtraComponentsToSave.map((component) => ({
               assetTag: component.assetTag.trim(),
@@ -1825,6 +2045,7 @@ export default function HardwareInventoryPage() {
       setSpecTier("");
       setSelectedImageFiles([]);
       setDroneKitComponentImageFiles(defaultDroneKitComponentImageFiles);
+      setDesktopComponentImageFiles(defaultDesktopComponentImageFiles);
       setSelectedReceivingFormFile(null);
       setSelectedTurnoverFormFile(null);
       if (imageInputRef.current) {
@@ -1842,6 +2063,10 @@ export default function HardwareInventoryPage() {
       if (controllerImageInputRef.current) {
         controllerImageInputRef.current.value = "";
       }
+      if (monitorImageInputRef.current) monitorImageInputRef.current.value = "";
+      if (systemUnitImageInputRef.current) systemUnitImageInputRef.current.value = "";
+      if (mouseImageInputRef.current) mouseImageInputRef.current.value = "";
+      if (keyboardImageInputRef.current) keyboardImageInputRef.current.value = "";
       if (receivingFormInputRef.current) {
         receivingFormInputRef.current.value = "";
       }
@@ -1884,7 +2109,11 @@ export default function HardwareInventoryPage() {
         className={`panel hardware-register-panel operations-reference-shell${isRegisterCollapsed ? " is-collapsed" : ""}`}
         ref={formSectionRef}
       >
-        <div className="operations-reference-topbar hardware-register-topbar">
+        <div
+          className="operations-reference-topbar hardware-register-topbar"
+          onClick={toggleRegisterAccordion}
+          style={{ cursor: "pointer" }}
+        >
           <div className="operations-reference-title-group hardware-register-header">
             <div className="hardware-register-header-row">
               <div className="operations-reference-title-row">
@@ -1894,7 +2123,7 @@ export default function HardwareInventoryPage() {
             <button
               type="button"
               className="hardware-register-accordion hardware-register-accordion-toggle"
-              onClick={toggleRegisterAccordion}
+              onClick={(e) => { e.stopPropagation(); toggleRegisterAccordion(); }}
               aria-expanded={!isRegisterCollapsed}
               aria-controls="hardware-register-form-panel"
             >
@@ -2049,7 +2278,60 @@ export default function HardwareInventoryPage() {
               />
             </div>
           ) : null}
-          {!isDesktopWorkstation && !isDroneKitMode ? (
+          {!isDesktopWorkstation && !isDroneKitMode && isComputerAsset ? (
+            <div style={{ display: "grid", gap: 6, gridColumn: "span 2" }}>
+              <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
+                Specifications <span style={{ color: "#dc2626" }}>*</span>
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gap: 3 }}>
+                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>CPU</label>
+                  <input
+                    className="input-base"
+                    placeholder="e.g. Intel Core i5-1235U"
+                    value={form.specCpu}
+                    onChange={(e) => setForm((prev) => ({ ...prev, specCpu: e.target.value }))}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 3 }}>
+                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>RAM</label>
+                  <input
+                    className="input-base"
+                    placeholder="e.g. 8GB DDR4"
+                    value={form.specRam}
+                    onChange={(e) => setForm((prev) => ({ ...prev, specRam: e.target.value }))}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 3 }}>
+                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>Storage</label>
+                  <input
+                    className="input-base"
+                    placeholder="e.g. 256GB SSD"
+                    value={form.specStorage}
+                    onChange={(e) => setForm((prev) => ({ ...prev, specStorage: e.target.value }))}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 3 }}>
+                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>GPU</label>
+                  <input
+                    className="input-base"
+                    placeholder="e.g. Intel Iris Xe"
+                    value={form.specGpu}
+                    onChange={(e) => setForm((prev) => ({ ...prev, specGpu: e.target.value }))}
+                  />
+                </div>
+                <div style={{ display: "grid", gap: 3, gridColumn: "span 2" }}>
+                  <label style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>Motherboard</label>
+                  <input
+                    className="input-base"
+                    placeholder="e.g. ASUS VivoBook series"
+                    value={form.specMotherboard}
+                    onChange={(e) => setForm((prev) => ({ ...prev, specMotherboard: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : !isDesktopWorkstation && !isDroneKitMode ? (
             <div style={{ display: "grid", gap: 4 }}>
               <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
                 Specifications <span style={{ color: "#dc2626" }}>*</span>

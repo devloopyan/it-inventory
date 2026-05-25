@@ -28,7 +28,7 @@ import {
   type MonitoringApprovalReference,
 } from "@/lib/monitoring";
 import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/requestDisplay";
-import { isAdminRole } from "@/lib/roles";
+import { isAdminRole, normalizeServiceGroups } from "@/lib/roles";
 import { useCurrentUser } from "@/app/current-user-context";
 
 type TicketDetailClientProps = {
@@ -153,6 +153,37 @@ function extractMeetingSupportNotes(requestDetails?: string) {
     .map((line) => line.trim())
     .find((line) => /^Additional notes:/i.test(line));
   return noteLine ? noteLine.replace(/^Additional notes:\s*/i, "").trim().replace(/\.$/, "") : "";
+}
+
+function extractSupportNeeded(requestDetails?: string) {
+  if (!requestDetails) return "";
+  const line = requestDetails
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => /^Support needed:/i.test(l));
+  return line ? line.replace(/^Support needed:\s*/i, "").trim().replace(/\.$/, "") : "";
+}
+
+function parseSupportItems(text: string): string[] {
+  return text
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+const STOP_WORDS = new Set(["and", "the", "for", "with", "other", "needs", "room", "that", "this", "setup"]);
+
+function isSupportItemCovered(item: string, assets: { assetTag: string; assetLabel: string }[]): boolean {
+  if (assets.length === 0) return false;
+  const keywords = item
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+  if (keywords.length === 0) return false;
+  return assets.some((a) => {
+    const haystack = (a.assetTag + " " + a.assetLabel).toLowerCase();
+    return keywords.some((kw) => haystack.includes(kw));
+  });
 }
 
 function extractTaggedAttendees(requestDetails?: string): string[] {
@@ -633,6 +664,10 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const [isMeetingEditing, setIsMeetingEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [itSaving, setItSaving] = useState(false);
+  const [itFeedback, setItFeedback] = useState("");
+  const [itFeedbackIsError, setItFeedbackIsError] = useState(false);
+  const [itFulfillmentNote, setItFulfillmentNote] = useState("");
   const incidentReportRef = useRef<HTMLInputElement | null>(null);
   const meetingRecordingRef = useRef<HTMLInputElement | null>(null);
   const attachmentRef = useRef<HTMLInputElement | null>(null);
@@ -1030,6 +1065,105 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     setIsMeetingEditing(false);
   }
 
+  const [recordingUploading, setRecordingUploading] = useState(false);
+  const [recordingUploadFeedback, setRecordingUploadFeedback] = useState("");
+
+  async function handleUploadRecording() {
+    if (!meetingRecordingFile || !detail?.ticket) return;
+    setRecordingUploading(true);
+    setRecordingUploadFeedback("");
+    try {
+      const storageId = await uploadFileToStorage(meetingRecordingFile, "Recording upload failed.");
+      await updateTicket({
+        ticketId,
+        actorName,
+        attachments: [{
+          kind: "Meeting Recording",
+          label: "Meeting recording",
+          fileName: meetingRecordingFile.name,
+          contentType: meetingRecordingFile.type || undefined,
+          storageId: storageId!,
+          uploadedBy: actorName,
+        }],
+      });
+      setMeetingRecordingFile(null);
+      setRecordingUploadFeedback("Recording uploaded.");
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : "Upload failed.";
+      const cleaned = raw
+        .replace(/^\[CONVEX[^\]]*\]\s*(\[Request[^\]]*\])?\s*(Server Error\s*)?(Uncaught Error:\s*)?/i, "")
+        .replace(/\s+at handler.*$/is, "")
+        .trim();
+      setRecordingUploadFeedback(cleaned || raw);
+    } finally {
+      setRecordingUploading(false);
+    }
+  }
+
+  async function handleSaveItAssets(nextStatus?: string) {
+    if (!detail?.ticket) return;
+    if (nextStatus === "Ready") {
+      const missing = supportChecklistItems.filter((item) => !isSupportItemCovered(item, meetingAssets));
+      if (missing.length > 0) {
+        setItFeedbackIsError(true);
+        setItFeedback(`Cannot mark as Ready — the following have not been assigned yet: ${missing.join(", ")}.`);
+        return;
+      }
+    }
+    if (nextStatus === "Done" && !itFulfillmentNote.trim()) {
+      setItFeedbackIsError(true);
+      setItFeedback("A setup note is required before marking as Done.");
+      return;
+    }
+    setItSaving(true);
+    setItFeedback("");
+    setItFeedbackIsError(false);
+    try {
+      const recordingStorageId = meetingRecordingFile
+        ? await uploadFileToStorage(meetingRecordingFile, "Recording upload failed.")
+        : undefined;
+      await updateTicket({
+        ticketId,
+        actorName,
+        meetingAssetIds: meetingAssets.map((item) => item.assetId as Id<"hardwareInventory">),
+        status: nextStatus ?? selectedStatus,
+        fulfillmentNote: nextStatus === "Done" ? itFulfillmentNote.trim() : undefined,
+        ...(recordingStorageId
+          ? {
+              attachments: [{
+                kind: "Meeting Recording",
+                label: "Meeting recording",
+                fileName: meetingRecordingFile?.name ?? "Meeting recording",
+                contentType: meetingRecordingFile?.type || undefined,
+                storageId: recordingStorageId,
+                uploadedBy: actorName,
+              }],
+            }
+          : {}),
+      });
+      if (recordingStorageId) setMeetingRecordingFile(null);
+      setMeetingAssetSearch("");
+      setItFeedbackIsError(false);
+      setItFeedback(
+        nextStatus === "Ready"
+          ? "Marked as Ready — setup complete."
+          : nextStatus === "Done"
+            ? "Meeting marked as Done."
+            : "Assets saved.",
+      );
+    } catch (error) {
+      setItFeedbackIsError(true);
+      const raw = error instanceof Error ? error.message : "Save failed.";
+      const cleaned = raw
+        .replace(/^\[CONVEX[^\]]*\]\s*(\[Request[^\]]*\])?\s*(Server Error\s*)?(Uncaught Error:\s*)?/i, "")
+        .replace(/\s+at handler.*$/is, "")
+        .trim();
+      setItFeedback(cleaned || raw);
+    } finally {
+      setItSaving(false);
+    }
+  }
+
   async function handleRemoveAttachment(storageId: Id<"_storage">) {
     if (!detail?.ticket) return;
 
@@ -1199,12 +1333,21 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const displayTitle = isMeetingRequest ? getEditableMeetingTitle(ticket.title, ticket.meetingStartAt) : ticket.title;
   const travelOrderDetails = isTravelOrder ? getTravelOrderDetails(ticket.requestDetails) : null;
   const canEditTravelOrder = isAdminRole(currentUser?.role);
+  const currentServiceGroups = normalizeServiceGroups(currentUser?.role, currentUser?.serviceGroups);
+  const isItStaff = isAdminRole(currentUser?.role) || currentServiceGroups.includes("IT");
   const meetingRecordingAttachment = attachments.find((attachment) => attachment.kind === "Meeting Recording");
   const supportingAttachments = attachments.filter((attachment) => attachment.kind !== "Meeting Recording");
   const selectedStatus = isMeetingRequest ? normalizeMeetingRequestStatus(status) : status;
+  const normalizedMeetingStatus = isMeetingRequest
+    ? (normalizeMeetingRequestStatusValue(selectedStatus) ?? selectedStatus)
+    : selectedStatus;
   const meetingProgress = isMeetingRequest ? getMeetingProgress(selectedStatus) : null;
   const taggedAttendees = isMeetingRequest ? extractTaggedAttendees(ticket.requestDetails) : [];
   const meetingSupportNotesDisplay = isMeetingRequest ? extractMeetingSupportNotes(ticket.requestDetails) : "";
+  const supportNeededText = isMeetingRequest
+    ? (extractSupportNeeded(ticket.requestDetails) || meetingSupportNotesDisplay)
+    : "";
+  const supportChecklistItems = supportNeededText ? parseSupportItems(supportNeededText) : [];
   const statusOptions = isMeetingRequest
     ? [...getMeetingRequestStatusOptions(), ...(selectedStatus === "Closed" ? ["Closed" as const] : [])]
     : getMonitoringStatusOptions(workflowType);
@@ -1463,6 +1606,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
 
         {feedback ? <div className="monitoring-detail-feedback">{feedback}</div> : null}
         {meetingRoutingBanner}
+
 
         <div className="monitoring-detail-body">
           <main className="monitoring-detail-main">
@@ -1830,6 +1974,9 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                   {taggedAttendees.length ? (
                     <DetailTextRow label="Tagged Attendees" value={taggedAttendees.join(", ")} />
                   ) : null}
+                  {extractSupportNeeded(ticket.requestDetails) ? (
+                    <DetailTextRow label="Support Needed" value={extractSupportNeeded(ticket.requestDetails)} />
+                  ) : null}
                   {meetingSupportNotesDisplay ? (
                     <DetailTextRow label="Support Notes" value={meetingSupportNotesDisplay} />
                   ) : null}
@@ -1863,6 +2010,215 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
           </main>
 
           <aside className="monitoring-detail-side">
+            {isMeetingRequest && meetingProgress ? (() => {
+              const STEP_COLORS = ["#3b82f6", "#f97316", "#7c3aed", "#16a34a"] as const;
+              return (
+                <section className="monitoring-detail-section monitoring-detail-section-compact">
+                  <div className="type-section-title">Progress</div>
+                  <div className="monitoring-detail-progress-stepper" aria-label="Meeting request progress">
+                    {MEETING_PROGRESS_STEPS.map((step, index) => {
+                      const isComplete = index < meetingProgress.currentIndex;
+                      const isCurrent = index === meetingProgress.currentIndex;
+                      const stepColor = STEP_COLORS[index];
+                      return (
+                        <div
+                          key={step}
+                          className={`monitoring-detail-progress-item${isComplete ? " is-complete" : ""}${isCurrent ? " is-current" : ""}`}
+                        >
+                          {index > 0 ? (
+                            <span
+                              className={`monitoring-detail-progress-connector${index <= meetingProgress.currentIndex ? " is-complete" : ""}`}
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                          <span
+                            className="monitoring-detail-progress-marker"
+                            style={isCurrent ? {
+                              borderColor: stepColor,
+                              background: "var(--surface)",
+                              color: "#fff",
+                            } : undefined}
+                            aria-hidden="true"
+                          >
+                            {isComplete ? (
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                                <path d="M2 5.25L4.125 7.25L8 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            ) : isCurrent ? (
+                              <span className="monitoring-detail-progress-marker-dot" style={{ background: stepColor }} />
+                            ) : null}
+                          </span>
+                          <span
+                            className="monitoring-detail-progress-label"
+                            style={isCurrent ? { color: stepColor, fontWeight: 700 } : undefined}
+                          >
+                            {step}
+                          </span>
+                          {MEETING_STEP_META[step] ? (
+                            <span style={{
+                              fontSize: 10,
+                              color: isCurrent ? stepColor : "var(--muted)",
+                              marginTop: 2,
+                              textAlign: "center",
+                              lineHeight: 1.3,
+                            }}>
+                              {MEETING_STEP_META[step].desc}
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })() : null}
+
+            {isMeetingRequest && isItStaff && !isDetailEditing &&
+              (normalizedMeetingStatus === "Reserved" || normalizedMeetingStatus === "Ready") ? (
+              <section className="monitoring-detail-section monitoring-detail-it-setup">
+                <div className="monitoring-detail-it-setup-head">
+                  <div>
+                    <div className="type-section-title" style={{ marginBottom: 3 }}>
+                      {normalizedMeetingStatus === "Reserved" ? "Assign Equipment" : "Equipment Assigned"}
+                    </div>
+                    <p className="type-section-copy" style={{ margin: 0 }}>
+                      {normalizedMeetingStatus === "Reserved"
+                        ? "Link the required equipment below, then mark as Ready when setup is complete."
+                        : "Setup complete. Mark as Done after the meeting concludes."}
+                    </p>
+                  </div>
+                  {normalizedMeetingStatus === "Reserved" ? (
+                    <div className="monitoring-detail-it-setup-actions">
+                      <button type="button" className="btn-secondary" disabled={itSaving} onClick={() => void handleSaveItAssets()}>
+                        {itSaving ? "Saving…" : "Save"}
+                      </button>
+                      <button type="button" className="btn-primary" disabled={itSaving} onClick={() => void handleSaveItAssets("Ready")}>
+                        Mark as Ready
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {itFeedback ? (
+                  <div
+                    className={itFeedbackIsError ? "monitoring-detail-it-validation-error" : "monitoring-detail-feedback"}
+                    style={{ marginTop: 8 }}
+                  >
+                    {itFeedback}
+                  </div>
+                ) : null}
+
+                {normalizedMeetingStatus === "Reserved" ? (
+                  <div className="monitoring-detail-stack" style={{ marginTop: 12 }}>
+                    <MeetingAssetLookup
+                      query={meetingAssetSearch}
+                      disabled={false}
+                      onQueryChange={setMeetingAssetSearch}
+                      options={meetingAssetOptions}
+                      onAddAsset={(assetRow) => {
+                        setMeetingAssets((prev) => [
+                          ...prev,
+                          {
+                            assetId: String(assetRow._id),
+                            assetTag: assetRow.assetTag ?? "No Tag",
+                            assetLabel: formatMeetingAssetLabel(assetRow),
+                          },
+                        ]);
+                        setMeetingAssetSearch("");
+                      }}
+                    />
+                    {meetingAssets.length > 0 ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                        {meetingAssets.map((item, index) => (
+                          <div key={`${item.assetId}-${index}`} className="monitoring-detail-asset-chip">
+                            <strong>{item.assetTag}</strong>
+                            <span className="monitoring-detail-asset-chip-label">{item.assetLabel}</span>
+                            <button
+                              type="button"
+                              className="monitoring-detail-asset-chip-remove"
+                              onClick={() => setMeetingAssets((prev) => prev.filter((_, i) => i !== index))}
+                              aria-label="Remove"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                                <path d="M1 1L9 9M9 1L1 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="monitoring-detail-empty">No equipment linked yet. Search above to add assets.</div>
+                    )}
+                    {supportChecklistItems.length > 0 && (
+                      <div className="monitoring-detail-it-checklist">
+                        <div className="monitoring-detail-it-checklist-head">Support checklist</div>
+                        <div className="monitoring-detail-it-checklist-items">
+                          {supportChecklistItems.map((item, i) => {
+                            const covered = isSupportItemCovered(item, meetingAssets);
+                            return (
+                              <div key={i} className={`monitoring-detail-it-checklist-item${covered ? " covered" : " missing"}`}>
+                                {covered ? (
+                                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                                    <circle cx="6.5" cy="6.5" r="6.5" fill="#16a34a"/>
+                                    <path d="M3.5 6.5L5.5 8.5L9.5 4.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                ) : (
+                                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                                    <circle cx="6.5" cy="6.5" r="6.5" fill="#f59e0b"/>
+                                    <path d="M6.5 4V7" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+                                    <circle cx="6.5" cy="9" r="0.75" fill="white"/>
+                                  </svg>
+                                )}
+                                <span>{item}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 12 }}>
+                    {meetingAssets.length > 0 ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {meetingAssets.map((item, index) => (
+                          <div key={`${item.assetId}-${index}`} className="monitoring-detail-asset-chip">
+                            <strong>{item.assetTag}</strong>
+                            <span className="monitoring-detail-asset-chip-label">{item.assetLabel}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="monitoring-detail-empty">No equipment was assigned to this meeting.</div>
+                    )}
+                    <div style={{ marginTop: 14 }}>
+                      <label className="form-label" style={{ display: "block", marginBottom: 4 }}>
+                        Setup / Fulfillment Note <span style={{ color: "var(--color-error, #dc2626)" }}>*</span>
+                      </label>
+                      <textarea
+                        className="form-input"
+                        rows={3}
+                        value={itFulfillmentNote}
+                        onChange={(e) => setItFulfillmentNote(e.target.value)}
+                        placeholder="Describe what was set up, equipment deployed, or any relevant notes…"
+                        style={{ resize: "vertical", width: "100%" }}
+                      />
+                    </div>
+                    <div className="monitoring-detail-it-setup-actions" style={{ marginTop: 10 }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={itSaving || !itFulfillmentNote.trim()}
+                        onClick={() => void handleSaveItAssets("Done")}
+                      >
+                        {itSaving ? "Saving…" : "Mark as Done"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            ) : null}
+
             {!isMeetingRequest ? (
               <section className="monitoring-detail-section monitoring-detail-section-compact">
                 <div className="type-section-title">Record Summary</div>
@@ -1949,68 +2305,6 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
             </section>
           ) : null}
 
-          {isMeetingRequest && meetingProgress ? (() => {
-            const STEP_COLORS = ["#3b82f6", "#f97316", "#7c3aed", "#16a34a"] as const;
-            return (
-              <section className="monitoring-detail-section monitoring-detail-section-compact">
-                <div className="type-section-title">Progress</div>
-                <div className="monitoring-detail-progress-stepper" aria-label="Meeting request progress">
-                  {MEETING_PROGRESS_STEPS.map((step, index) => {
-                    const isComplete = index < meetingProgress.currentIndex;
-                    const isCurrent = index === meetingProgress.currentIndex;
-                    const stepColor = STEP_COLORS[index];
-                    return (
-                      <div
-                        key={step}
-                        className={`monitoring-detail-progress-item${isComplete ? " is-complete" : ""}${isCurrent ? " is-current" : ""}`}
-                      >
-                        {index > 0 ? (
-                          <span
-                            className={`monitoring-detail-progress-connector${index <= meetingProgress.currentIndex ? " is-complete" : ""}`}
-                            aria-hidden="true"
-                          />
-                        ) : null}
-                        <span
-                          className="monitoring-detail-progress-marker"
-                          style={isCurrent ? {
-                            borderColor: stepColor,
-                            background: "var(--surface)",
-                            color: "#fff",
-                          } : undefined}
-                          aria-hidden="true"
-                        >
-                          {isComplete ? (
-                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                              <path d="M2 5.25L4.125 7.25L8 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          ) : isCurrent ? (
-                            <span className="monitoring-detail-progress-marker-dot" style={{ background: stepColor }} />
-                          ) : null}
-                        </span>
-                        <span
-                          className="monitoring-detail-progress-label"
-                          style={isCurrent ? { color: stepColor, fontWeight: 700 } : undefined}
-                        >
-                          {step}
-                        </span>
-                        {MEETING_STEP_META[step] ? (
-                          <span style={{
-                            fontSize: 10,
-                            color: isCurrent ? stepColor : "var(--muted)",
-                            marginTop: 2,
-                            textAlign: "center",
-                            lineHeight: 1.3,
-                          }}>
-                            {MEETING_STEP_META[step].desc}
-                          </span>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })() : null}
 
           <section className="monitoring-detail-section monitoring-detail-section-compact">
             <div className="type-section-title">Attachments</div>
@@ -2060,6 +2354,21 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                   ariaLabel="Meeting recording file"
                   onRemove={() => setMeetingRecordingFile(null)}
                 />
+                {meetingRecordingFile ? (
+                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={recordingUploading}
+                      onClick={() => void handleUploadRecording()}
+                    >
+                      {recordingUploading ? "Uploading…" : "Upload Recording"}
+                    </button>
+                    {recordingUploadFeedback ? (
+                      <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{recordingUploadFeedback}</span>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

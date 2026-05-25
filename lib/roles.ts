@@ -1,10 +1,8 @@
 import { SERVICE_GROUPS, type ServiceGroup } from "./serviceGroups";
 
 export const USER_ROLES = ["admin", "service_staff", "it_staff", "approver", "requester"] as const;
-export const APPROVAL_SCOPES = ["Department", "IT", "HR/Admin"] as const;
 
 export type UserRole = (typeof USER_ROLES)[number];
-export type ApprovalScope = (typeof APPROVAL_SCOPES)[number];
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
@@ -48,20 +46,6 @@ export function normalizeServiceGroups(role?: string, serviceGroups?: readonly s
   return [];
 }
 
-export function normalizeApprovalScopes(role?: string, approvalScopes?: readonly string[]): ApprovalScope[] {
-  const normalizedRole = normalizeUserRole(role);
-  if (normalizedRole === "admin") return [...APPROVAL_SCOPES];
-
-  const validScopes = (approvalScopes ?? []).filter((scope): scope is ApprovalScope =>
-    (APPROVAL_SCOPES as readonly string[]).includes(scope),
-  );
-
-  const uniqueScopes = Array.from(new Set(validScopes));
-  if (uniqueScopes.length > 0) return uniqueScopes;
-  if (normalizedRole === "approver") return ["Department", "IT"];
-
-  return [];
-}
 
 export function canAccessAppPath(role: string | undefined, pathname: string, serviceGroups?: readonly string[]) {
   const normalizedRole = normalizeUserRole(role);

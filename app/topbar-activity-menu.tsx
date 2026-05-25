@@ -367,13 +367,15 @@ export default function TopbarActivityMenu() {
         aria-label="Open notifications"
         onClick={() => setOpenPath((prev) => (pathname && prev !== pathname ? pathname : null))}
       >
-        <span className="activity-trigger-icon" aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M6 10C6 6.68629 8.68629 4 12 4C15.3137 4 18 6.68629 18 10V15L20 17H4L6 15V10Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-            <path d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
+        <span className="activity-trigger-icon-wrap">
+          <span className="activity-trigger-icon" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M6 10C6 6.68629 8.68629 4 12 4C15.3137 4 18 6.68629 18 10V15L20 17H4L6 15V10Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+              <path d="M10 17C10 18.1046 10.8954 19 12 19C13.1046 19 14 18.1046 14 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </span>
+          {badge > 0 && <span className="activity-trigger-badge">{badge}</span>}
         </span>
-        {badge > 0 && <span className="activity-trigger-badge">{badge}</span>}
       </button>
     </div>
   );

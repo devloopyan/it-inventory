@@ -21,7 +21,6 @@ type AccountSessionUser = {
   email?: string;
   role: string;
   serviceGroups?: string[];
-  approvalScopes?: string[];
   department?: string;
   section?: string;
 };

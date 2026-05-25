@@ -528,19 +528,29 @@ a {
   min-width: 0;
 }
 
+.side-link-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
 .side-link-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
   display: inline-grid;
   place-items: center;
-  min-width: 17px;
-  height: 17px;
-  margin-left: auto;
-  padding: 0 5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
   border-radius: 999px;
   background: #ef4444;
   color: #ffffff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   line-height: 1;
+  border: 1.5px solid var(--sidebar-bg, var(--surface));
+  pointer-events: none;
 }
 
 .app-main {
@@ -694,6 +704,12 @@ a {
   box-shadow: none;
 }
 
+.activity-trigger-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
 .activity-trigger-icon {
   display: inline-flex;
   align-items: center;
@@ -732,18 +748,22 @@ a {
 }
 
 .activity-trigger-badge {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  margin-left: 8px;
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
   border-radius: 999px;
-  background: var(--brand-900);
+  background: #ef4444;
   color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 600;
+  display: inline-grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  border: 1.5px solid var(--surface);
+  pointer-events: none;
 }
 
 .account-dropdown.activity-dropdown {
@@ -1155,17 +1175,7 @@ a {
     padding: 0;
   }
 
-  .app-shell.sidebar-collapsed .side-link-badge {
-    position: absolute;
-    top: -3px;
-    right: -3px;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 4px;
-    font-size: 9px;
-  }
-
-  .app-shell.sidebar-collapsed .sidebar-account-card {
+.app-shell.sidebar-collapsed .sidebar-account-card {
     justify-content: center;
     width: 36px;
     height: 36px;
@@ -7331,67 +7341,148 @@ select.status-select optgroup {
 }
 
 .login-page {
-  min-height: 100vh;
   display: grid;
-  place-items: center;
-  padding: 32px 18px;
+  grid-template-columns: 380px 1fr;
+  min-height: 100vh;
+}
+
+/* — left brand panel — */
+.login-brand-panel {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(155deg, #1d3461 0%, #274283 60%, #1b3060 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 40px;
+}
+
+.login-brand-deco {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.login-brand-deco--tl {
+  width: 340px;
+  height: 340px;
+  top: -140px;
+  left: -140px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.login-brand-deco--br {
+  width: 270px;
+  height: 270px;
+  bottom: -100px;
+  right: -100px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.login-brand-content {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.login-brand-name {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  line-height: 1.15;
+}
+
+.login-brand-tagline {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.52);
+  line-height: 1.55;
+  max-width: 220px;
+}
+
+.login-brand-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.login-brand-chip {
+  padding: 4px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.07);
+  letter-spacing: 0.02em;
+}
+
+/* — right form panel — */
+.login-form-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
   background:
-    radial-gradient(circle at top center, rgba(79, 108, 247, 0.08), transparent 28%),
-    linear-gradient(180deg, #f4f6fb 0%, #eef2f8 100%);
+    radial-gradient(circle at 60% 20%, rgba(79, 108, 247, 0.05), transparent 50%),
+    linear-gradient(180deg, #f4f6fb 0%, #edf0f8 100%);
 }
 
 .login-stage {
-  width: min(100%, 380px);
+  width: min(100%, 360px);
   display: grid;
   justify-items: center;
-  gap: 26px;
-}
-
-.login-brand {
-  display: grid;
-  place-items: center;
-}
-
-.login-brand-icon {
-  width: 38px;
-  height: 24px;
+  gap: 20px;
 }
 
 .login-panel {
-  width: min(100%, 338px);
+  width: 100%;
   display: grid;
   gap: 18px;
-  padding: 28px 24px 22px;
-  border: 1px solid rgba(216, 223, 235, 0.92);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.06);
+  padding: 28px 26px 24px;
+  border: 1px solid rgba(210, 218, 232, 0.9);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 4px 6px rgba(15, 23, 42, 0.03),
+    0 20px 48px rgba(15, 23, 42, 0.06);
 }
 
 .login-panel-head {
   display: grid;
-  gap: 8px;
-  text-align: center;
+  gap: 4px;
 }
 
 .login-panel-title {
-  font-size: var(--type-page-title);
-  font-weight: 600;
-  letter-spacing: -0.04em;
-  color: #506a96;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #0f172a;
 }
 
 .login-panel-subtitle {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.login-label {
+  display: block;
   font-size: 12px;
-  line-height: 1.55;
-  color: #a3afc2;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 5px;
+  letter-spacing: 0.01em;
 }
 
 .login-alert {
   padding: 11px 12px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid rgba(239, 68, 68, 0.14);
-  background: rgba(255, 245, 245, 0.94);
+  background: rgba(255, 245, 245, 0.96);
   color: #b91c1c;
   font-size: 12px;
   font-weight: 600;
@@ -7399,7 +7490,7 @@ select.status-select optgroup {
 
 .login-form {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .login-field {
@@ -7411,24 +7502,23 @@ select.status-select optgroup {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
   min-height: 40px;
-  padding: 0 10px;
-  border: 1px solid #e4e8f0;
+  padding: 0 11px;
+  border: 1px solid #dce3ee;
   border-radius: 8px;
   background: #ffffff;
   overflow: hidden;
   transition:
     border-color var(--interaction-duration) var(--interaction-ease),
-    box-shadow var(--interaction-duration) var(--interaction-ease),
-    background-color var(--interaction-duration) var(--interaction-ease);
+    box-shadow var(--interaction-duration) var(--interaction-ease);
 }
 
 .login-input-shell:focus-within {
-  border-color: #cfd7e6;
-  box-shadow: none;
+  border-color: #8daade;
+  box-shadow: 0 0 0 3px rgba(79, 108, 247, 0.1);
 }
 
 .login-input-icon {
-  color: #3b82f6;
+  color: #94a3b8;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7443,7 +7533,7 @@ select.status-select optgroup {
   background: #ffffff;
   padding: 0;
   font-size: 13px;
-  color: #334155;
+  color: #1e293b;
   box-shadow: none;
   caret-color: #3478f6;
 }
@@ -7454,7 +7544,7 @@ select.status-select optgroup {
 }
 
 .login-input-control::placeholder {
-  color: #9aa7bb;
+  color: #b0bac9;
 }
 
 .login-input-control:autofill,
@@ -7463,7 +7553,7 @@ select.status-select optgroup {
 .login-input-control:-webkit-autofill,
 .login-input-control:-webkit-autofill:hover,
 .login-input-control:-webkit-autofill:focus {
-  -webkit-text-fill-color: #334155;
+  -webkit-text-fill-color: #1e293b;
   background-color: #ffffff !important;
   -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
   box-shadow: 0 0 0 1000px #ffffff inset !important;
@@ -7473,16 +7563,19 @@ select.status-select optgroup {
 .login-submit {
   width: 100%;
   min-height: 42px;
-  margin-top: 4px;
-  border-color: rgba(79, 108, 247, 0.14);
+  margin-top: 6px;
+  border: none;
   border-radius: 8px;
-  background: #3478f6;
+  background: #1d3461;
+  color: #ffffff;
   font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
+  transition: background var(--interaction-duration) var(--interaction-ease);
 }
 
 .login-submit:hover {
-  background: #2f6fee;
+  background: #274283;
 }
 
 .login-footnote {
@@ -7492,14 +7585,12 @@ select.status-select optgroup {
 }
 
 .login-footnote-link {
-  color: #5b86ef;
+  color: #4f6cbf;
   font-weight: 600;
 }
 
-:root[data-theme="dark"] .login-page {
-  background:
-    radial-gradient(circle at top center, rgba(59, 130, 246, 0.12), transparent 28%),
-    linear-gradient(180deg, #0d1117 0%, #090c11 100%);
+:root[data-theme="dark"] .login-form-panel {
+  background: linear-gradient(180deg, #0d1117 0%, #090c11 100%);
 }
 
 :root[data-theme="dark"] .login-panel {
@@ -7516,6 +7607,10 @@ select.status-select optgroup {
   color: var(--muted);
 }
 
+:root[data-theme="dark"] .login-label {
+  color: var(--muted);
+}
+
 :root[data-theme="dark"] .login-alert {
   border-color: rgba(248, 113, 113, 0.18);
   background: rgba(69, 10, 10, 0.44);
@@ -7529,7 +7624,7 @@ select.status-select optgroup {
 
 :root[data-theme="dark"] .login-input-shell:focus-within {
   border-color: var(--ui-border);
-  box-shadow: none;
+  box-shadow: 0 0 0 3px rgba(79, 108, 247, 0.12);
 }
 
 :root[data-theme="dark"] .login-input-icon {
@@ -7566,22 +7661,33 @@ select.status-select optgroup {
   color: #8cb4ff;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 680px) {
   .login-page {
-    padding: 20px 14px;
+    grid-template-columns: 1fr;
   }
 
-  .login-stage {
-    gap: 22px;
+  .login-brand-panel {
+    padding: 36px 28px;
+    min-height: 190px;
+    align-items: flex-end;
+    padding-bottom: 32px;
+  }
+
+  .login-brand-name {
+    font-size: 24px;
+  }
+
+  .login-form-panel {
+    padding: 32px 18px 40px;
   }
 
   .login-panel {
-    padding: 24px 18px 20px;
-    border-radius: 16px;
+    padding: 24px 20px 20px;
+    border-radius: 14px;
   }
 
   .login-panel-title {
-    font-size: 26px;
+    font-size: 20px;
   }
 }
 
@@ -8887,11 +8993,6 @@ select.status-select optgroup {
   transition: margin-left 180ms ease;
 }
 
-.activity-trigger:hover .activity-trigger-badge,
-.activity-trigger:focus-visible .activity-trigger-badge,
-.activity-trigger.open .activity-trigger-badge {
-  margin-left: 6px;
-}
 
 .operations-reference-status-backlog {
   background: rgba(245, 185, 66, 0.18);

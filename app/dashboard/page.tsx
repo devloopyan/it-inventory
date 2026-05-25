@@ -263,6 +263,41 @@ function getDefaultSupportEventStart(dayKey: string) {
   return toDateTimeLocalValue(date.getTime());
 }
 
+const SCHEDULE_CELL_H = 36;
+const SCHEDULE_HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16] as const;
+
+function formatScheduleHour(hour: number): string {
+  if (hour === 12) return "12 PM";
+  return hour > 12 ? `${hour - 12} PM` : `${hour} AM`;
+}
+
+function getScheduleWeekStart(offsetWeeks: number): Date {
+  const d = new Date();
+  const day = d.getDay();
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1) + offsetWeeks * 7);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function getScheduleWeekDays(weekStart: Date): Date[] {
+  return Array.from({ length: 5 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    return d;
+  });
+}
+
+function formatScheduleTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+function formatScheduleWeekLabel(weekStart: Date): string {
+  const fri = new Date(weekStart);
+  fri.setDate(weekStart.getDate() + 4);
+  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  return `${weekStart.toLocaleDateString("en-US", opts)} – ${fri.toLocaleDateString("en-US", opts)}`;
+}
+
 function getMeetingCalendarStatusClass(status?: string) {
   switch (status) {
     case "New":
@@ -493,10 +528,16 @@ export default function DashboardPage() {
   const hasItDashboardAccess = currentRole === "admin" || currentServiceGroups.includes("IT");
   const isHrAdminCalendarOnlyDashboard =
     currentRole !== "requester" && !hasItDashboardAccess && currentServiceGroups.includes("HR/Admin");
+  const isOsmdApproverDashboard =
+    !hasItDashboardAccess &&
+    currentRole !== "requester" &&
+    !isHrAdminCalendarOnlyDashboard &&
+    (currentRole === "approver" || currentServiceGroups.includes("OSMD"));
   const shouldLoadHardwareDashboardData = currentRole === "requester" || hasItDashboardAccess;
   const shouldLoadSupportCalendar = !isHrAdminCalendarOnlyDashboard;
   const [calendarMonth, setCalendarMonth] = useState(() => getCalendarMonthStart(new Date()));
   const [selectedMeetingDay, setSelectedMeetingDay] = useState(() => getCalendarDateKey(new Date()));
+  const [scheduleWeekOffset, setScheduleWeekOffset] = useState(0);
   const [isCalendarDetailOpen, setIsCalendarDetailOpen] = useState(false);
   const [showSupportEventCreate, setShowSupportEventCreate] = useState(false);
   const [supportEventForm, setSupportEventForm] = useState<DashboardSupportEventFormState>(() => ({
@@ -519,6 +560,11 @@ export default function DashboardPage() {
   const monitoringCalendarFeed = useQuery(api.monitoring.getMeetingCalendar, {
     rangeStart: meetingCalendarRange.gridStart.getTime(),
     rangeEnd: meetingCalendarRange.gridEnd.getTime(),
+  }) as DashboardCalendarEvent[] | undefined;
+  const scheduleWeekStart = getScheduleWeekStart(scheduleWeekOffset);
+  const scheduleWeekFeed = useQuery(api.monitoring.getMeetingCalendar, {
+    rangeStart: scheduleWeekStart.getTime(),
+    rangeEnd: scheduleWeekStart.getTime() + 7 * 24 * 60 * 60 * 1000,
   }) as DashboardCalendarEvent[] | undefined;
   const monitoringOverview = useQuery(api.monitoring.getOverview, hasItDashboardAccess ? {} : "skip");
   const supportCalendarFeed = useQuery(
@@ -957,6 +1003,17 @@ export default function DashboardPage() {
     [activityFeed, activityExpanded],
   );
   const hasMoreActivity = (activityFeed?.length ?? 0) > 3;
+  const scheduleWeekDays = useMemo(() => getScheduleWeekDays(scheduleWeekStart), [scheduleWeekStart]);
+  const scheduleWeekMeetings = useMemo(() => {
+    const feed = scheduleWeekFeed ?? [];
+    return feed.filter((e) => {
+      if (e.eventKind !== "meeting") return false;
+      if (e.status !== "Reserved" && e.status !== "Assets Reserved") return false;
+      const hour = new Date(e.eventStartAt).getHours();
+      return hour >= 8 && hour < 17;
+    });
+  }, [scheduleWeekFeed]);
+  const scheduleWeekLabel = formatScheduleWeekLabel(scheduleWeekStart);
   const requesterAvailableEquipment = useMemo(
     () =>
       reservableMainStorageRows
@@ -1919,7 +1976,123 @@ export default function DashboardPage() {
 
       {!isHrAdminCalendarOnlyDashboard ? (
       <div className="dashboard-row dashboard-row-secondary">
-        <div className="panel dashboard-panel dashboard-activity-panel" style={{ padding: 16 }}>
+        <div
+          className="panel dashboard-panel dashboard-activity-panel"
+          style={isOsmdApproverDashboard ? { padding: 16, height: "auto", minHeight: 0 } : { padding: 16 }}
+        >
+          {isOsmdApproverDashboard ? (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
+                <h3 className="type-section-title">Conference Room Schedule</h3>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button type="button" className="dashboard-calendar-nav-btn" aria-label="Previous week" onClick={() => setScheduleWeekOffset((p) => p - 1)}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9.5 3.5L5 8L9.5 12.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </button>
+                  <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 124, textAlign: "center" }}>{scheduleWeekLabel}</span>
+                  <button type="button" className="dashboard-calendar-nav-btn" aria-label="Next week" onClick={() => setScheduleWeekOffset((p) => p + 1)}>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.5 3.5L11 8L6.5 12.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </button>
+                  {scheduleWeekOffset !== 0 ? (
+                    <button type="button" className="dashboard-calendar-nav-btn" style={{ fontSize: 10, marginLeft: 2 }} onClick={() => setScheduleWeekOffset(0)}>Today</button>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Day header row */}
+              <div style={{ display: "grid", gridTemplateColumns: `44px repeat(5, 1fr)`, borderBottom: "1px solid var(--border)", paddingBottom: 4, marginBottom: 0 }}>
+                <div />
+                {scheduleWeekDays.map((day, i) => {
+                  const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"] as const;
+                  const isToday = getCalendarDateKey(day) === getCalendarDateKey(new Date());
+                  return (
+                    <div key={i} style={{ textAlign: "center", padding: "2px 0" }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: isToday ? "#3b82f6" : "var(--muted)" }}>{DAY_LABELS[i]}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.1, color: isToday ? "#3b82f6" : "var(--text)" }}>{day.getDate()}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Time grid */}
+              <div style={{ display: "flex" }}>
+                {/* Hour labels */}
+                <div style={{ width: 44, flexShrink: 0 }}>
+                  {SCHEDULE_HOURS.map((h) => (
+                    <div key={h} style={{ height: SCHEDULE_CELL_H, display: "flex", alignItems: "flex-start", justifyContent: "flex-end", paddingRight: 6, paddingTop: 2 }}>
+                      <span style={{ fontSize: 9, color: "var(--muted)", whiteSpace: "nowrap" }}>{formatScheduleHour(h)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Day columns */}
+                {scheduleWeekDays.map((day) => {
+                  const dayKey = getCalendarDateKey(day);
+                  const isToday = dayKey === getCalendarDateKey(new Date());
+                  const dayMeetings = scheduleWeekMeetings.filter((e) => getCalendarDateKey(e.eventStartAt) === dayKey);
+                  const totalH = SCHEDULE_HOURS.length * SCHEDULE_CELL_H;
+                  return (
+                    <div
+                      key={dayKey}
+                      style={{ flex: 1, position: "relative", borderLeft: "1px solid var(--border)", background: isToday ? "#f0f7ff" : undefined }}
+                    >
+                      {/* Hour rule lines */}
+                      {SCHEDULE_HOURS.map((h) => (
+                        <div key={h} style={{ height: SCHEDULE_CELL_H, borderBottom: "1px solid #f1f5f9" }} />
+                      ))}
+
+                      {/* Meeting blocks */}
+                      {dayMeetings.map((event) => {
+                        const start = new Date(event.eventStartAt);
+                        const end = event.eventEndAt ? new Date(event.eventEndAt) : new Date(event.eventStartAt + 60 * 60 * 1000);
+                        const topPx = (start.getHours() - 8) * SCHEDULE_CELL_H + start.getMinutes() * (SCHEDULE_CELL_H / 60);
+                        const durationMin = (end.getHours() - start.getHours()) * 60 + (end.getMinutes() - start.getMinutes());
+                        const heightPx = Math.max(durationMin * (SCHEDULE_CELL_H / 60), 22);
+                        const clampedTop = Math.max(0, Math.min(topPx, totalH - heightPx));
+                        return (
+                          <Link
+                            key={event._id}
+                            href={`/monitoring/${event._id}`}
+                            style={{
+                              position: "absolute",
+                              top: clampedTop,
+                              left: 2,
+                              right: 2,
+                              height: heightPx,
+                              background: "#dbeafe",
+                              border: "1px solid #93c5fd",
+                              borderLeft: "3px solid #3b82f6",
+                              borderRadius: 4,
+                              padding: "2px 5px",
+                              overflow: "hidden",
+                              zIndex: 1,
+                              textDecoration: "none",
+                              display: "block",
+                            }}
+                          >
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#1d4ed8", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {event.title}
+                            </div>
+                            {heightPx >= 26 ? (
+                              <div style={{ fontSize: 9, color: "#3b82f6", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {formatScheduleTime(event.eventStartAt)}{event.eventEndAt ? ` – ${formatScheduleTime(event.eventEndAt)}` : ""}
+                              </div>
+                            ) : null}
+                            {heightPx >= 44 && event.meetingLocation ? (
+                              <div style={{ fontSize: 9, color: "#3b82f6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {event.meetingLocation}
+                              </div>
+                            ) : null}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+          <>
           <div
             style={{
               display: "flex",
@@ -2001,6 +2174,8 @@ export default function DashboardPage() {
               </div>
             ) : null}
           </div>
+          </>
+          )}
         </div>
 
         <div className="panel dashboard-panel dashboard-secondary-panel recent-assets-card" style={{ padding: 16 }}>

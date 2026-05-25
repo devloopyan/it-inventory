@@ -305,6 +305,50 @@ export const markTravelOrderDone = mutation({
   },
 });
 
+export const cancelTravelOrder = mutation({
+  args: {
+    ticketId: v.id("monitoringTickets"),
+    actorName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const ticket = await ctx.db.get(args.ticketId);
+    if (!ticket) {
+      throw new Error("Travel order could not be found.");
+    }
+    if (ticket.category !== "Travel Order") {
+      throw new Error("Only travel orders can be cancelled from the fleet view.");
+    }
+
+    const now = Date.now();
+    const actorName = normalizeRequired(args.actorName, "Actor name");
+
+    if (ticket.fleetDriverId) {
+      const driver = await ctx.db.get(ticket.fleetDriverId);
+      if (driver) {
+        await ctx.db.patch(ticket.fleetDriverId, { status: "Available", updatedAt: now });
+      }
+    }
+
+    if (ticket.fleetVehicleId) {
+      const vehicle = await ctx.db.get(ticket.fleetVehicleId);
+      if (vehicle) {
+        await ctx.db.patch(ticket.fleetVehicleId, { status: "Available", updatedAt: now });
+      }
+    }
+
+    await ctx.db.patch(args.ticketId, {
+      status: "Closed",
+      closeReason: "Cancelled",
+      closureNote: "Travel order cancelled by HR/Admin.",
+      closedAt: now,
+      updatedAt: now,
+      updatedBy: actorName,
+    });
+
+    return { success: true };
+  },
+});
+
 export const reopenTravelOrder = mutation({
   args: {
     ticketId: v.id("monitoringTickets"),

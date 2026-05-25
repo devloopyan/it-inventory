@@ -22,7 +22,6 @@ async function getCurrentUser() {
     username: session.username,
     role: session.role,
     serviceGroups: session.serviceGroups,
-    approvalScopes: session.approvalScopes,
     department: session.department,
     section: session.section,
   };

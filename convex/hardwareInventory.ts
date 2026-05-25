@@ -556,6 +556,10 @@ export const create = mutation({
     desktopKeyboardAssetTag: v.optional(v.string()),
     desktopKeyboardSerialNumber: v.optional(v.string()),
     desktopKeyboardSpecs: v.optional(v.string()),
+    desktopMonitorImageStorageId: v.optional(v.id("_storage")),
+    desktopSystemUnitImageStorageId: v.optional(v.id("_storage")),
+    desktopMouseImageStorageId: v.optional(v.id("_storage")),
+    desktopKeyboardImageStorageId: v.optional(v.id("_storage")),
     workstationComponents: v.optional(
       v.array(
         v.object({
@@ -609,6 +613,10 @@ export const create = mutation({
     const desktopKeyboardAssetTag = normalizeOptional(args.desktopKeyboardAssetTag);
     const desktopKeyboardSerialNumber = normalizeOptional(args.desktopKeyboardSerialNumber);
     const desktopKeyboardSpecs = normalizeOptional(args.desktopKeyboardSpecs);
+    const desktopMonitorImageStorageId = args.desktopMonitorImageStorageId;
+    const desktopSystemUnitImageStorageId = args.desktopSystemUnitImageStorageId;
+    const desktopMouseImageStorageId = args.desktopMouseImageStorageId;
+    const desktopKeyboardImageStorageId = args.desktopKeyboardImageStorageId;
     const workstationComponents = normalizeWorkstationComponents(args.workstationComponents);
     const turnoverTo = resolveTurnoverTo(personAssigned);
     const effectiveStatus: HardwareStatus = turnoverFormStorageId ? "Assigned" : status;
@@ -772,6 +780,10 @@ export const create = mutation({
         desktopKeyboardAssetTag,
         desktopKeyboardSerialNumber,
         desktopKeyboardSpecs,
+        desktopMonitorImageStorageId,
+        desktopSystemUnitImageStorageId,
+        desktopMouseImageStorageId,
+        desktopKeyboardImageStorageId,
         workstationComponents,
         assignedDate: effectiveAssignedDate,
         turnoverDate: effectiveTurnoverDate,

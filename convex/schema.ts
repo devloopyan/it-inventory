@@ -84,6 +84,10 @@ export default defineSchema({
     desktopKeyboardAssetTag: v.optional(v.string()),
     desktopKeyboardSerialNumber: v.optional(v.string()),
     desktopKeyboardSpecs: v.optional(v.string()),
+    desktopMonitorImageStorageId: v.optional(v.id("_storage")),
+    desktopSystemUnitImageStorageId: v.optional(v.id("_storage")),
+    desktopMouseImageStorageId: v.optional(v.id("_storage")),
+    desktopKeyboardImageStorageId: v.optional(v.id("_storage")),
     workstationComponents: v.optional(
       v.array(
         v.object({

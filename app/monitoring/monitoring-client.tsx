@@ -38,7 +38,7 @@ import {
 } from "@/lib/monitoring";
 import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/requestDisplay";
 import { getServiceGroupForCategory } from "@/lib/serviceGroups";
-import { isAdminRole, normalizeApprovalScopes, normalizeServiceGroups } from "@/lib/roles";
+import { isAdminRole, normalizeServiceGroups } from "@/lib/roles";
 import { useCurrentUser } from "../current-user-context";
 
 type MonitoringClientProps = {
@@ -307,13 +307,10 @@ function formatMeetingSchedule(start: string, end: string) {
   return `${startLabel} to ${formatDateTimeInput(end)}`;
 }
 
-function getMeetingRequestListTitle(title: string, meetingStartAt?: number) {
+function getMeetingRequestListTitle(title: string) {
   const withoutPrefix = title.replace(/^Meeting Support\s*-\s*/i, "").trim();
-  const startLabel = meetingStartAt ? formatDateTime(meetingStartAt) : "";
-  if (startLabel && withoutPrefix.endsWith(` - ${startLabel}`)) {
-    return withoutPrefix.slice(0, -(` - ${startLabel}`.length)).trim();
-  }
-  return withoutPrefix;
+  const lastDash = withoutPrefix.lastIndexOf(" - ");
+  return lastDash !== -1 ? withoutPrefix.slice(0, lastDash).trim() : withoutPrefix;
 }
 
 function getTravelPurposeFromDetails(requestDetails?: string) {
@@ -1149,6 +1146,20 @@ function ViewTicketIcon() {
   );
 }
 
+function CancelTravelOrderIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6 6L18 18M18 6L6 18"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function ReopenTicketIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1422,20 +1433,26 @@ function MonitoringFormModal(props: {
 export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const currentUser = useCurrentUser();
   const currentServiceGroups = normalizeServiceGroups(currentUser?.role, currentUser?.serviceGroups);
-  const currentApprovalScopes = normalizeApprovalScopes(currentUser?.role, currentUser?.approvalScopes);
   const hasAdminAccess = isAdminRole(currentUser?.role);
   const canSeeItQueue =
-    hasAdminAccess || currentServiceGroups.includes("IT") || currentApprovalScopes.includes("IT");
+    hasAdminAccess || currentServiceGroups.includes("IT");
   const canSeeHrAdminQueue =
-    hasAdminAccess || currentServiceGroups.includes("HR/Admin") || currentApprovalScopes.includes("HR/Admin");
+    hasAdminAccess || currentServiceGroups.includes("HR/Admin");
+  const canSeeMeetingsQueue =
+    hasAdminAccess ||
+    currentUser?.role === "approver" ||
+    currentServiceGroups.includes("OSMD") ||
+    currentServiceGroups.includes("IT");
   const visibleMonitoringTabs = useMemo(
     () =>
       MONITORING_TABS.filter((tab) => {
         if (hasAdminAccess) return true;
         if (tab.key === "hrAdmin") return canSeeHrAdminQueue;
+        if (tab.key === "meetings") return canSeeMeetingsQueue;
+        if (tab.key === "issues") return canSeeItQueue || canSeeMeetingsQueue;
         return canSeeItQueue;
       }),
-    [canSeeHrAdminQueue, canSeeItQueue, hasAdminAccess],
+    [canSeeHrAdminQueue, canSeeItQueue, canSeeMeetingsQueue, hasAdminAccess],
   );
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1455,6 +1472,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const deleteFleetVehicle = useMutation(api.fleet.deleteVehicle);
   const assignTravelOrderFleet = useMutation(api.fleet.assignTravelOrderFleet);
   const markTravelOrderDone = useMutation(api.fleet.markTravelOrderDone);
+  const cancelTravelOrder = useMutation(api.fleet.cancelTravelOrder);
   const reopenTravelOrder = useMutation(api.fleet.reopenTravelOrder);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const [activeTab, setActiveTab] = useState<MonitoringTab>(() => {
@@ -1507,6 +1525,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [fleetAssignmentError, setFleetAssignmentError] = useState("");
   const [prioritySavingId, setPrioritySavingId] = useState("");
   const [travelDoneSavingId, setTravelDoneSavingId] = useState("");
+  const [travelCancelSavingId, setTravelCancelSavingId] = useState("");
   const [travelReopenSavingId, setTravelReopenSavingId] = useState("");
   const issueAttachmentRef = useRef<HTMLInputElement | null>(null);
   const borrowingAttachmentRef = useRef<HTMLInputElement | null>(null);
@@ -1586,14 +1605,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
         ? true
         : meetingStatusFilters.includes(getDisplayStatusLabel(row.status, row.category)),
     )
-    .sort((left, right) => {
-      const leftStart = left.meetingStartAt ?? Number.MAX_SAFE_INTEGER;
-      const rightStart = right.meetingStartAt ?? Number.MAX_SAFE_INTEGER;
-      if (leftStart !== rightStart) {
-        return leftStart - rightStart;
-      }
-      return right.updatedAt - left.updatedAt;
-    });
+    .sort((left, right) => right.createdAt - left.createdAt);
   const borrowingRequestRows = [...(issueRows ?? [])]
     .filter((row) => row.category === MONITORING_BORROWING_REQUEST_CATEGORY)
     .filter((row) => {
@@ -1675,15 +1687,21 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
         : activeTab === "hrAdmin"
           ? "Fleet Assignment"
           : "Approval";
+  const canApproveMeetings =
+    hasAdminAccess ||
+    currentUser?.role === "approver" ||
+    currentServiceGroups.includes("OSMD");
   const showRequestTypeColumn = activeTab !== "meetings" && activeTab !== "hrAdmin";
   const showPriorityColumn = activeTab !== "meetings";
   const showFleetActionColumn = activeTab === "hrAdmin";
+  const showMeetingActionColumn = activeTab === "meetings";
   const showScheduleColumn = activeTab !== "hrAdmin";
   const requestColumnCount =
     6 +
     (showRequestTypeColumn ? 1 : 0) +
     (showPriorityColumn ? 1 : 0) +
     (showFleetActionColumn ? 1 : 0) +
+    (showMeetingActionColumn ? 1 : 0) +
     (showScheduleColumn ? 1 : 0);
   const requestFilterCount = [filterNeedsApproval, filterMissingReport, filterForRevision].filter(Boolean).length;
   const requestFilterSummary = requestFilterCount === 0 ? "Select" : String(requestFilterCount);
@@ -2386,6 +2404,25 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
       setRequestTableError(error instanceof Error ? error.message : "Unable to mark travel as done.");
     } finally {
       setTravelDoneSavingId("");
+    }
+  }
+
+  async function handleCancelTravelOrder(ticketId: Id<"monitoringTickets">) {
+    if (!window.confirm("Cancel this travel order? The assigned driver and vehicle will become available again.")) {
+      return;
+    }
+
+    try {
+      setTravelCancelSavingId(String(ticketId));
+      setRequestTableError("");
+      await cancelTravelOrder({
+        ticketId,
+        actorName,
+      });
+    } catch (error) {
+      setRequestTableError(error instanceof Error ? error.message : "Unable to cancel travel order.");
+    } finally {
+      setTravelCancelSavingId("");
     }
   }
 
@@ -3392,6 +3429,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     <th>{requestMetaColumnLabel}</th>
                     <th>{activeTab === "hrAdmin" ? "Travel Time" : "Last Updated"}</th>
                     {showFleetActionColumn ? <th>Action</th> : null}
+                    {showMeetingActionColumn ? <th>Action</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -3405,19 +3443,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     const isUnopenedRequest =
                       displayStatus === "New" && !(row.notificationSeenByGroups ?? []).includes(rowServiceGroup);
                     const requestListTitle =
-                      activeTab === "meetings" ? getMeetingRequestListTitle(row.title, row.meetingStartAt) : row.title;
+                      activeTab === "meetings" ? getMeetingRequestListTitle(row.title) : row.title;
                     const borrowingRequestType = formatRequesterRequestType(row);
                     const borrowingAssetLabel = formatRequesterAssetLabel(row);
                     const travelSchedule = getTravelScheduleFromDetails(row.requestDetails);
-                    const editableMeetingStatusOptions = Array.from(
-                      new Set([
-                        ...getMeetingRequestStatusOptions(),
-                        ...(displayStatus ? [displayStatus] : []),
-                        ...(displayStatus === "Closed" ? ["Closed"] : []),
-                      ]),
-                    );
-                    const meetingStatusOptions = buildMeetingStatusSelectOptions(editableMeetingStatusOptions);
-
                     return (
                       <tr
                         key={row._id}
@@ -3458,7 +3487,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                         ) : null}
                         <td>
                           {activeTab === "meetings" ? (
-                            row.title || "-"
+                            requestListTitle || "-"
                           ) : activeTab === "hrAdmin" ? (
                             <span style={{ display: "block", maxWidth: 260, color: "var(--foreground)" }}>
                               {row.category === MONITORING_TRAVEL_ORDER_CATEGORY
@@ -3520,21 +3549,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                           </td>
                         ) : null}
                         <td onClick={(event) => event.stopPropagation()}>
-                          {activeTab === "meetings" ? (
-                            <div className="table-status-select-wrap">
-                              <ChecklistSelect
-                                value={meetingStatusDrafts[rowId] ?? displayStatus}
-                                options={meetingStatusOptions}
-                                onChange={(value) => void handleMeetingStatusChange(row._id, value)}
-                                placeholder="Select status"
-                                ariaLabel={`Status for ${row.ticketNumber}`}
-                                disabled={meetingStatusSavingId === rowId}
-                                minMenuWidth={128}
-                              />
-                            </div>
-                          ) : (
-                            <Chip label={displayStatus} />
-                          )}
+                          <Chip label={displayStatus} />
                         </td>
                         <td>
                             {activeTab === "meetings"
@@ -3640,12 +3655,87 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                     >
                                       <TravelDoneIcon />
                                     </button>
+                                    <button
+                                      type="button"
+                                      className="monitoring-icon-action-btn is-destructive"
+                                      aria-label={`Cancel ${row.ticketNumber}`}
+                                      title="Cancel travel order"
+                                      disabled={isTravelOrderDone || travelCancelSavingId === rowId}
+                                      onClick={() => void handleCancelTravelOrder(row._id)}
+                                    >
+                                      <CancelTravelOrderIcon />
+                                    </button>
                                   </>
                                 )}
                               </div>
                             ) : (
                               "-"
                             )}
+                          </td>
+                        ) : null}
+                        {showMeetingActionColumn ? (
+                          <td onClick={(event) => event.stopPropagation()}>
+                            <div className="monitoring-table-actions">
+                              {canApproveMeetings ? (
+                                <>
+                                  {normalizeMeetingRequestStatusValue(row.status) === "New" ? (
+                                    <button
+                                      type="button"
+                                      className="monitoring-icon-action-btn is-success"
+                                      aria-label={`Approve ${row.ticketNumber}`}
+                                      title="Approve"
+                                      disabled={meetingStatusSavingId === rowId}
+                                      onClick={() => void handleMeetingStatusChange(row._id, "Reserved")}
+                                    >
+                                      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                                        <path d="M2.5 7.5L6 11L12.5 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    </button>
+                                  ) : null}
+                                  {normalizeMeetingRequestStatusValue(row.status) !== "Done" && row.status !== "Closed" ? (
+                                    <button
+                                      type="button"
+                                      className="monitoring-icon-action-btn is-destructive"
+                                      aria-label={`Cancel ${row.ticketNumber}`}
+                                      title="Cancel"
+                                      disabled={meetingStatusSavingId === rowId}
+                                      onClick={() => void handleMeetingStatusChange(row._id, "Closed")}
+                                    >
+                                      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                                        <path d="M3.5 3.5L11.5 11.5M11.5 3.5L3.5 11.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      </svg>
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className="monitoring-icon-action-btn"
+                                    aria-label={`Reschedule ${row.ticketNumber}`}
+                                    title="Reschedule / Edit"
+                                    onClick={() => router.push(`/monitoring/${row._id}`)}
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                                      <rect x="2" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+                                      <path d="M2 6H13" stroke="currentColor" strokeWidth="1.5" />
+                                      <path d="M5 2V4M10 2V4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                    </svg>
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="monitoring-icon-action-btn"
+                                  aria-label={`Open ${row.ticketNumber}`}
+                                  title="Open"
+                                  onClick={() => router.push(`/monitoring/${row._id}`)}
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                                    <path d="M5.5 3.5H3C2.72 3.5 2.5 3.72 2.5 4V12C2.5 12.28 2.72 12.5 3 12.5H11C11.28 12.5 11.5 12.28 11.5 12V9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                    <path d="M8.5 2.5H12.5V6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M12.5 2.5L7 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
                           </td>
                         ) : null}
                       </tr>

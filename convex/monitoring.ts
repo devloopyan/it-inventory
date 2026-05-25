@@ -1763,12 +1763,6 @@ export const updateTicket = mutation({
       meetingAttendeeCount = normalizeRequired(meetingAttendeeCount ?? "", "Expected attendees");
     }
 
-    if (isMeetingRequest && nextStatus === "Done") {
-      const hasMeetingRecording = nextAttachments.some((attachment) => attachment.kind === "Meeting Recording");
-      if (!hasMeetingRecording) {
-        throw new Error("Attach the meeting recording before marking the meeting done.");
-      }
-    }
 
     if (isMeetingRequest) {
       const existingMeetingAssetItems = ticket.meetingAssetItems ?? [];

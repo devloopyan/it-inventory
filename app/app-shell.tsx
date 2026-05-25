@@ -11,7 +11,6 @@ import {
 } from "@/lib/monitoring";
 import {
   formatUserRoleLabel,
-  normalizeApprovalScopes,
   normalizeServiceGroups,
   normalizeUserRole,
   type UserRole,
@@ -249,11 +248,10 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
   const showAppChrome = pathname !== "/login";
   const currentRole = normalizeUserRole(currentUser?.role);
   const currentServiceGroups = normalizeServiceGroups(currentRole, currentUser?.serviceGroups);
-  const currentApprovalScopes = normalizeApprovalScopes(currentRole, currentUser?.approvalScopes);
   const canSeeItMonitoring =
-    currentRole === "admin" || currentServiceGroups.includes("IT") || currentApprovalScopes.includes("IT");
+    currentRole === "admin" || currentServiceGroups.includes("IT");
   const canSeeHrAdminMonitoring =
-    currentRole === "admin" || currentServiceGroups.includes("HR/Admin") || currentApprovalScopes.includes("HR/Admin");
+    currentRole === "admin" || currentServiceGroups.includes("HR/Admin");
   const canSeeMonitoringNotifications = showAppChrome && currentRole !== "requester";
   const monitoringNotificationRows = useQuery(
     api.monitoring.list,
@@ -390,13 +388,15 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
                       title={sidebarCollapsed ? item.label : undefined}
                       onClick={() => setSidebarOpen(false)}
                     >
-                      {item.icon}
+                      <span className="side-link-icon-wrap">
+                        {item.icon}
+                        {badgeCount > 0 ? (
+                          <span className="side-link-badge" aria-label={`${badgeCount} new monitoring requests`}>
+                            {badgeCount}
+                          </span>
+                        ) : null}
+                      </span>
                       <span className="side-link-label">{item.label}</span>
-                      {badgeCount > 0 ? (
-                        <span className="side-link-badge" aria-label={`${badgeCount} new monitoring requests`}>
-                          {badgeCount}
-                        </span>
-                      ) : null}
                     </Link>
                   );
                 })}

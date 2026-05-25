@@ -4,14 +4,12 @@ import { v } from "convex/values";
 const USER_ROLES = ["admin", "service_staff", "it_staff", "approver", "requester"] as const;
 const DEFAULT_IT_GROUPS = ["IT"] as const;
 const ALL_DEFAULT_GROUPS = ["IT", "HR/Admin", "OSMD"] as const;
-const APPROVAL_SCOPES = ["Department", "IT", "HR/Admin"] as const;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 120_000;
 const PASSWORD_HASH_ALGORITHM = "pbkdf2-sha256";
 const encoder = new TextEncoder();
 
 type UserRole = (typeof USER_ROLES)[number];
-type ApprovalScope = (typeof APPROVAL_SCOPES)[number];
 
 function normalizeRequired(value: string, label: string) {
   const next = value.trim();
@@ -78,15 +76,6 @@ function normalizeServiceGroups(role: UserRole, values?: string[]): string[] | u
   return undefined;
 }
 
-function normalizeApprovalScopes(role: UserRole, values?: string[]): ApprovalScope[] | undefined {
-  if (role === "admin") return [...APPROVAL_SCOPES];
-
-  const approvalScopes = normalizeStringList(values, APPROVAL_SCOPES, "approval scope");
-  if (approvalScopes.length) return approvalScopes as ApprovalScope[];
-
-  if (role === "approver") return ["Department", "IT"];
-  return undefined;
-}
 
 function toHex(bytes: Uint8Array) {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -198,7 +187,7 @@ export const list = query({
         email: row.email,
         role: row.role,
         serviceGroups: row.serviceGroups ?? normalizeServiceGroups(ensureRole(row.role), undefined) ?? [],
-        approvalScopes: row.approvalScopes ?? normalizeApprovalScopes(ensureRole(row.role), undefined) ?? [],
+        approvalScopes: row.approvalScopes ?? [],
         department: row.department,
         section: row.section,
         active: row.active,
@@ -243,7 +232,7 @@ export const authenticate = mutation({
       email: user.email,
       role: user.role,
       serviceGroups: user.serviceGroups ?? normalizeServiceGroups(ensureRole(user.role), undefined) ?? [],
-      approvalScopes: user.approvalScopes ?? normalizeApprovalScopes(ensureRole(user.role), undefined) ?? [],
+      approvalScopes: user.approvalScopes ?? [],
       department: user.department,
       section: user.section,
     };
@@ -257,7 +246,6 @@ export const create = mutation({
     email: v.optional(v.string()),
     role: v.string(),
     serviceGroups: v.optional(v.array(v.string())),
-    approvalScopes: v.optional(v.array(v.string())),
     department: v.optional(v.string()),
     section: v.optional(v.string()),
     temporaryPassword: v.optional(v.string()),
@@ -269,7 +257,6 @@ export const create = mutation({
     const email = normalizeEmail(args.email);
     const role = ensureRole(args.role);
     const serviceGroups = normalizeServiceGroups(role, args.serviceGroups);
-    const approvalScopes = normalizeApprovalScopes(role, args.approvalScopes);
     const department = normalizeOptional(args.department);
     const section = normalizeOptional(args.section);
     const createdBy = normalizeOptional(args.createdBy);
@@ -292,7 +279,6 @@ export const create = mutation({
       email,
       role,
       serviceGroups,
-      approvalScopes,
       department,
       section,
       active: true,
@@ -332,7 +318,6 @@ export const updateRole = mutation({
     userId: v.id("users"),
     role: v.string(),
     serviceGroups: v.optional(v.array(v.string())),
-    approvalScopes: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -345,7 +330,6 @@ export const updateRole = mutation({
     await ctx.db.patch(user._id, {
       role,
       serviceGroups: normalizeServiceGroups(role, args.serviceGroups),
-      approvalScopes: normalizeApprovalScopes(role, args.approvalScopes),
       updatedAt: Date.now(),
     });
 
