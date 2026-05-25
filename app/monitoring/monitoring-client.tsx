@@ -458,6 +458,27 @@ function getFleetInitials(name: string) {
     .join("") || "DR";
 }
 
+function getFleetAvatarPalette(name: string): { background: string; color: string } {
+  const palettes = [
+    { background: "#dbeafe", color: "#1d4ed8" },
+    { background: "#d1fae5", color: "#065f46" },
+    { background: "#fce7f3", color: "#be185d" },
+    { background: "#ede9fe", color: "#5b21b6" },
+    { background: "#fee2e2", color: "#991b1b" },
+    { background: "#fef3c7", color: "#92400e" },
+    { background: "#e0f2fe", color: "#075985" },
+    { background: "#f0fdf4", color: "#166534" },
+  ];
+  return palettes[name.charCodeAt(0) % palettes.length];
+}
+
+function getFleetStatusBadgeStyle(status: string): CSSProperties {
+  if (status === "Available") return { background: "#dcfce7", color: "#166534" };
+  if (status === "Assigned") return { background: "#dbeafe", color: "#1d4ed8" };
+  if (status === "Maintenance") return { background: "#fef3c7", color: "#92400e" };
+  return { background: "#e5e7eb", color: "#374151" };
+}
+
 function getDriverStatusStyle(status: string): CSSProperties {
   if (status === "Available") {
     return { background: "#dcfce7", color: "#166534" };
@@ -789,29 +810,39 @@ function FleetManagementModal(props: {
               </button>
             </div>
 
-            <div className="monitoring-fleet-manage-list">
+            <div className="fleet-manage-card-grid">
               {props.loading ? (
-                <div className="monitoring-fleet-empty">Loading drivers...</div>
+                <div className="monitoring-fleet-empty" style={{ gridColumn: "1/-1" }}>Loading drivers...</div>
               ) : props.drivers.length ? (
                 props.drivers.map((driver) => (
-                  <article key={driver._id} className="monitoring-fleet-manage-row">
-                    <div className="monitoring-fleet-card-main">
-                      <strong>{driver.name}</strong>
-                      <span>{[driver.position, driver.contactNumber].filter(Boolean).join(" | ") || "No details"}</span>
+                  <article key={driver._id} className="fleet-manage-card">
+                    <div className="fleet-manage-card-top">
+                      <div className="fleet-manage-avatar" style={getFleetAvatarPalette(driver.name)}>
+                        {getFleetInitials(driver.name)}
+                      </div>
+                      <span className="fleet-manage-badge" style={getFleetStatusBadgeStyle(driver.status)}>
+                        {driver.status}
+                      </span>
                     </div>
-                    <Chip label={driver.status} />
-                    <div className="monitoring-fleet-row-actions">
-                      <button type="button" className="btn-secondary" onClick={() => props.onEditDriver(driver)}>
-                        Edit
-                      </button>
-                      <button type="button" className="btn-secondary" onClick={() => props.onDeleteDriver(driver)}>
-                        Remove
-                      </button>
+                    <div>
+                      <div className="fleet-manage-name">{driver.name}</div>
+                      <div className="fleet-manage-sub">{driver.position || "Driver"}</div>
+                    </div>
+                    {driver.contactNumber ? (
+                      <div className="fleet-manage-contact">{driver.contactNumber}</div>
+                    ) : null}
+                    {driver.notes ? (
+                      <div className="fleet-manage-notes">{driver.notes}</div>
+                    ) : null}
+                    <hr className="member-divider" />
+                    <div className="member-action-row">
+                      <button type="button" className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: "5px 8px" }} onClick={() => props.onEditDriver(driver)}>Edit</button>
+                      <button type="button" className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: "5px 8px" }} onClick={() => props.onDeleteDriver(driver)}>Remove</button>
                     </div>
                   </article>
                 ))
               ) : (
-                <div className="monitoring-fleet-empty">No drivers added yet.</div>
+                <div className="monitoring-fleet-empty" style={{ gridColumn: "1/-1" }}>No drivers added yet.</div>
               )}
             </div>
           </section>
@@ -894,32 +925,43 @@ function FleetManagementModal(props: {
               </button>
             </div>
 
-            <div className="monitoring-fleet-manage-list">
+            <div className="fleet-manage-card-grid">
               {props.loading ? (
-                <div className="monitoring-fleet-empty">Loading vehicles...</div>
+                <div className="monitoring-fleet-empty" style={{ gridColumn: "1/-1" }}>Loading vehicles...</div>
               ) : props.vehicles.length ? (
                 props.vehicles.map((vehicle) => (
-                  <article key={vehicle._id} className="monitoring-fleet-manage-row">
-                    <div className="monitoring-fleet-card-main">
-                      <strong>{vehicle.name}</strong>
-                      <span>
-                        {vehicle.vehicleType} | {vehicle.plateNumber}
-                        {vehicle.capacity ? ` | ${vehicle.capacity} seats` : ""}
+                  <article key={vehicle._id} className="fleet-manage-card">
+                    <div className="fleet-manage-card-top">
+                      <div className="fleet-manage-avatar fleet-manage-avatar--vehicle">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                          <circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" strokeWidth="1.8"/>
+                          <circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" strokeWidth="1.8"/>
+                        </svg>
+                      </div>
+                      <span className="fleet-manage-badge" style={getFleetStatusBadgeStyle(vehicle.status)}>
+                        {vehicle.status}
                       </span>
                     </div>
-                    <Chip label={vehicle.status} />
-                    <div className="monitoring-fleet-row-actions">
-                      <button type="button" className="btn-secondary" onClick={() => props.onEditVehicle(vehicle)}>
-                        Edit
-                      </button>
-                      <button type="button" className="btn-secondary" onClick={() => props.onDeleteVehicle(vehicle)}>
-                        Remove
-                      </button>
+                    <div>
+                      <div className="fleet-manage-name">{vehicle.name}</div>
+                      <div className="fleet-manage-sub">{vehicle.vehicleType} · {vehicle.plateNumber}</div>
+                    </div>
+                    {vehicle.capacity ? (
+                      <div className="fleet-manage-contact">{vehicle.capacity} seats</div>
+                    ) : null}
+                    {vehicle.notes ? (
+                      <div className="fleet-manage-notes">{vehicle.notes}</div>
+                    ) : null}
+                    <hr className="member-divider" />
+                    <div className="member-action-row">
+                      <button type="button" className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: "5px 8px" }} onClick={() => props.onEditVehicle(vehicle)}>Edit</button>
+                      <button type="button" className="btn-secondary" style={{ flex: 1, fontSize: 12, padding: "5px 8px" }} onClick={() => props.onDeleteVehicle(vehicle)}>Remove</button>
                     </div>
                   </article>
                 ))
               ) : (
-                <div className="monitoring-fleet-empty">No vehicles added yet.</div>
+                <div className="monitoring-fleet-empty" style={{ gridColumn: "1/-1" }}>No vehicles added yet.</div>
               )}
             </div>
           </section>
@@ -3677,6 +3719,129 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               ) : null}
             </div>
 
+            {activeTab === "hrAdmin" ? (
+              <div className="to-card-grid">
+                {requestTableError ? <FormErrorBanner message={requestTableError} /> : null}
+                {requestRows.length === 0 ? (
+                  <p className="type-helper" style={{ gridColumn: "1/-1", padding: "24px 0" }}>{requestEmptyState}</p>
+                ) : requestRows.map((row) => {
+                  const rowId = String(row._id);
+                  const displayStatus = getTravelOrderDisplayStatus(row);
+                  const rowServiceGroup = getServiceGroupForCategory(row.category);
+                  const isTODone = row.category === MONITORING_TRAVEL_ORDER_CATEGORY && (displayStatus === "Fulfilled" || displayStatus === "Closed");
+                  const isUnopened = displayStatus === "New" && !(row.notificationSeenByGroups ?? []).includes(rowServiceGroup);
+                  const travelSchedule = getTravelScheduleFromDetails(row.requestDetails);
+                  const travelPurpose = row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? getTravelPurposeFromDetails(row.requestDetails) : null;
+                  const avatarPalette = getFleetAvatarPalette(row.requesterName ?? "?");
+                  const requesterInitials = getFleetInitials(row.requesterName ?? "?");
+                  const hasFleet = Boolean(row.fleetDriverName || row.fleetVehicleName);
+                  return (
+                    <article
+                      key={row._id}
+                      className={`to-card${isUnopened ? " to-card--unopened" : ""}`}
+                      onClick={() => router.push(`/monitoring/${row._id}`)}
+                    >
+                      <div className="to-card-header">
+                        <div className="to-card-header-left">
+                          <span className="to-card-ticket">{row.ticketNumber}</span>
+                          {isUnopened ? <span className="monitoring-unopened-pill">New</span> : null}
+                          {row.sharedTripId ? (
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "#ede9fe", color: "#5b21b6" }}>
+                              Shared
+                            </span>
+                          ) : null}
+                        </div>
+                        <Chip label={displayStatus} />
+                      </div>
+
+                      <div className="to-card-requester">
+                        <div className="to-card-avatar" style={avatarPalette}>{requesterInitials}</div>
+                        <div>
+                          <div className="to-card-name">{row.requesterName}</div>
+                          <div className="to-card-dept">{row.requesterDepartment ?? "—"}</div>
+                        </div>
+                      </div>
+
+                      {row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
+                        <div className="to-card-schedule">
+                          <div>
+                            <span className="to-card-schedule-label">Departure</span>
+                            <span className="to-card-schedule-val">{formatCompactTravelDate(travelSchedule.departure) || "—"}</span>
+                          </div>
+                          <div>
+                            <span className="to-card-schedule-label">Return</span>
+                            <span className="to-card-schedule-val">{formatCompactTravelDate(travelSchedule.returnAt) || "—"}</span>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {travelPurpose ? (
+                        <div className="to-card-purpose">{travelPurpose}</div>
+                      ) : row.requestDetails ? (
+                        <div className="to-card-purpose">{row.requestDetails.slice(0, 80)}{row.requestDetails.length > 80 ? "…" : ""}</div>
+                      ) : null}
+
+                      {row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
+                        <div className="to-card-fleet">
+                          {hasFleet ? (
+                            <>
+                              <span className="to-card-fleet-driver">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                                {row.fleetDriverName ?? "No driver"}
+                              </span>
+                              <span className="to-card-fleet-vehicle">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" strokeWidth="2"/><circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" strokeWidth="2"/></svg>
+                                {row.fleetVehicleName ?? "No vehicle"}{row.fleetVehiclePlateNumber ? ` · ${row.fleetVehiclePlateNumber}` : ""}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="to-card-fleet-empty">Needs fleet assignment</span>
+                          )}
+                        </div>
+                      ) : null}
+
+                      <div className="to-card-footer" onClick={(e) => e.stopPropagation()}>
+                        {hrAdminArchiveView === "archive" ? (
+                          <button type="button" className="btn-secondary" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => void handleReopenTravelOrder(row._id)} disabled={travelReopenSavingId === rowId}>
+                            {travelReopenSavingId === rowId ? "…" : "Reopen"}
+                          </button>
+                        ) : row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
+                          <>
+                            <select
+                              className="input-base"
+                              style={{ fontSize: 11, padding: "3px 6px", height: 28, width: 64 }}
+                              value={row.priority ?? "P4"}
+                              onChange={(e) => void handleTravelOrderPriorityChange(row._id, e.target.value)}
+                              disabled={prioritySavingId === rowId}
+                              aria-label={`Priority for ${row.ticketNumber}`}
+                            >
+                              {MONITORING_PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                            <button type="button" className="monitoring-icon-action-btn" title={row.fleetDriverId && row.fleetVehicleId ? "Edit fleet" : "Assign fleet"} onClick={() => openFleetAssignmentModal({ _id: row._id, ticketNumber: row.ticketNumber, title: row.title, fleetDriverId: row.fleetDriverId, fleetDriverName: row.fleetDriverName, fleetVehicleId: row.fleetVehicleId, fleetVehicleName: row.fleetVehicleName, fleetVehiclePlateNumber: row.fleetVehiclePlateNumber })}>
+                              <FleetAssignIcon />
+                            </button>
+                            <button type="button" className="monitoring-icon-action-btn is-success" title="Mark travel done" disabled={isTODone || travelDoneSavingId === rowId} onClick={() => void handleMarkTravelDone(row._id)}>
+                              <TravelDoneIcon />
+                            </button>
+                            <button type="button" className="monitoring-icon-action-btn is-destructive" title="Cancel travel order" disabled={isTODone || travelCancelSavingId === rowId} onClick={() => { setCancelReasonTicketId(row._id); setCancelReason("No longer needed"); setCancelReasonDetail(""); setCancelReasonError(""); setShowCancelReasonModal(true); }}>
+                              <CancelTravelOrderIcon />
+                            </button>
+                            {!row.sharedTripId && row.fleetDriverId && row.fleetVehicleId ? (
+                              <button type="button" className="monitoring-icon-action-btn" title="Combine as shared trip" disabled={isTODone} onClick={() => { setSharedTripPrimaryId(row._id); setSharedTripSecondaryId(""); setSharedTripError(""); setShowSharedTripModal(true); }}>
+                                <SharedTripIcon />
+                              </button>
+                            ) : null}
+                          </>
+                        ) : null}
+                        <button type="button" className="monitoring-icon-action-btn" title="View details" onClick={() => router.push(`/monitoring/${row._id}`)}>
+                          <ViewTicketIcon />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
             <div className="saas-table-wrap monitoring-tab-table-wrap">
               {requestTableError ? <FormErrorBanner message={requestTableError} /> : null}
               <table className="saas-table" style={{ minWidth: 980 }}>
@@ -3684,13 +3849,13 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   <tr>
                     <th>{activeTab === "issues" ? "Ticket" : "Request"}</th>
                     {showRequestTypeColumn ? <th>Type</th> : null}
-                    <th>{activeTab === "meetings" ? "Meeting Title" : activeTab === "hrAdmin" ? "Travel Purpose" : "Category"}</th>
+                    <th>{activeTab === "meetings" ? "Meeting Title" : "Category"}</th>
                     <th>Requester</th>
                     {showScheduleColumn ? <th>Schedule</th> : null}
                     {showPriorityColumn ? <th>Priority</th> : null}
                     <th>Status</th>
                     <th>{requestMetaColumnLabel}</th>
-                    <th>{activeTab === "hrAdmin" ? "Travel Time" : "Last Updated"}</th>
+                    <th>Last Updated</th>
                     {showFleetActionColumn ? <th>Action</th> : null}
                     {showMeetingActionColumn ? <th>Action</th> : null}
                   </tr>
@@ -3751,12 +3916,6 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                         <td>
                           {activeTab === "meetings" ? (
                             requestListTitle || "-"
-                          ) : activeTab === "hrAdmin" ? (
-                            <span style={{ display: "block", maxWidth: 260, color: "var(--foreground)" }}>
-                              {row.category === MONITORING_TRAVEL_ORDER_CATEGORY
-                                ? getTravelPurposeFromDetails(row.requestDetails)
-                                : row.requestDetails || "-"}
-                            </span>
                           ) : activeTab === "borrowing" ? (
                             borrowingAssetLabel
                           ) : (
@@ -3789,73 +3948,26 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                         ) : null}
                         {showPriorityColumn ? (
                           <td onClick={(event) => event.stopPropagation()}>
-                            {activeTab === "hrAdmin" && row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
-                              <select
-                                className="input-base"
-                                value={row.priority ?? "P4"}
-                                onChange={(event) => void handleTravelOrderPriorityChange(row._id, event.target.value)}
-                                disabled={prioritySavingId === rowId}
-                                aria-label={`Priority for ${row.ticketNumber}`}
-                                style={{ minHeight: 32, width: 82, fontSize: 12, padding: "0 26px 0 10px" }}
-                              >
-                                {MONITORING_PRIORITY_OPTIONS.map((priorityOption) => (
-                                  <option key={priorityOption} value={priorityOption}>
-                                    {priorityOption}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : row.priority ? (
-                              <Chip label={row.priority} />
-                            ) : (
-                              "-"
-                            )}
+                            {row.priority ? <Chip label={row.priority} /> : "-"}
                           </td>
                         ) : null}
                         <td onClick={(event) => event.stopPropagation()}>
                           <Chip label={displayStatus} />
                         </td>
                         <td>
-                            {activeTab === "meetings"
-                              ? row.meetingMode || "-"
-                              : activeTab === "borrowing"
-                                ? row.borrowingItems?.length
-                                  ? `${row.borrowingItems.length} ${borrowingAssetLabel.toLowerCase()} linked`
-                                  : row.requestedItemsText
-                                    ? "Needs asset matching"
-                                    : "-"
-                                  : activeTab === "hrAdmin" && row.category === MONITORING_TRAVEL_ORDER_CATEGORY
-                                    ? row.fleetDriverName || row.fleetVehicleName
-                                      ? (
-                                          <div style={{ display: "grid", gap: 4 }}>
-                                            <span>{row.fleetDriverName ?? "No driver"}</span>
-                                            <span style={{ color: "var(--muted)", fontSize: 12 }}>
-                                              {row.fleetVehicleName
-                                                ? `${row.fleetVehicleName}${row.fleetVehiclePlateNumber ? ` | ${row.fleetVehiclePlateNumber}` : ""}`
-                                                : "No vehicle"}
-                                            </span>
-                                          </div>
-                                        )
-                                      : "Needs fleet assignment"
-                                    : row.approvalRequired
-                                      ? <Chip label={row.approvalStage} />
-                                      : "-"}
+                          {activeTab === "meetings"
+                            ? row.meetingMode || "-"
+                            : activeTab === "borrowing"
+                              ? row.borrowingItems?.length
+                                ? `${row.borrowingItems.length} ${borrowingAssetLabel.toLowerCase()} linked`
+                                : row.requestedItemsText
+                                  ? "Needs asset matching"
+                                  : "-"
+                              : row.approvalRequired
+                                ? <Chip label={row.approvalStage} />
+                                : "-"}
                         </td>
-                        <td>
-                          {activeTab === "hrAdmin" && row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
-                            <div className="monitoring-travel-time-cell">
-                              <span>
-                                <strong>Dep</strong>
-                                <em>{formatCompactTravelDate(travelSchedule.departure)}</em>
-                              </span>
-                              <span>
-                                <strong>Ret</strong>
-                                <em>{formatCompactTravelDate(travelSchedule.returnAt)}</em>
-                              </span>
-                            </div>
-                          ) : (
-                            formatDateTime(row.updatedAt)
-                          )}
-                        </td>
+                        <td>{formatDateTime(row.updatedAt)}</td>
                         {showFleetActionColumn ? (
                           <td onClick={(event) => event.stopPropagation()}>
                             {row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
@@ -4024,6 +4136,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         )}
 
