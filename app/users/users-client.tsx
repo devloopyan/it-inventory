@@ -74,6 +74,26 @@ function formatDate(value: number) {
   }).format(new Date(value));
 }
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+function getAvatarStyle(name: string): { background: string; color: string } {
+  const palettes = [
+    { background: "#dbeafe", color: "#1d4ed8" },
+    { background: "#d1fae5", color: "#065f46" },
+    { background: "#fce7f3", color: "#be185d" },
+    { background: "#ede9fe", color: "#5b21b6" },
+    { background: "#fee2e2", color: "#991b1b" },
+    { background: "#fef3c7", color: "#92400e" },
+    { background: "#e0f2fe", color: "#075985" },
+    { background: "#f0fdf4", color: "#166534" },
+  ];
+  return palettes[name.charCodeAt(0) % palettes.length];
+}
+
 function buildUsernameSuggestion(displayName: string) {
   return displayName
     .trim()
@@ -102,6 +122,19 @@ export default function UsersClient() {
   const [busyUserId, setBusyUserId] = useState<string>("");
   const [passwordTargetId, setPasswordTargetId] = useState<Id<"users"> | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [userSearch, setUserSearch] = useState("");
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    if (!q) return users ?? [];
+    return (users ?? []).filter(
+      (u) =>
+        u.displayName.toLowerCase().includes(q) ||
+        u.username.toLowerCase().includes(q) ||
+        (u.email ?? "").toLowerCase().includes(q) ||
+        (u.department ?? "").toLowerCase().includes(q),
+    );
+  }, [users, userSearch]);
 
   const summary = useMemo(() => {
     const rows = users ?? [];
@@ -494,129 +527,128 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
           ) : null}
         </div>
 
-        <section className="panel users-table-panel">
-          <div className="users-table-head">
+        <section className="users-members-section">
+          <div className="users-members-head">
             <div>
               <h2 className="type-section-title">User Accounts</h2>
-              <p className="type-section-copy">Manage roles and active status for future request workflows.</p>
+              <p className="type-section-copy">Manage roles and active status for request workflows.</p>
+            </div>
+            <div className="search-field" style={{ maxWidth: 240, width: "100%" }}>
+              <span className="search-icon" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                  <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </span>
+              <input
+                className="input-base"
+                placeholder="Search members"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+              />
             </div>
           </div>
 
-          <div className="saas-table-wrap users-table-wrap">
-            <table className="saas-table users-table">
-              <thead>
-                <tr>
-                  <th>User</th>
-                  <th>Role</th>
-                  <th>Workflow Access</th>
-                  <th>Department</th>
-                  <th>Status</th>
-                  <th>Password</th>
-                  <th>Created</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users === undefined ? (
-                  <tr>
-                    <td colSpan={8}>Loading users...</td>
-                  </tr>
-                ) : users.length ? (
-                  users.map((user) => (
-                    <tr key={user._id}>
-                      <td>
-                        <div className="users-name-cell">
-                          <strong>{user.displayName}</strong>
-                          <span>@{user.username}</span>
-                          {user.email ? <span>{user.email}</span> : null}
-                        </div>
-                      </td>
-                      <td>
-                        <select
-                          className="input-base users-role-select"
-                          value={normalizeRoleForSelect(user.role)}
-                          onChange={(event) => void handleRoleChange(user, normalizeRoleForSelect(event.target.value))}
+          {users === undefined ? (
+            <p className="type-helper" style={{ padding: "24px 0" }}>Loading members…</p>
+          ) : (
+            <div className="member-grid">
+              {filteredUsers.length === 0 ? (
+                <p className="type-helper" style={{ gridColumn: "1/-1", padding: "24px 0" }}>
+                  {userSearch ? "No members match your search." : "No user accounts yet."}
+                </p>
+              ) : filteredUsers.map((user) => {
+                const avatarStyle = getAvatarStyle(user.displayName);
+                const initials = getInitials(user.displayName);
+                const roleLabel = roleOptions.find((r) => r.value === normalizeRoleForSelect(user.role))?.label ?? user.role;
+                return (
+                  <div key={user._id} className="member-card">
+                    <div className="member-card-top">
+                      <div className="member-avatar" style={avatarStyle}>{initials}</div>
+                      <span className={`member-badge${user.active ? " is-active" : " is-inactive"}`}>
+                        {user.active ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+
+                    <div>
+                      <div className="member-name">{user.displayName}</div>
+                      <div className="member-role-label">{roleLabel}</div>
+                    </div>
+
+                    <div className="member-meta">
+                      <div>
+                        <span className="member-meta-label">Department</span>
+                        <span className="member-meta-value">{user.department ?? "—"}</span>
+                      </div>
+                      <div>
+                        <span className="member-meta-label">Joining</span>
+                        <span className="member-meta-value">{formatDate(user.createdAt)}</span>
+                      </div>
+                    </div>
+
+                    <div className="member-contact">
+                      {user.email ? <span>{user.email}</span> : null}
+                      <span>@{user.username}</span>
+                    </div>
+
+                    {(departments ?? []).length > 0 ? (
+                      <div className="member-service-chips">
+                        {(departments ?? []).map((sg) => (
+                          <button
+                            key={sg}
+                            type="button"
+                            className={`member-service-chip${user.serviceGroups.includes(sg) ? " is-active" : ""}`}
+                            onClick={() => void handleAccessToggle(user, sg)}
+                            disabled={busyUserId === user._id}
+                            title={user.serviceGroups.includes(sg) ? `Remove ${sg} access` : `Grant ${sg} access`}
+                          >
+                            {sg}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <hr className="member-divider" />
+
+                    <div className="member-card-actions">
+                      <select
+                        className="input-base"
+                        style={{ fontSize: 12, padding: "5px 8px", height: 32 }}
+                        value={normalizeRoleForSelect(user.role)}
+                        onChange={(e) => void handleRoleChange(user, normalizeRoleForSelect(e.target.value))}
+                        disabled={busyUserId === user._id}
+                        aria-label={`Role for ${user.displayName}`}
+                      >
+                        {roleOptions.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                      <div className="member-action-row">
+                        <button
+                          className="btn-secondary"
+                          style={{ flex: 1, fontSize: 12, padding: "5px 8px" }}
+                          type="button"
+                          onClick={() => openPasswordPanel(user)}
                           disabled={busyUserId === user._id}
-                          aria-label={`Role for ${user.displayName}`}
                         >
-                          {roleOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        <div className="users-access-cell">
-                          <div className="users-access-group">
-                            <span>Service</span>
-                            <div className="users-access-options">
-                              {(departments ?? []).map((serviceGroup) => (
-                                <label key={serviceGroup} className="users-access-option">
-                                  <input
-                                    type="checkbox"
-                                    checked={user.serviceGroups.includes(serviceGroup)}
-                                    onChange={() => void handleAccessToggle(user, serviceGroup)}
-                                    disabled={busyUserId === user._id}
-                                  />
-                                  <span>{serviceGroup}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="users-name-cell">
-                          <span>{user.department ?? "-"}</span>
-                          <span>{user.section ?? ""}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`users-status-pill${user.active ? " is-active" : " is-inactive"}`}>
-                          {user.active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          className={`users-password-pill${
-                            user.passwordConfigured ? " is-set" : " is-missing"
-                          }`}
+                          {user.passwordConfigured ? "Reset PW" : "Set PW"}
+                        </button>
+                        <button
+                          className={user.active ? "btn-danger" : "btn-success"}
+                          style={{ flex: 1, fontSize: 12, padding: "5px 8px" }}
+                          type="button"
+                          onClick={() => void handleActiveChange(user)}
+                          disabled={busyUserId === user._id}
                         >
-                          {user.passwordConfigured ? "Set" : "Not set"}
-                        </span>
-                      </td>
-                      <td className="users-date-cell">{formatDate(user.createdAt)}</td>
-                      <td>
-                        <div className="users-row-actions">
-                          <button
-                            className="btn-secondary"
-                            type="button"
-                            onClick={() => openPasswordPanel(user)}
-                            disabled={busyUserId === user._id}
-                          >
-                            {user.passwordConfigured ? "Reset Password" : "Set Password"}
-                          </button>
-                          <button
-                            className={user.active ? "btn-danger" : "btn-success"}
-                            type="button"
-                            onClick={() => void handleActiveChange(user)}
-                            disabled={busyUserId === user._id}
-                          >
-                            {user.active ? "Deactivate" : "Reactivate"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={8}>No user accounts yet.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                          {user.active ? "Deactivate" : "Reactivate"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="users-role-notes">
             {roleOptions.map((option) => (
