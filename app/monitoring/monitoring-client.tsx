@@ -3392,17 +3392,22 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
                 Both orders will share the same driver and vehicle. The billing party is determined automatically — whichever order had fleet assigned first pays; the other rides for free.
               </p>
-              <div style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>Primary order</span>
-                <div style={{ fontSize: 13, padding: "8px 12px", background: "var(--surface-raised, #f8fafc)", borderRadius: 8, border: "1px solid var(--border)" }}>
-                  {(() => {
-                    const primary = hrAdminRequestRows.find((r) => r._id === sharedTripPrimaryId);
-                    return primary
-                      ? `${primary.ticketNumber} — ${primary.requesterName}${primary.requesterDepartment ? ` (${primary.requesterDepartment})` : ""}`
-                      : "—";
-                  })()}
-                </div>
-              </div>
+              {(() => {
+                const primary = hrAdminRequestRows.find((r) => r._id === sharedTripPrimaryId);
+                return (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Primary order</span>
+                    <div style={{ fontSize: 13, padding: "8px 12px", background: "var(--surface-raised, #f8fafc)", borderRadius: 8, border: "1px solid var(--border)", display: "grid", gap: 2 }}>
+                      <span>{primary ? `${primary.ticketNumber} — ${primary.requesterName}${primary.requesterDepartment ? ` (${primary.requesterDepartment})` : ""}` : "—"}</span>
+                      {primary?.fleetDriverName ? (
+                        <span style={{ color: "var(--muted)", fontSize: 12 }}>
+                          {primary.fleetDriverName} · {primary.fleetVehicleName}{primary.fleetVehiclePlateNumber ? ` (${primary.fleetVehiclePlateNumber})` : ""}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })()}
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 13, fontWeight: 500 }}>Second order to combine with</span>
                 <select
@@ -3923,7 +3928,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                     >
                                       <CancelTravelOrderIcon />
                                     </button>
-                                    {!row.sharedTripId ? (
+                                    {!row.sharedTripId && row.fleetDriverId && row.fleetVehicleId ? (
                                       <button
                                         type="button"
                                         className="monitoring-icon-action-btn"
