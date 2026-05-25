@@ -18,6 +18,11 @@ import {
   MONITORING_MEETING_REQUEST_CATEGORY,
   MONITORING_TRAVEL_ORDER_CATEGORY,
   MONITORING_URGENCY_OPTIONS,
+  TRAVEL_ORDER_CANCELLATION_REASONS,
+  TRAVEL_ORDER_INCIDENT_TYPES,
+  TRAVEL_ORDER_STATUSES,
+  getTravelOrderStatusLabel,
+  getTravelOrderStatusTone,
   getApprovalRouteForCategory,
   getMeetingRequestStatusOptions,
   getMonitoringStatusOptions,
@@ -26,6 +31,7 @@ import {
   isMonitoringWorkflowType,
   normalizeMeetingRequestStatusValue,
   type MonitoringApprovalReference,
+  type TravelOrderStatus,
 } from "@/lib/monitoring";
 import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/requestDisplay";
 import { isAdminRole, normalizeServiceGroups } from "@/lib/roles";
@@ -616,6 +622,11 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const recordApprovalDecision = useMutation(api.monitoring.recordApprovalDecision);
   const markTicketSeen = useMutation(api.monitoring.markTicketSeen);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
+  const cancelTravelOrderWithReason = useMutation(api.fleet.cancelTravelOrderWithReason);
+  const reportIncidentMutation = useMutation(api.fleet.reportIncident);
+  const resolveIncidentMutation = useMutation(api.fleet.resolveIncident);
+  const updateDriverETAMutation = useMutation(api.fleet.updateDriverETA);
+  const updateTravelOrderStatusMutation = useMutation(api.fleet.updateTravelOrderStatus);
   const [status, setStatus] = useState("");
   const [impact, setImpact] = useState("");
   const [urgency, setUrgency] = useState("");
@@ -668,6 +679,39 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const [itFeedback, setItFeedback] = useState("");
   const [itFeedbackIsError, setItFeedbackIsError] = useState(false);
   const [itFulfillmentNote, setItFulfillmentNote] = useState("");
+
+  // Travel Order action states
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState(TRAVEL_ORDER_CANCELLATION_REASONS[0] as string);
+  const [cancelReasonDetail, setCancelReasonDetail] = useState("");
+  const [cancelSaving, setCancelSaving] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+
+  const [showIncidentModal, setShowIncidentModal] = useState(false);
+  const [incidentType, setIncidentType] = useState<"MINOR" | "MAJOR">("MINOR");
+  const [incidentDescription, setIncidentDescription] = useState("");
+  const [incidentLocation, setIncidentLocation] = useState("");
+  const [incidentSaving, setIncidentSaving] = useState(false);
+  const [incidentError, setIncidentError] = useState("");
+
+  const [showResolveIncidentModal, setShowResolveIncidentModal] = useState(false);
+  const [resolveNote, setResolveNote] = useState("");
+  const [resolveNextStatus, setResolveNextStatus] = useState("DRIVER_ASSIGNED");
+  const [resolveSaving, setResolveSaving] = useState(false);
+  const [resolveError, setResolveError] = useState("");
+
+  const [showEtaModal, setShowEtaModal] = useState(false);
+  const [etaValue, setEtaValue] = useState("");
+  const [etaDelayReason, setEtaDelayReason] = useState("");
+  const [etaSaving, setEtaSaving] = useState(false);
+  const [etaError, setEtaError] = useState("");
+
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [newTravelStatus, setNewTravelStatus] = useState<string>("");
+  const [statusNote, setStatusNote] = useState("");
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusError, setStatusError] = useState("");
+
   const incidentReportRef = useRef<HTMLInputElement | null>(null);
   const meetingRecordingRef = useRef<HTMLInputElement | null>(null);
   const attachmentRef = useRef<HTMLInputElement | null>(null);
@@ -1092,7 +1136,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
       const raw = error instanceof Error ? error.message : "Upload failed.";
       const cleaned = raw
         .replace(/^\[CONVEX[^\]]*\]\s*(\[Request[^\]]*\])?\s*(Server Error\s*)?(Uncaught Error:\s*)?/i, "")
-        .replace(/\s+at handler.*$/is, "")
+        .replace(/\s+at handler[\s\S]*$/i, "")
         .trim();
       setRecordingUploadFeedback(cleaned || raw);
     } finally {
@@ -1156,7 +1200,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
       const raw = error instanceof Error ? error.message : "Save failed.";
       const cleaned = raw
         .replace(/^\[CONVEX[^\]]*\]\s*(\[Request[^\]]*\])?\s*(Server Error\s*)?(Uncaught Error:\s*)?/i, "")
-        .replace(/\s+at handler.*$/is, "")
+        .replace(/\s+at handler[\s\S]*$/i, "")
         .trim();
       setItFeedback(cleaned || raw);
     } finally {
@@ -1285,6 +1329,129 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
       setFeedback(error instanceof Error ? error.message : "Asset reservation failed.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // ── Travel Order action handlers ───────────────────────────────────────────
+
+  async function handleCancelTravelOrder() {
+    if (!cancelReason.trim()) {
+      setCancelError("Cancellation reason is required.");
+      return;
+    }
+    setCancelSaving(true);
+    setCancelError("");
+    try {
+      await cancelTravelOrderWithReason({
+        ticketId,
+        cancellationReason: cancelReason,
+        cancellationReasonDetail: cancelReasonDetail.trim() || undefined,
+        actorName,
+        actorRole: currentUser?.role ?? "admin",
+      });
+      setShowCancelModal(false);
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "Cancellation failed.");
+    } finally {
+      setCancelSaving(false);
+    }
+  }
+
+  async function handleReportIncident() {
+    if (!incidentDescription.trim()) {
+      setIncidentError("Incident description is required.");
+      return;
+    }
+    setIncidentSaving(true);
+    setIncidentError("");
+    try {
+      await reportIncidentMutation({
+        ticketId,
+        incidentType,
+        incidentDescription: incidentDescription.trim(),
+        incidentLocation: incidentLocation.trim() || undefined,
+        actorName,
+        actorRole: currentUser?.role,
+      });
+      setShowIncidentModal(false);
+      setIncidentDescription("");
+      setIncidentLocation("");
+    } catch (error) {
+      setIncidentError(error instanceof Error ? error.message : "Incident report failed.");
+    } finally {
+      setIncidentSaving(false);
+    }
+  }
+
+  async function handleResolveIncident() {
+    if (!resolveNote.trim()) {
+      setResolveError("Resolution note is required.");
+      return;
+    }
+    setResolveSaving(true);
+    setResolveError("");
+    try {
+      await resolveIncidentMutation({
+        ticketId,
+        resolutionNote: resolveNote.trim(),
+        nextTravelStatus: resolveNextStatus,
+        actorName,
+      });
+      setShowResolveIncidentModal(false);
+      setResolveNote("");
+    } catch (error) {
+      setResolveError(error instanceof Error ? error.message : "Incident resolution failed.");
+    } finally {
+      setResolveSaving(false);
+    }
+  }
+
+  async function handleUpdateETA() {
+    const ts = new Date(etaValue).getTime();
+    if (!etaValue || !Number.isFinite(ts)) {
+      setEtaError("A valid ETA date and time is required.");
+      return;
+    }
+    setEtaSaving(true);
+    setEtaError("");
+    try {
+      await updateDriverETAMutation({
+        ticketId,
+        estimatedArrivalTime: ts,
+        delayReason: etaDelayReason.trim() || undefined,
+        actorName,
+      });
+      setShowEtaModal(false);
+      setEtaValue("");
+      setEtaDelayReason("");
+    } catch (error) {
+      setEtaError(error instanceof Error ? error.message : "ETA update failed.");
+    } finally {
+      setEtaSaving(false);
+    }
+  }
+
+  async function handleUpdateTravelStatus() {
+    if (!newTravelStatus) {
+      setStatusError("Select a status.");
+      return;
+    }
+    setStatusSaving(true);
+    setStatusError("");
+    try {
+      await updateTravelOrderStatusMutation({
+        ticketId,
+        travelOrderStatus: newTravelStatus,
+        actorName,
+        actorRole: currentUser?.role,
+        note: statusNote.trim() || undefined,
+      });
+      setShowStatusModal(false);
+      setStatusNote("");
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : "Status update failed.");
+    } finally {
+      setStatusSaving(false);
     }
   }
 
@@ -1988,6 +2155,9 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               <section className="monitoring-detail-section">
                 <div className="type-subsection-title">Travel Details</div>
                 <div className="monitoring-detail-stack">
+                  {ticket.tripMode ? (
+                    <DetailTextRow label="Trip Mode" value={ticket.tripMode.replace(/_/g, " ")} />
+                  ) : null}
                   <DetailTextRow label="Destination" value={travelOrderDetails.destination} />
                   <DetailTextRow label="Passengers" value={travelOrderDetails.passengers} />
                   <DetailTextRow label="Purpose" value={travelOrderDetails.purpose} />
@@ -1996,8 +2166,327 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                   <DetailTextRow label="Departure" value={travelOrderDetails.departure} />
                   <DetailTextRow label="Return" value={travelOrderDetails.returnTrip} />
                   <DetailTextRow label="Additional / Transportation Notes" value={travelOrderDetails.notes || "None"} />
+                  {ticket.travelStops && ticket.travelStops.length > 0 ? (
+                    <div>
+                      <div className="monitoring-detail-text-row-label" style={{ marginBottom: 6 }}>Stops</div>
+                      <div style={{ display: "grid", gap: 6 }}>
+                        {ticket.travelStops.map((stop, i) => (
+                          <div key={i} style={{ fontSize: 13, padding: "8px 12px", borderRadius: 6, background: "var(--surface-secondary, #f9fafb)", border: "1px solid var(--border)" }}>
+                            <span style={{ fontWeight: 600, marginRight: 8 }}>{stop.type}</span>
+                            {stop.location}
+                            {stop.scheduledTime ? ` — ${formatDateTime(stop.scheduledTime)}` : ""}
+                            {stop.passengerNames?.length ? ` (${stop.passengerNames.join(", ")})` : ""}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </section>
+            ) : null}
+
+            {/* ── Extended Travel Order status & fleet info ──────────────────── */}
+            {isTravelOrder ? (
+              <section className="monitoring-detail-section">
+                <div className="type-subsection-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  Travel Status
+                  {ticket.travelOrderStatus ? (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: "3px 10px",
+                        borderRadius: 999,
+                        background:
+                          getTravelOrderStatusTone(ticket.travelOrderStatus) === "red" ? "#fee2e2" :
+                          getTravelOrderStatusTone(ticket.travelOrderStatus) === "green" ? "#dcfce7" :
+                          getTravelOrderStatusTone(ticket.travelOrderStatus) === "amber" ? "#fef3c7" :
+                          getTravelOrderStatusTone(ticket.travelOrderStatus) === "violet" ? "#ede9fe" :
+                          "#dbeafe",
+                        color:
+                          getTravelOrderStatusTone(ticket.travelOrderStatus) === "red" ? "#991b1b" :
+                          getTravelOrderStatusTone(ticket.travelOrderStatus) === "green" ? "#166534" :
+                          getTravelOrderStatusTone(ticket.travelOrderStatus) === "amber" ? "#92400e" :
+                          getTravelOrderStatusTone(ticket.travelOrderStatus) === "violet" ? "#6d28d9" :
+                          "#1d4ed8",
+                      }}
+                    >
+                      {getTravelOrderStatusLabel(ticket.travelOrderStatus)}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="monitoring-detail-stack">
+                  {ticket.fleetDriverName ? (
+                    <DetailTextRow
+                      label="Assigned Driver"
+                      value={`${ticket.fleetDriverName}${ticket.fleetDriverContactNumber ? ` — ${ticket.fleetDriverContactNumber}` : ""}`}
+                    />
+                  ) : null}
+                  {ticket.fleetVehicleName ? (
+                    <DetailTextRow
+                      label="Assigned Vehicle"
+                      value={`${ticket.fleetVehicleName} (${ticket.fleetVehiclePlateNumber ?? "No plate"})${ticket.fleetVehicleType ? ` — ${ticket.fleetVehicleType}` : ""}`}
+                    />
+                  ) : null}
+                  {ticket.estimatedArrivalTime ? (
+                    <DetailTextRow
+                      label="Estimated Arrival"
+                      value={
+                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {formatDateTime(ticket.estimatedArrivalTime)}
+                          {ticket.travelOrderStatus === "DELAYED" ? (
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "#fef3c7", color: "#92400e" }}>
+                              DELAYED
+                            </span>
+                          ) : null}
+                        </span>
+                      }
+                    />
+                  ) : null}
+                  {ticket.delayReason ? (
+                    <DetailTextRow label="Delay Reason" value={ticket.delayReason} />
+                  ) : null}
+                  {ticket.fleetAssignedAt ? (
+                    <DetailTextRow label="Fleet Assigned" value={formatDateTime(ticket.fleetAssignedAt)} />
+                  ) : null}
+
+                  {/* Shared trip info */}
+                  {ticket.sharedTripId ? (
+                    <>
+                      <DetailTextRow
+                        label="Shared Trip"
+                        value={
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: ticket.sharedTripRole === "PRIMARY" ? "#dbeafe" : "#f3f4f6", color: ticket.sharedTripRole === "PRIMARY" ? "#1d4ed8" : "#374151" }}>
+                              {ticket.sharedTripRole === "PRIMARY" ? "BILLING PARTY" : "SHARED RIDER — No cost"}
+                            </span>
+                          </span>
+                        }
+                      />
+                      {ticket.billingDepartment ? (
+                        <DetailTextRow label="Billing Department" value={ticket.billingDepartment} />
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {/* Cancellation info */}
+                  {ticket.travelOrderStatus === "CANCELLED" && ticket.cancelledBy ? (
+                    <>
+                      <DetailTextRow label="Cancelled By" value={`${ticket.cancelledBy} (${ticket.cancelledByRole ?? "N/A"}) — ${formatDateTime(ticket.cancelledAt)}`} />
+                      <DetailTextRow label="Cancellation Reason" value={`${ticket.cancellationReason ?? "-"}${ticket.cancellationReasonDetail ? `: ${ticket.cancellationReasonDetail}` : ""}`} />
+                    </>
+                  ) : null}
+                </div>
+
+                {/* Incident info */}
+                {ticket.travelOrderStatus === "INCIDENT_REPORTED" || ticket.incidentType ? (
+                  <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 8, background: ticket.incidentType === "MAJOR" ? "#fee2e2" : "#fef3c7", border: `1px solid ${ticket.incidentType === "MAJOR" ? "#fca5a5" : "#fcd34d"}` }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6, color: ticket.incidentType === "MAJOR" ? "#991b1b" : "#92400e" }}>
+                      {ticket.incidentType} Incident Reported
+                    </div>
+                    {ticket.incidentDescription ? <div style={{ fontSize: 13 }}>{ticket.incidentDescription}</div> : null}
+                    {ticket.incidentLocation ? <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Location: {ticket.incidentLocation}</div> : null}
+                    {ticket.incidentReportedAt ? <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Reported: {formatDateTime(ticket.incidentReportedAt)} by {ticket.incidentReportedBy ?? "N/A"}</div> : null}
+                    {ticket.incidentResolutionNote ? (
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(0,0,0,0.08)", fontSize: 13 }}>
+                        <span style={{ fontWeight: 600 }}>Resolved: </span>{ticket.incidentResolutionNote}
+                        {ticket.incidentResolvedAt ? ` (${formatDateTime(ticket.incidentResolvedAt)} by ${ticket.incidentResolvedBy ?? "N/A"})` : ""}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {/* Travel Order action buttons */}
+                {ticket.travelOrderStatus !== "CANCELLED" && ticket.travelOrderStatus !== "COMPLETED" && canEditTravelOrder ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: 13 }}
+                      onClick={() => { setNewTravelStatus(ticket.travelOrderStatus ?? "DRIVER_ASSIGNED"); setShowStatusModal(true); }}
+                    >
+                      Update Status
+                    </button>
+                    {ticket.fleetDriverId ? (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: 13 }}
+                        onClick={() => { setEtaValue(""); setEtaDelayReason(""); setShowEtaModal(true); }}
+                      >
+                        Update ETA
+                      </button>
+                    ) : null}
+                    {ticket.travelOrderStatus === "INCIDENT_REPORTED" ? (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: 13 }}
+                        onClick={() => { setResolveNote(""); setShowResolveIncidentModal(true); }}
+                      >
+                        Resolve Incident
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: 13 }}
+                        onClick={() => { setIncidentDescription(""); setIncidentLocation(""); setShowIncidentModal(true); }}
+                      >
+                        Report Incident
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ fontSize: 13, borderColor: "#fca5a5", color: "#991b1b" }}
+                      onClick={() => { setCancelReason(TRAVEL_ORDER_CANCELLATION_REASONS[0]); setCancelReasonDetail(""); setShowCancelModal(true); }}
+                    >
+                      Cancel Travel Order
+                    </button>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            {/* ── Cancellation Modal ─────────────────────────────────────────── */}
+            {showCancelModal ? (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 480, display: "grid", gap: 14 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>Cancel Travel Order</div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Reason</span>
+                    <select className="input-base" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}>
+                      {TRAVEL_ORDER_CANCELLATION_REASONS.map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Additional details (optional)</span>
+                    <textarea className="input-base" style={{ minHeight: 72, resize: "vertical" }} value={cancelReasonDetail} onChange={(e) => setCancelReasonDetail(e.target.value)} placeholder="Provide more context if needed." />
+                  </label>
+                  {cancelError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{cancelError}</div> : null}
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                    <button type="button" className="btn-secondary" disabled={cancelSaving} onClick={() => setShowCancelModal(false)}>Cancel</button>
+                    <button type="button" className="btn-primary" style={{ background: "#dc2626" }} disabled={cancelSaving} onClick={() => void handleCancelTravelOrder()}>
+                      {cancelSaving ? "Cancelling..." : "Confirm Cancellation"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ── ETA Modal ─────────────────────────────────────────────────── */}
+            {showEtaModal ? (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 440, display: "grid", gap: 14 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>Update Driver ETA</div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Estimated Arrival Time</span>
+                    <input className="input-base" type="datetime-local" value={etaValue} onChange={(e) => setEtaValue(e.target.value)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Delay reason (optional)</span>
+                    <input className="input-base" value={etaDelayReason} onChange={(e) => setEtaDelayReason(e.target.value)} placeholder="Traffic, road conditions, etc." />
+                  </label>
+                  {etaError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{etaError}</div> : null}
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                    <button type="button" className="btn-secondary" disabled={etaSaving} onClick={() => setShowEtaModal(false)}>Cancel</button>
+                    <button type="button" className="btn-primary" disabled={etaSaving} onClick={() => void handleUpdateETA()}>
+                      {etaSaving ? "Saving..." : "Save ETA"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ── Incident Report Modal ──────────────────────────────────────── */}
+            {showIncidentModal ? (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 480, display: "grid", gap: 14 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>Report Incident</div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Incident Type</span>
+                    <select className="input-base" value={incidentType} onChange={(e) => setIncidentType(e.target.value as "MINOR" | "MAJOR")}>
+                      {TRAVEL_ORDER_INCIDENT_TYPES.map((t) => (
+                        <option key={t} value={t}>{t === "MINOR" ? "MINOR — Delay expected, trip continues" : "MAJOR — Trip halted, admin action required"}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Description</span>
+                    <textarea className="input-base" style={{ minHeight: 88, resize: "vertical" }} value={incidentDescription} onChange={(e) => setIncidentDescription(e.target.value)} placeholder="Describe the incident." />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Location (optional)</span>
+                    <input className="input-base" value={incidentLocation} onChange={(e) => setIncidentLocation(e.target.value)} placeholder="Address, landmark, or coordinates" />
+                  </label>
+                  {incidentError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{incidentError}</div> : null}
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                    <button type="button" className="btn-secondary" disabled={incidentSaving} onClick={() => setShowIncidentModal(false)}>Cancel</button>
+                    <button type="button" className="btn-primary" disabled={incidentSaving} onClick={() => void handleReportIncident()}>
+                      {incidentSaving ? "Reporting..." : "Submit Report"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ── Resolve Incident Modal ────────────────────────────────────── */}
+            {showResolveIncidentModal ? (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 480, display: "grid", gap: 14 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>Resolve Incident</div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Next Status After Resolution</span>
+                    <select className="input-base" value={resolveNextStatus} onChange={(e) => setResolveNextStatus(e.target.value)}>
+                      {TRAVEL_ORDER_STATUSES.filter((s) => !["CANCELLED", "COMPLETED", "INCIDENT_REPORTED"].includes(s)).map((s) => (
+                        <option key={s} value={s}>{getTravelOrderStatusLabel(s)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Resolution Note</span>
+                    <textarea className="input-base" style={{ minHeight: 88, resize: "vertical" }} value={resolveNote} onChange={(e) => setResolveNote(e.target.value)} placeholder="Describe how the incident was resolved and next steps." />
+                  </label>
+                  {resolveError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{resolveError}</div> : null}
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                    <button type="button" className="btn-secondary" disabled={resolveSaving} onClick={() => setShowResolveIncidentModal(false)}>Cancel</button>
+                    <button type="button" className="btn-primary" disabled={resolveSaving} onClick={() => void handleResolveIncident()}>
+                      {resolveSaving ? "Saving..." : "Resolve"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ── Status Update Modal ───────────────────────────────────────── */}
+            {showStatusModal ? (
+              <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 440, display: "grid", gap: 14 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>Update Travel Order Status</div>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Status</span>
+                    <select className="input-base" value={newTravelStatus} onChange={(e) => setNewTravelStatus(e.target.value)}>
+                      {TRAVEL_ORDER_STATUSES.map((s) => (
+                        <option key={s} value={s}>{getTravelOrderStatusLabel(s)}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500 }}>Note (optional)</span>
+                    <input className="input-base" value={statusNote} onChange={(e) => setStatusNote(e.target.value)} placeholder="Reason for this status change" />
+                  </label>
+                  {statusError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{statusError}</div> : null}
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                    <button type="button" className="btn-secondary" disabled={statusSaving} onClick={() => setShowStatusModal(false)}>Cancel</button>
+                    <button type="button" className="btn-primary" disabled={statusSaving} onClick={() => void handleUpdateTravelStatus()}>
+                      {statusSaving ? "Saving..." : "Update Status"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : null}
 
             {!isMeetingRequest && !isTravelOrder ? (

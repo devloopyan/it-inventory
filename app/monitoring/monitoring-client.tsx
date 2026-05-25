@@ -943,9 +943,13 @@ function FleetAssignmentModal(props: {
   vehicles: FleetVehicleAvailabilityRow[];
   saving: boolean;
   error: string;
+  conflictWarning: { driverTickets: string[]; vehicleTickets: string[] } | null;
+  overrideReason: string;
+  onOverrideReasonChange: (value: string) => void;
+  onClearConflict: () => void;
   onClose: () => void;
   onFormChange: (form: FleetAssignmentFormState) => void;
-  onSave: () => void;
+  onSave: (override?: boolean) => void;
 }) {
   if (!props.open || !props.ticket) return null;
 
@@ -967,12 +971,60 @@ function FleetAssignmentModal(props: {
         </div>
         <FormErrorBanner message={props.error} />
 
+        {/* Conflict warning banner */}
+        {props.conflictWarning ? (
+          <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 8, background: "#fef3c7", border: "1px solid #fcd34d", display: "grid", gap: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#92400e" }}>Conflict Detected</div>
+            {props.conflictWarning.driverTickets.length > 0 ? (
+              <div style={{ fontSize: 13, color: "#78350f" }}>
+                Driver is already assigned to: <strong>{props.conflictWarning.driverTickets.join(", ")}</strong>
+              </div>
+            ) : null}
+            {props.conflictWarning.vehicleTickets.length > 0 ? (
+              <div style={{ fontSize: 13, color: "#78350f" }}>
+                Vehicle is already assigned to: <strong>{props.conflictWarning.vehicleTickets.join(", ")}</strong>
+              </div>
+            ) : null}
+            <div style={{ marginTop: 4 }}>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#92400e" }}>Override reason (required to proceed)</span>
+                <input
+                  className="input-base"
+                  value={props.overrideReason}
+                  onChange={(e) => props.onOverrideReasonChange(e.target.value)}
+                  placeholder="Explain why this conflict is being overridden"
+                  style={{ fontSize: 13 }}
+                />
+              </label>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ fontSize: 13 }}
+                onClick={props.onClearConflict}
+              >
+                Change Selection
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ fontSize: 13, background: "#d97706" }}
+                disabled={props.saving || !props.overrideReason.trim()}
+                onClick={() => props.onSave(true)}
+              >
+                {props.saving ? "Saving..." : "Override & Assign"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="monitoring-form-grid">
           <FieldGroup label="Driver" required>
             <select
               className="input-base"
               value={props.form.driverId}
-              onChange={(event) => props.onFormChange({ ...props.form, driverId: event.target.value })}
+              onChange={(event) => { props.onFormChange({ ...props.form, driverId: event.target.value }); props.onClearConflict(); }}
             >
               <option value="">Select driver</option>
               {driverOptions.map((driver) => (
@@ -987,7 +1039,7 @@ function FleetAssignmentModal(props: {
             <select
               className="input-base"
               value={props.form.vehicleId}
-              onChange={(event) => props.onFormChange({ ...props.form, vehicleId: event.target.value })}
+              onChange={(event) => { props.onFormChange({ ...props.form, vehicleId: event.target.value }); props.onClearConflict(); }}
             >
               <option value="">Select vehicle</option>
               {vehicleOptions.map((vehicle) => (
@@ -1005,14 +1057,16 @@ function FleetAssignmentModal(props: {
           </div>
         ) : null}
 
-        <div className="monitoring-form-actions">
-          <button type="button" className="btn-secondary" onClick={props.onClose} disabled={props.saving}>
-            Cancel
-          </button>
-          <button type="button" className="btn-primary" onClick={props.onSave} disabled={props.saving}>
-            {props.saving ? "Saving..." : "Save Assignment"}
-          </button>
-        </div>
+        {!props.conflictWarning ? (
+          <div className="monitoring-form-actions">
+            <button type="button" className="btn-secondary" onClick={props.onClose} disabled={props.saving}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" onClick={() => props.onSave(false)} disabled={props.saving}>
+              {props.saving ? "Saving..." : "Save Assignment"}
+            </button>
+          </div>
+        ) : null}
       </section>
     </MonitoringFormModal>
   );
@@ -1172,6 +1226,27 @@ function ReopenTicketIcon() {
       />
       <path
         d="M4 10V5m0 5h5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function SharedTripIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
         stroke="currentColor"
         strokeWidth="1.8"
         strokeLinecap="round"
@@ -1471,6 +1546,8 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const updateFleetVehicle = useMutation(api.fleet.updateVehicle);
   const deleteFleetVehicle = useMutation(api.fleet.deleteVehicle);
   const assignTravelOrderFleet = useMutation(api.fleet.assignTravelOrderFleet);
+  const cancelTravelOrderWithReason = useMutation(api.fleet.cancelTravelOrderWithReason);
+  const assignSharedTripMutation = useMutation(api.fleet.assignSharedTrip);
   const markTravelOrderDone = useMutation(api.fleet.markTravelOrderDone);
   const cancelTravelOrder = useMutation(api.fleet.cancelTravelOrder);
   const reopenTravelOrder = useMutation(api.fleet.reopenTravelOrder);
@@ -1523,6 +1600,22 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     useState<FleetAssignmentFormState>(defaultFleetAssignmentForm);
   const [fleetAssignmentSaving, setFleetAssignmentSaving] = useState(false);
   const [fleetAssignmentError, setFleetAssignmentError] = useState("");
+  // Conflict detection state
+  const [fleetConflictWarning, setFleetConflictWarning] = useState<{ driverTickets: string[]; vehicleTickets: string[] } | null>(null);
+  const [fleetOverrideReason, setFleetOverrideReason] = useState("");
+  // Cancel with reason modal
+  const [showCancelReasonModal, setShowCancelReasonModal] = useState(false);
+  const [cancelReasonTicketId, setCancelReasonTicketId] = useState<Id<"monitoringTickets"> | null>(null);
+  const [cancelReason, setCancelReason] = useState("No longer needed");
+  const [cancelReasonDetail, setCancelReasonDetail] = useState("");
+  const [cancelReasonSaving, setCancelReasonSaving] = useState(false);
+  const [cancelReasonError, setCancelReasonError] = useState("");
+  // Shared trip assignment modal
+  const [showSharedTripModal, setShowSharedTripModal] = useState(false);
+  const [sharedTripPrimaryId, setSharedTripPrimaryId] = useState<Id<"monitoringTickets"> | null>(null);
+  const [sharedTripSecondaryId, setSharedTripSecondaryId] = useState("");
+  const [sharedTripSaving, setSharedTripSaving] = useState(false);
+  const [sharedTripError, setSharedTripError] = useState("");
   const [prioritySavingId, setPrioritySavingId] = useState("");
   const [travelDoneSavingId, setTravelDoneSavingId] = useState("");
   const [travelCancelSavingId, setTravelCancelSavingId] = useState("");
@@ -2343,9 +2436,11 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     setFleetAssignmentTicket(null);
     setFleetAssignmentForm(defaultFleetAssignmentForm);
     setFleetAssignmentError("");
+    setFleetConflictWarning(null);
+    setFleetOverrideReason("");
   }
 
-  async function handleSaveFleetAssignment() {
+  async function handleSaveFleetAssignment(overrideConflict = false) {
     if (!fleetAssignmentTicket) return;
 
     try {
@@ -2363,12 +2458,78 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
         driverId: fleetAssignmentForm.driverId as Id<"fleetDrivers">,
         vehicleId: fleetAssignmentForm.vehicleId as Id<"fleetVehicles">,
         actorName,
+        overrideConflict,
+        overrideReason: overrideConflict ? (fleetOverrideReason.trim() || "Override approved by dispatcher.") : undefined,
       });
+      setFleetConflictWarning(null);
+      setFleetOverrideReason("");
       closeFleetAssignmentModal();
     } catch (error) {
-      setFleetAssignmentError(error instanceof Error ? error.message : "Fleet assignment failed.");
+      const message = error instanceof Error ? error.message : "Fleet assignment failed.";
+      if (message.startsWith("CONFLICT_DETECTED:")) {
+        // Parse conflict payload: "CONFLICT_DETECTED:driver1,driver2|vehicle1"
+        const payload = message.slice("CONFLICT_DETECTED:".length);
+        const [driverPart, vehiclePart] = payload.split("|");
+        setFleetConflictWarning({
+          driverTickets: driverPart ? driverPart.split(",").filter(Boolean) : [],
+          vehicleTickets: vehiclePart ? vehiclePart.split(",").filter(Boolean) : [],
+        });
+        setFleetAssignmentError("");
+      } else {
+        setFleetAssignmentError(message);
+      }
     } finally {
       setFleetAssignmentSaving(false);
+    }
+  }
+
+  async function handleCancelWithReason() {
+    if (!cancelReasonTicketId || !cancelReason.trim()) {
+      setCancelReasonError("Cancellation reason is required.");
+      return;
+    }
+    setCancelReasonSaving(true);
+    setCancelReasonError("");
+    try {
+      await cancelTravelOrderWithReason({
+        ticketId: cancelReasonTicketId,
+        cancellationReason: cancelReason,
+        cancellationReasonDetail: cancelReasonDetail.trim() || undefined,
+        actorName,
+        actorRole: "admin",
+      });
+      setShowCancelReasonModal(false);
+      setCancelReasonTicketId(null);
+      setCancelReason("No longer needed");
+      setCancelReasonDetail("");
+    } catch (error) {
+      setCancelReasonError(error instanceof Error ? error.message : "Cancellation failed.");
+    } finally {
+      setCancelReasonSaving(false);
+    }
+  }
+
+  async function handleAssignSharedTrip() {
+    if (!sharedTripPrimaryId || !sharedTripSecondaryId.trim()) {
+      setSharedTripError("Select both travel orders.");
+      return;
+    }
+    setSharedTripSaving(true);
+    setSharedTripError("");
+    try {
+      await assignSharedTripMutation({
+        primaryTicketId: sharedTripPrimaryId,
+        secondaryTicketId: sharedTripSecondaryId as Id<"monitoringTickets">,
+        actorName,
+        actorRole: "admin",
+      });
+      setShowSharedTripModal(false);
+      setSharedTripPrimaryId(null);
+      setSharedTripSecondaryId("");
+    } catch (error) {
+      setSharedTripError(error instanceof Error ? error.message : "Shared trip assignment failed.");
+    } finally {
+      setSharedTripSaving(false);
     }
   }
 
@@ -3187,10 +3348,107 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           vehicles={fleetVehicles}
           saving={fleetAssignmentSaving}
           error={fleetAssignmentError}
+          conflictWarning={fleetConflictWarning}
+          overrideReason={fleetOverrideReason}
+          onOverrideReasonChange={setFleetOverrideReason}
+          onClearConflict={() => { setFleetConflictWarning(null); setFleetOverrideReason(""); }}
           onClose={closeFleetAssignmentModal}
           onFormChange={setFleetAssignmentForm}
-          onSave={() => void handleSaveFleetAssignment()}
+          onSave={(override) => void handleSaveFleetAssignment(override)}
         />
+
+        {/* Cancel with reason modal */}
+        {showCancelReasonModal ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 480, display: "grid", gap: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Cancel Travel Order</div>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Reason</span>
+                <select className="input-base" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}>
+                  {["No longer needed","Schedule conflict","Requester request","Vehicle unavailable","Driver unavailable","Weather or road conditions","Budget constraints","Admin decision","Other"].map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Additional details (optional)</span>
+                <textarea className="input-base" style={{ minHeight: 72, resize: "vertical" as const }} value={cancelReasonDetail} onChange={(e) => setCancelReasonDetail(e.target.value)} placeholder="Provide more context if needed." />
+              </label>
+              {cancelReasonError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{cancelReasonError}</div> : null}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button type="button" className="btn-secondary" disabled={cancelReasonSaving} onClick={() => { setShowCancelReasonModal(false); setCancelReasonError(""); }}>Cancel</button>
+                <button type="button" className="btn-primary" style={{ background: "#dc2626" }} disabled={cancelReasonSaving} onClick={() => void handleCancelWithReason()}>
+                  {cancelReasonSaving ? "Cancelling..." : "Confirm Cancellation"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showSharedTripModal ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 480, display: "grid", gap: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Combine as Shared Trip</div>
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                Both orders will share the same driver and vehicle. The billing party is determined automatically — whichever order had fleet assigned first pays; the other rides for free.
+              </p>
+              <div style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Primary order</span>
+                <div style={{ fontSize: 13, padding: "8px 12px", background: "var(--surface-raised, #f8fafc)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                  {(() => {
+                    const primary = hrAdminRequestRows.find((r) => r._id === sharedTripPrimaryId);
+                    return primary
+                      ? `${primary.ticketNumber} — ${primary.requesterName}${primary.requesterDepartment ? ` (${primary.requesterDepartment})` : ""}`
+                      : "—";
+                  })()}
+                </div>
+              </div>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Second order to combine with</span>
+                <select
+                  className="input-base"
+                  value={sharedTripSecondaryId}
+                  onChange={(e) => setSharedTripSecondaryId(e.target.value)}
+                >
+                  <option value="">Select a travel order…</option>
+                  {hrAdminRequestRows
+                    .filter(
+                      (r) =>
+                        r.category === MONITORING_TRAVEL_ORDER_CATEGORY &&
+                        r._id !== sharedTripPrimaryId &&
+                        !r.sharedTripId &&
+                        getTravelOrderDisplayStatus(r) !== "Fulfilled" &&
+                        getTravelOrderDisplayStatus(r) !== "Closed",
+                    )
+                    .map((r) => (
+                      <option key={r._id} value={r._id}>
+                        {r.ticketNumber} — {r.requesterName}{r.requesterDepartment ? ` (${r.requesterDepartment})` : ""}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {sharedTripError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{sharedTripError}</div> : null}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={sharedTripSaving}
+                  onClick={() => { setShowSharedTripModal(false); setSharedTripError(""); setSharedTripPrimaryId(null); setSharedTripSecondaryId(""); }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={sharedTripSaving || !sharedTripSecondaryId}
+                  onClick={() => void handleAssignSharedTrip()}
+                >
+                  {sharedTripSaving ? "Combining…" : "Confirm Shared Trip"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {activeTab === "internet" ? (
           <div style={{ display: "grid", gap: 12 }}>
@@ -3661,10 +3919,22 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                       aria-label={`Cancel ${row.ticketNumber}`}
                                       title="Cancel travel order"
                                       disabled={isTravelOrderDone || travelCancelSavingId === rowId}
-                                      onClick={() => void handleCancelTravelOrder(row._id)}
+                                      onClick={() => { setCancelReasonTicketId(row._id); setCancelReason("No longer needed"); setCancelReasonDetail(""); setCancelReasonError(""); setShowCancelReasonModal(true); }}
                                     >
                                       <CancelTravelOrderIcon />
                                     </button>
+                                    {!row.sharedTripId ? (
+                                      <button
+                                        type="button"
+                                        className="monitoring-icon-action-btn"
+                                        aria-label={`Combine ${row.ticketNumber} as shared trip`}
+                                        title="Combine as shared trip"
+                                        disabled={isTravelOrderDone}
+                                        onClick={() => { setSharedTripPrimaryId(row._id); setSharedTripSecondaryId(""); setSharedTripError(""); setShowSharedTripModal(true); }}
+                                      >
+                                        <SharedTripIcon />
+                                      </button>
+                                    ) : null}
                                   </>
                                 )}
                               </div>
