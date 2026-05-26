@@ -28,25 +28,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   return (
     <div className="login-page">
 
-      {/* Left — brand panel */}
-      <div className="login-brand-panel">
-        <div className="login-brand-deco login-brand-deco--tl" aria-hidden="true" />
-        <div className="login-brand-deco login-brand-deco--br" aria-hidden="true" />
-        <div className="login-brand-content">
-          <div className="login-brand-name">ENVI-COMM</div>
-          <div className="login-brand-tagline">IT Operations & Asset Management</div>
-          <div className="login-brand-chips">
-            <span className="login-brand-chip">Hardware</span>
-            <span className="login-brand-chip">Monitoring</span>
-            <span className="login-brand-chip">Requests</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Right — form panel */}
       <div className="login-form-panel">
         <div className="login-stage">
-          <section className="login-panel">
+
+<section className="login-panel">
             <div className="login-panel-head">
               <div className="login-panel-title">Welcome back</div>
               <div className="login-panel-subtitle">Sign in to your IT Operations account</div>
@@ -115,3 +100,4 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     </div>
   );
 }
+

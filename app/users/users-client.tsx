@@ -1,10 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 
 function parseError(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
-  // Convex wraps server errors: strip the "[CONVEX M(...)] ... Uncaught Error: " prefix
   const match = error.message.match(/Uncaught Error:\s*(.+?)(?:\n|$)/s);
   return match?.[1]?.trim() ?? error.message;
 }
@@ -103,16 +103,12 @@ function buildUsernameSuggestion(displayName: string) {
 export default function UsersClient() {
   const users = useQuery(api.users.list, {});
   const departments = useQuery(api.departments.list, {});
-  const addDepartment = useMutation(api.departments.add);
-  const removeDepartment = useMutation(api.departments.remove);
   const createUser = useMutation(api.users.create);
   const updateRole = useMutation(api.users.updateRole);
   const setActive = useMutation(api.users.setActive);
   const setPassword = useMutation(api.users.setPassword);
 
   const [form, setForm] = useState<UserFormState>(defaultFormState);
-  const [newDeptName, setNewDeptName] = useState("");
-  const [deptError, setDeptError] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -133,17 +129,7 @@ export default function UsersClient() {
     );
   }, [users, userSearch]);
 
-  const summary = useMemo(() => {
-    const rows = users ?? [];
-    return {
-      total: rows.length,
-      active: rows.filter((user) => user.active).length,
-      serviceStaff: rows.filter((user) => (user.role === "service_staff" || user.role === "it_staff") && user.active).length,
-      approvers: rows.filter((user) => user.role === "approver" && user.active).length,
-    };
-  }, [users]);
-
-  function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.target;
     setForm((current) => {
       if (name === "displayName" && !current.username.trim()) {
@@ -153,7 +139,6 @@ export default function UsersClient() {
           username: buildUsernameSuggestion(value),
         };
       }
-
       return {
         ...current,
         [name]: name === "role" ? normalizeRoleForSelect(value) : value,
@@ -168,7 +153,7 @@ export default function UsersClient() {
     }));
   }
 
-async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
+  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
       setIsSubmitting(true);
@@ -186,7 +171,8 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
         createdBy: "IT Operations",
       });
       setForm(defaultFormState);
-      setSuccessMessage("User account record created.");
+      setSuccessMessage("User account created.");
+      setTimeout(() => setSuccessMessage(""), 3000);
     } catch (error) {
       setErrorMessage(parseError(error, "Unable to create user."));
     } finally {
@@ -197,7 +183,6 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
   async function handleSetPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedUserId) return;
-
     try {
       setBusyUserId(selectedUserId);
       setErrorMessage("");
@@ -217,11 +202,7 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
       setBusyUserId(user._id);
       setErrorMessage("");
       setSuccessMessage("");
-      await updateRole({
-        userId: user._id,
-        role,
-        serviceGroups: user.serviceGroups,
-      });
+      await updateRole({ userId: user._id, role, serviceGroups: user.serviceGroups });
       setSuccessMessage("User role updated.");
     } catch (error) {
       setErrorMessage(parseError(error, "Unable to update role."));
@@ -271,92 +252,28 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
         <div>
           <h1 className="type-page-title">Users</h1>
           <p className="type-page-subtitle">
-            Create account records and assign roles before we connect real login and approval routing.
+            Create account records and assign roles for request workflows.
           </p>
         </div>
-      </div>
-
-      <div className="users-summary-grid" aria-label="User account summary">
-        <div className="panel users-summary-card">
-          <span>Total Users</span>
-          <strong>{summary.total}</strong>
-        </div>
-        <div className="panel users-summary-card">
-          <span>Active</span>
-          <strong>{summary.active}</strong>
-        </div>
-        <div className="panel users-summary-card">
-          <span>Service Staff</span>
-          <strong>{summary.serviceStaff}</strong>
-        </div>
-        <div className="panel users-summary-card">
-          <span>Approvers</span>
-          <strong>{summary.approvers}</strong>
-        </div>
-      </div>
-
-      <div className="panel" style={{ padding: "20px 24px", display: "grid", gap: 16 }}>
-        <div>
-          <h2 className="type-section-title">Departments / Service Groups</h2>
-          <p className="type-section-copy">These appear as options when assigning service groups to user accounts.</p>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          {(departments ?? []).map((dept) => (
-            <span key={dept} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, background: "var(--surface-raised)", border: "1px solid var(--border-subtle)", fontSize: 13 }}>
-              {dept}
-              <button
-                type="button"
-                aria-label={`Remove ${dept}`}
-                onClick={async () => {
-                  setDeptError("");
-                  try { await removeDepartment({ name: dept }); }
-                  catch (err) { setDeptError(err instanceof Error ? err.message : "Failed to remove."); }
-                }}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", lineHeight: 1, padding: 0, fontSize: 15 }}
-              >×</button>
-            </span>
-          ))}
-          {departments === undefined && <span className="type-helper">Loading…</span>}
-          {departments?.length === 0 && <span className="type-helper">No departments yet. Add one below.</span>}
-        </div>
-        {deptError ? <p style={{ color: "var(--destructive)", fontSize: 13, margin: 0 }}>{deptError}</p> : null}
-        <div style={{ display: "flex", gap: 8, maxWidth: 400 }}>
-          <input
-            className="input-base"
-            placeholder="New department name (e.g. Finance)"
-            value={newDeptName}
-            onChange={(e) => setNewDeptName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
-          />
-          <button
-            type="button"
-            className="btn-primary"
-            style={{ whiteSpace: "nowrap" }}
-            onClick={async () => {
-              setDeptError("");
-              try {
-                await addDepartment({ name: newDeptName.trim() });
-                setNewDeptName("");
-              } catch (err) {
-                setDeptError(err instanceof Error ? err.message : "Failed to add.");
-              }
-            }}
-          >
-            Add
-          </button>
-        </div>
+        <Link href="/users/settings" className="users-settings-btn" title="Manage departments & service groups">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <path d="M1,4.75H3.736a3.728,3.728,0,0,0,7.195,0H23a1,1,0,0,0,0-2H10.931a3.728,3.728,0,0,0-7.195,0H1a1,1,0,0,0,0,2ZM7.333,2a1.75,1.75,0,1,1-1.75,1.75A1.752,1.752,0,0,1,7.333,2Z"/>
+            <path d="M23,11H20.264a3.727,3.727,0,0,0-7.194,0H1a1,1,0,0,0,0,2H13.07a3.727,3.727,0,0,0,7.194,0H23a1,1,0,0,0,0-2Zm-6.333,2.75A1.75,1.75,0,1,1,18.417,12,1.752,1.752,0,0,1,16.667,13.75Z"/>
+            <path d="M23,19.25H10.931a3.728,3.728,0,0,0-7.195,0H1a1,1,0,0,0,0,2H3.736a3.728,3.728,0,0,0,7.195,0H23a1,1,0,0,0,0-2ZM7.333,22a1.75,1.75,0,1,1,1.75-1.75A1.753,1.753,0,0,1,7.333,22Z"/>
+          </svg>
+        </Link>
       </div>
 
       <div className="users-layout">
-        <div className="users-sidebar-column">
-          <form className="panel users-form" onSubmit={handleCreateUser}>
-            <div>
-              <h2 className="type-section-title">Add User</h2>
-              <p className="type-section-copy">
-                This creates the profile and role only. Password login will be added in a later phase.
-              </p>
-            </div>
 
+        {/* ── Left: Add User form ── */}
+        <div className="users-form">
+          <div>
+            <h2 className="type-section-title" style={{ marginBottom: 4 }}>Add User</h2>
+            <p className="type-section-copy">This creates the profile and role only. Password login will be added in a later phase.</p>
+          </div>
+
+          <form onSubmit={handleCreateUser} style={{ display: "grid", gap: 14 }}>
             <label className="users-field">
               <span>Full Name</span>
               <input
@@ -412,21 +329,14 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
                 <span>Role</span>
                 <select className="input-base" name="role" value={form.role} onChange={handleFieldChange}>
                   {roleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               </label>
 
               <label className="users-field">
                 <span>Department</span>
-                <select
-                  className="input-base"
-                  name="department"
-                  value={form.department}
-                  onChange={handleFieldChange}
-                >
+                <select className="input-base" name="department" value={form.department} onChange={handleFieldChange}>
                   <option value="">— Select department —</option>
                   {(departments ?? []).map((dept) => (
                     <option key={dept} value={dept}>{dept}</option>
@@ -452,14 +362,14 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
                 <span>Requests this user can help process.</span>
               </div>
               <div className="users-scope-options">
-                {(departments ?? []).map((serviceGroup) => (
-                  <label key={serviceGroup} className="users-scope-option">
+                {(departments ?? []).map((sg) => (
+                  <label key={sg} className="users-scope-option">
                     <input
                       type="checkbox"
-                      checked={form.serviceGroups.includes(serviceGroup)}
-                      onChange={() => toggleFormServiceGroup(serviceGroup)}
+                      checked={form.serviceGroups.includes(sg)}
+                      onChange={() => toggleFormServiceGroup(sg)}
                     />
-                    <span>{serviceGroup}</span>
+                    <span>{sg}</span>
                   </label>
                 ))}
               </div>
@@ -468,22 +378,20 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
             {errorMessage ? <div className="reservation-error">{errorMessage}</div> : null}
             {successMessage ? <div className="users-success">{successMessage}</div> : null}
 
-            <div className="users-form-actions">
-              <button className="btn-primary" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Creating..." : "Create User"}
-              </button>
-            </div>
+            <button className="btn-primary" type="submit" disabled={isSubmitting} style={{ width: "100%" }}>
+              {isSubmitting ? "Creating..." : "Create User"}
+            </button>
           </form>
-
         </div>
 
-        <section className="users-members-section">
-          <div className="users-members-head">
+        {/* ── Right: User Accounts ── */}
+        <div className="users-table-panel">
+          <div className="users-table-head">
             <div>
               <h2 className="type-section-title">User Accounts</h2>
               <p className="type-section-copy">Manage roles and active status for request workflows.</p>
             </div>
-            <div className="search-field" style={{ maxWidth: 240, width: "100%" }}>
+            <div className="search-field" style={{ maxWidth: 260, width: "100%" }}>
               <span className="search-icon" aria-hidden="true">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
@@ -499,76 +407,69 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
             </div>
           </div>
 
-          {users === undefined ? (
-            <p className="type-helper" style={{ padding: "24px 0" }}>Loading members…</p>
-          ) : (
-            <div className="member-grid">
-              {filteredUsers.length === 0 ? (
-                <p className="type-helper" style={{ gridColumn: "1/-1", padding: "24px 0" }}>
-                  {userSearch ? "No members match your search." : "No user accounts yet."}
-                </p>
-              ) : filteredUsers.map((user) => {
-                const avatarStyle = getAvatarStyle(user.displayName);
-                const initials = getInitials(user.displayName);
-                const roleLabel = roleOptions.find((r) => r.value === normalizeRoleForSelect(user.role))?.label ?? user.role;
-                return (
-                  <div
-                    key={user._id}
-                    className="member-card"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => { setSelectedUserId(user._id); setTemporaryPassword(""); setErrorMessage(""); setSuccessMessage(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setSelectedUserId(user._id); setTemporaryPassword(""); } }}
-                  >
-                    <div className="member-card-top">
-                      <div className="member-avatar" style={avatarStyle}>{initials}</div>
-                      <span className={`member-badge${user.active ? " is-active" : " is-inactive"}`}>
-                        {user.active ? "Active" : "Inactive"}
-                      </span>
-                    </div>
-
-                    <div>
-                      <div className="member-name">{user.displayName}</div>
-                      <div className="member-role-label">{roleLabel}</div>
-                    </div>
-
-                    <div className="member-meta">
-                      <div>
-                        <span className="member-meta-label">Department</span>
-                        <span className="member-meta-value">{user.department ?? "—"}</span>
-                      </div>
-                      <div>
-                        <span className="member-meta-label">Joined</span>
-                        <span className="member-meta-value">{formatDate(user.createdAt)}</span>
-                      </div>
-                    </div>
-
-                    <div className="member-card-footer">
-                      <span className="member-footer-email">{user.email ?? `@${user.username}`}</span>
-                      <span className="member-arrow" aria-hidden="true">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                          <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="users-role-notes">
-            {roleOptions.map((option) => (
-              <div key={option.value}>
-                <strong>{option.label}</strong>
-                <span>{option.description}</span>
-              </div>
-            ))}
+          <div className="ulist-wrap">
+            {users === undefined ? (
+              <p className="type-helper" style={{ padding: "16px 20px" }}>Loading users…</p>
+            ) : (
+              <table className="ulist-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Role</th>
+                    <th>Department</th>
+                    <th>Status</th>
+                    <th>Joined</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="ulist-empty">
+                        {userSearch ? "No users match your search." : "No user accounts yet."}
+                      </td>
+                    </tr>
+                  ) : filteredUsers.map((user) => {
+                    const initials = getInitials(user.displayName);
+                    const avatarStyle = getAvatarStyle(user.displayName);
+                    const roleLabel = roleOptions.find((r) => r.value === normalizeRoleForSelect(user.role))?.label ?? user.role;
+                    return (
+                      <tr
+                        key={user._id}
+                        className="ulist-row"
+                        onClick={() => { setSelectedUserId(user._id); setTemporaryPassword(""); setErrorMessage(""); setSuccessMessage(""); }}
+                      >
+                        <td>
+                          <div className="ulist-name-cell">
+                            <div className="ulist-avatar" style={avatarStyle}>{initials}</div>
+                            <div>
+                              <div className="ulist-display-name">{user.displayName}</div>
+                              <div className="ulist-username">@{user.username}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="ulist-role-chip">{roleLabel}</span>
+                        </td>
+                        <td className="ulist-muted">{user.department ?? "—"}</td>
+                        <td>
+                          <span className={`member-badge${user.active ? " is-active" : " is-inactive"}`}>
+                            {user.active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td className="ulist-muted">{formatDate(user.createdAt)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
-        </section>
+        </div>
+
       </div>
     </div>
 
+    {/* Edit User Panel */}
     {selectedUser ? (
       <>
         <div
