@@ -1,6 +1,13 @@
 "use client";
 
 import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+
+function parseError(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  // Convex wraps server errors: strip the "[CONVEX M(...)] ... Uncaught Error: " prefix
+  const match = error.message.match(/Uncaught Error:\s*(.+?)(?:\n|$)/s);
+  return match?.[1]?.trim() ?? error.message;
+}
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -80,18 +87,8 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-function getAvatarStyle(name: string): { background: string; color: string } {
-  const palettes = [
-    { background: "#dbeafe", color: "#1d4ed8" },
-    { background: "#d1fae5", color: "#065f46" },
-    { background: "#fce7f3", color: "#be185d" },
-    { background: "#ede9fe", color: "#5b21b6" },
-    { background: "#fee2e2", color: "#991b1b" },
-    { background: "#fef3c7", color: "#92400e" },
-    { background: "#e0f2fe", color: "#075985" },
-    { background: "#f0fdf4", color: "#166534" },
-  ];
-  return palettes[name.charCodeAt(0) % palettes.length];
+function getAvatarStyle(_name: string): { background: string; color: string } {
+  return { background: "#e5e7eb", color: "#374151" };
 }
 
 function buildUsernameSuggestion(displayName: string) {
@@ -120,7 +117,7 @@ export default function UsersClient() {
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [busyUserId, setBusyUserId] = useState<string>("");
-  const [passwordTargetId, setPasswordTargetId] = useState<Id<"users"> | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<Id<"users"> | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [userSearch, setUserSearch] = useState("");
 
@@ -191,40 +188,25 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
       setForm(defaultFormState);
       setSuccessMessage("User account record created.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to create user.");
+      setErrorMessage(parseError(error, "Unable to create user."));
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  function openPasswordPanel(user: UserAccount) {
-    setPasswordTargetId(user._id);
-    setTemporaryPassword("");
-    setErrorMessage("");
-    setSuccessMessage("");
-  }
-
-  function closePasswordPanel() {
-    setPasswordTargetId(null);
-    setTemporaryPassword("");
-  }
-
   async function handleSetPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!passwordTargetId) return;
+    if (!selectedUserId) return;
 
     try {
-      setBusyUserId(passwordTargetId);
+      setBusyUserId(selectedUserId);
       setErrorMessage("");
       setSuccessMessage("");
-      await setPassword({
-        userId: passwordTargetId,
-        temporaryPassword,
-      });
-      closePasswordPanel();
+      await setPassword({ userId: selectedUserId, temporaryPassword });
+      setTemporaryPassword("");
       setSuccessMessage("Temporary password saved.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to save password.");
+      setErrorMessage(parseError(error, "Unable to save password."));
     } finally {
       setBusyUserId("");
     }
@@ -242,7 +224,7 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
       });
       setSuccessMessage("User role updated.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to update role.");
+      setErrorMessage(parseError(error, "Unable to update role."));
     } finally {
       setBusyUserId("");
     }
@@ -260,7 +242,7 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
       });
       setSuccessMessage("Workflow access updated.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to update workflow access.");
+      setErrorMessage(parseError(error, "Unable to update workflow access."));
     } finally {
       setBusyUserId("");
     }
@@ -274,15 +256,16 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
       await setActive({ userId: user._id, active: !user.active });
       setSuccessMessage(user.active ? "User deactivated." : "User reactivated.");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Unable to update user status.");
+      setErrorMessage(parseError(error, "Unable to update user status."));
     } finally {
       setBusyUserId("");
     }
   }
 
-  const passwordTarget = users?.find((user) => user._id === passwordTargetId);
+  const selectedUser = users?.find((user) => user._id === selectedUserId);
 
   return (
+    <>
     <div className="users-page">
       <div className="users-page-header">
         <div>
@@ -492,39 +475,6 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
             </div>
           </form>
 
-          {passwordTarget ? (
-            <form className="panel users-password-panel" onSubmit={handleSetPassword}>
-              <div>
-                <strong>{passwordTarget.passwordConfigured ? "Reset Password" : "Set Password"}</strong>
-                <span>{passwordTarget.displayName}</span>
-              </div>
-              <label className="users-field">
-                <span>Temporary Password</span>
-                <input
-                  className="input-base"
-                  type="password"
-                  value={temporaryPassword}
-                  onChange={(event) => setTemporaryPassword(event.target.value)}
-                  placeholder="Minimum 8 characters"
-                  autoComplete="new-password"
-                  required
-                />
-              </label>
-              <div className="users-form-actions">
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={closePasswordPanel}
-                  disabled={busyUserId === passwordTarget._id}
-                >
-                  Cancel
-                </button>
-                <button className="btn-primary" type="submit" disabled={busyUserId === passwordTarget._id}>
-                  {busyUserId === passwordTarget._id ? "Saving..." : "Save Password"}
-                </button>
-              </div>
-            </form>
-          ) : null}
         </div>
 
         <section className="users-members-section">
@@ -562,7 +512,14 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
                 const initials = getInitials(user.displayName);
                 const roleLabel = roleOptions.find((r) => r.value === normalizeRoleForSelect(user.role))?.label ?? user.role;
                 return (
-                  <div key={user._id} className="member-card">
+                  <div
+                    key={user._id}
+                    className="member-card"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { setSelectedUserId(user._id); setTemporaryPassword(""); setErrorMessage(""); setSuccessMessage(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setSelectedUserId(user._id); setTemporaryPassword(""); } }}
+                  >
                     <div className="member-card-top">
                       <div className="member-avatar" style={avatarStyle}>{initials}</div>
                       <span className={`member-badge${user.active ? " is-active" : " is-inactive"}`}>
@@ -581,68 +538,18 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
                         <span className="member-meta-value">{user.department ?? "—"}</span>
                       </div>
                       <div>
-                        <span className="member-meta-label">Joining</span>
+                        <span className="member-meta-label">Joined</span>
                         <span className="member-meta-value">{formatDate(user.createdAt)}</span>
                       </div>
                     </div>
 
-                    <div className="member-contact">
-                      {user.email ? <span>{user.email}</span> : null}
-                      <span>@{user.username}</span>
-                    </div>
-
-                    {(departments ?? []).length > 0 ? (
-                      <div className="member-service-chips">
-                        {(departments ?? []).map((sg) => (
-                          <button
-                            key={sg}
-                            type="button"
-                            className={`member-service-chip${user.serviceGroups.includes(sg) ? " is-active" : ""}`}
-                            onClick={() => void handleAccessToggle(user, sg)}
-                            disabled={busyUserId === user._id}
-                            title={user.serviceGroups.includes(sg) ? `Remove ${sg} access` : `Grant ${sg} access`}
-                          >
-                            {sg}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    <hr className="member-divider" />
-
-                    <div className="member-card-actions">
-                      <select
-                        className="input-base"
-                        style={{ fontSize: 12, padding: "5px 8px", height: 32 }}
-                        value={normalizeRoleForSelect(user.role)}
-                        onChange={(e) => void handleRoleChange(user, normalizeRoleForSelect(e.target.value))}
-                        disabled={busyUserId === user._id}
-                        aria-label={`Role for ${user.displayName}`}
-                      >
-                        {roleOptions.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                      <div className="member-action-row">
-                        <button
-                          className="btn-secondary"
-                          style={{ flex: 1, fontSize: 12, padding: "5px 8px" }}
-                          type="button"
-                          onClick={() => openPasswordPanel(user)}
-                          disabled={busyUserId === user._id}
-                        >
-                          {user.passwordConfigured ? "Reset PW" : "Set PW"}
-                        </button>
-                        <button
-                          className={user.active ? "btn-danger" : "btn-success"}
-                          style={{ flex: 1, fontSize: 12, padding: "5px 8px" }}
-                          type="button"
-                          onClick={() => void handleActiveChange(user)}
-                          disabled={busyUserId === user._id}
-                        >
-                          {user.active ? "Deactivate" : "Reactivate"}
-                        </button>
-                      </div>
+                    <div className="member-card-footer">
+                      <span className="member-footer-email">{user.email ?? `@${user.username}`}</span>
+                      <span className="member-arrow" aria-hidden="true">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                          <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
                     </div>
                   </div>
                 );
@@ -661,5 +568,126 @@ async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
         </section>
       </div>
     </div>
+
+    {selectedUser ? (
+      <>
+        <div
+          className="member-panel-backdrop"
+          onClick={() => { setSelectedUserId(null); setTemporaryPassword(""); }}
+        />
+        <aside className="member-panel">
+          <div className="member-panel-head">
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div className="member-panel-avatar" style={getAvatarStyle(selectedUser.displayName)}>
+                {getInitials(selectedUser.displayName)}
+              </div>
+              <div>
+                <div className="member-panel-name">{selectedUser.displayName}</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>@{selectedUser.username}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="member-panel-close"
+              onClick={() => { setSelectedUserId(null); setTemporaryPassword(""); }}
+              aria-label="Close panel"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="member-panel-body">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span className={`member-badge${selectedUser.active ? " is-active" : " is-inactive"}`}>
+                {selectedUser.active ? "Active" : "Inactive"}
+              </span>
+              {selectedUser.email ? (
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>{selectedUser.email}</span>
+              ) : null}
+            </div>
+
+            <div className="member-panel-section">
+              <div className="member-panel-section-title">Role</div>
+              <select
+                className="input-base"
+                value={normalizeRoleForSelect(selectedUser.role)}
+                onChange={(e) => void handleRoleChange(selectedUser, normalizeRoleForSelect(e.target.value))}
+                disabled={busyUserId === selectedUser._id}
+              >
+                {roleOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <p style={{ fontSize: 11, color: "var(--muted)", margin: "5px 0 0", lineHeight: 1.5 }}>
+                {roleOptions.find((r) => r.value === normalizeRoleForSelect(selectedUser.role))?.description}
+              </p>
+            </div>
+
+            {(departments ?? []).length > 0 ? (
+              <div className="member-panel-section">
+                <div className="member-panel-section-title">Service Groups</div>
+                <div style={{ display: "grid", gap: 9 }}>
+                  {(departments ?? []).map((sg) => (
+                    <label key={sg} style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedUser.serviceGroups.includes(sg)}
+                        onChange={() => void handleAccessToggle(selectedUser, sg)}
+                        disabled={busyUserId === selectedUser._id}
+                      />
+                      {sg}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="member-panel-section">
+              <div className="member-panel-section-title">
+                {selectedUser.passwordConfigured ? "Reset Password" : "Set Password"}
+              </div>
+              <form onSubmit={handleSetPassword} style={{ display: "grid", gap: 8 }}>
+                <input
+                  className="input-base"
+                  type="password"
+                  value={temporaryPassword}
+                  onChange={(e) => setTemporaryPassword(e.target.value)}
+                  placeholder="Minimum 8 characters"
+                  autoComplete="new-password"
+                  required
+                />
+                <button
+                  className="btn-primary"
+                  type="submit"
+                  disabled={busyUserId === selectedUser._id}
+                  style={{ fontSize: 13 }}
+                >
+                  {busyUserId === selectedUser._id ? "Saving…" : "Save Password"}
+                </button>
+              </form>
+            </div>
+
+            <div className="member-panel-section">
+              <div className="member-panel-section-title">Account Status</div>
+              <button
+                className={selectedUser.active ? "btn-danger" : "btn-success"}
+                type="button"
+                style={{ fontSize: 13, width: "100%" }}
+                onClick={() => void handleActiveChange(selectedUser)}
+                disabled={busyUserId === selectedUser._id}
+              >
+                {selectedUser.active ? "Deactivate User" : "Reactivate User"}
+              </button>
+            </div>
+
+            {successMessage ? <div className="users-success" style={{ marginTop: 4 }}>{successMessage}</div> : null}
+            {errorMessage ? <div className="reservation-error" style={{ marginTop: 4 }}>{errorMessage}</div> : null}
+          </div>
+        </aside>
+      </>
+    ) : null}
+    </>
   );
 }

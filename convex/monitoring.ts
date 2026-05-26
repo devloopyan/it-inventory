@@ -1115,6 +1115,7 @@ export const createTicket = mutation({
     requestedItemsText: v.optional(v.string()),
     requestedBorrowDate: v.optional(v.number()),
     expectedReturnAt: v.optional(v.number()),
+    travelReturnAt: v.optional(v.number()),
     borrowingItems: v.optional(
       v.array(
         v.object({
@@ -1430,6 +1431,7 @@ export const createTicket = mutation({
       requestedItemsText,
       requestedBorrowDate,
       expectedReturnAt,
+      travelReturnAt: args.travelReturnAt,
       borrowingItems: borrowingItems.length ? borrowingItems : undefined,
       createdAt: now,
       updatedAt: now,
@@ -1444,6 +1446,111 @@ export const createTicket = mutation({
     });
   },
 });
+
+async function syncBorrowingAssets(
+  ctx: MutationCtx,
+  args: {
+    borrowingItems: Array<{ assetId: Id<"hardwareInventory">; assetTag: string }>;
+    transition: "reserve" | "claim" | "return" | "cancel";
+    ticketNumber: string;
+    requesterName?: string;
+    requesterDepartment?: string;
+    actorName: string;
+  },
+) {
+  const now = Date.now();
+  for (const item of args.borrowingItems) {
+    const asset = await ctx.db.get(item.assetId);
+    if (!asset) continue;
+
+    if (args.transition === "reserve") {
+      await ctx.db.patch(item.assetId, {
+        status: "Reserved",
+        reservationStatus: "Reserved",
+        reservationBorrower: args.requesterName,
+        reservationDepartment: args.requesterDepartment,
+        updatedAt: now,
+      } as never);
+      await logHardwareActivity(ctx, {
+        inventoryId: item.assetId,
+        assetTag: asset.assetTag,
+        assetNameDescription: asset.assetNameDescription,
+        eventType: "reservation_created",
+        message: `Equipment reserved under ${args.ticketNumber} — pending claim.`,
+        relatedPerson: args.requesterName,
+        location: asset.locationPersonAssigned ?? asset.location,
+        status: "Reserved",
+        actorName: args.actorName,
+      });
+    } else if (args.transition === "claim") {
+      await ctx.db.patch(item.assetId, {
+        status: "Borrowed",
+        reservationStatus: "Claimed",
+        borrowedAt: now,
+        reservationBorrower: args.requesterName,
+        reservationDepartment: args.requesterDepartment,
+        updatedAt: now,
+      } as never);
+      await logHardwareActivity(ctx, {
+        inventoryId: item.assetId,
+        assetTag: asset.assetTag,
+        assetNameDescription: asset.assetNameDescription,
+        eventType: "reservation_claimed",
+        message: `Equipment claimed by ${args.requesterName ?? "borrower"} under ${args.ticketNumber}.`,
+        relatedPerson: args.requesterName,
+        location: asset.locationPersonAssigned ?? asset.location,
+        status: "Borrowed",
+        actorName: args.actorName,
+      });
+    } else if (args.transition === "return") {
+      if (asset.status !== "Borrowed") continue;
+      await ctx.db.patch(item.assetId, {
+        status: "Available",
+        reservationStatus: undefined,
+        borrowedAt: undefined,
+        borrower: undefined,
+        reservationBorrower: undefined,
+        reservationDepartment: undefined,
+        borrowReturnConditionCheckedAt: now,
+        updatedAt: now,
+      } as never);
+      await logHardwareActivity(ctx, {
+        inventoryId: item.assetId,
+        assetTag: asset.assetTag,
+        assetNameDescription: asset.assetNameDescription,
+        eventType: "asset_returned",
+        message: `Equipment returned under ${args.ticketNumber}.`,
+        relatedPerson: args.requesterName,
+        location: asset.locationPersonAssigned ?? asset.location ?? "MAIN STORAGE",
+        status: "Available",
+        actorName: args.actorName,
+      });
+    } else if (args.transition === "cancel") {
+      const isReservedOrBorrowed = asset.status === "Reserved" || asset.status === "Borrowed";
+      if (!isReservedOrBorrowed) continue;
+      await ctx.db.patch(item.assetId, {
+        status: "Available",
+        reservationStatus: undefined,
+        borrowedAt: undefined,
+        borrower: undefined,
+        reservationBorrower: undefined,
+        reservationDepartment: undefined,
+        updatedAt: now,
+      } as never);
+      await logHardwareActivity(ctx, {
+        inventoryId: item.assetId,
+        assetTag: asset.assetTag,
+        assetNameDescription: asset.assetNameDescription,
+        eventType: "reservation_cancelled",
+        message: `Equipment released — borrowing request ${args.ticketNumber} cancelled.`,
+        relatedPerson: args.requesterName,
+        location: asset.locationPersonAssigned ?? asset.location ?? "MAIN STORAGE",
+        status: "Available",
+        actorName: args.actorName,
+      });
+    }
+  }
+}
 
 export const updateTicket = mutation({
   args: {
@@ -1668,7 +1775,7 @@ export const updateTicket = mutation({
         status: nextStatus,
       })
     ) {
-      if (workflowType === "serviceRequest" && !nextFulfillmentNote) {
+      if (workflowType === "serviceRequest" && !isBorrowingRequest && !nextFulfillmentNote) {
         throw new Error("Fulfillment note is required before marking a request fulfilled.");
       }
       if (workflowType === "internetOutage" && !nextCauseActionTaken) {
@@ -1864,6 +1971,57 @@ export const updateTicket = mutation({
           : undefined,
       closedAt: nextStatus === "Closed" ? (ticket.closedAt ?? now) : undefined,
     });
+
+    // Sync linked assets when a borrowing request status transitions
+    const prevStatus = ticket.status;
+    const linkedItems = (borrowingItems.length ? borrowingItems : (ticket.borrowingItems ?? [])) as Array<{
+      assetId: Id<"hardwareInventory">;
+      assetTag: string;
+    }>;
+    if (isBorrowingRequest && linkedItems.length) {
+      const isReserve = nextStatus === "Reserved" && prevStatus !== "Reserved";
+      const isClaim = nextStatus === "Claimed" && prevStatus !== "Claimed";
+      const isReturn = nextStatus === "Fulfilled" && prevStatus !== "Fulfilled";
+      const isCancel =
+        (nextStatus === "Closed" || nextStatus === "Cancelled") &&
+        prevStatus !== "Fulfilled" && prevStatus !== "Closed";
+
+      if (isReserve) {
+        await syncBorrowingAssets(ctx, {
+          borrowingItems: linkedItems,
+          transition: "reserve",
+          ticketNumber: ticket.ticketNumber,
+          requesterName: requesterName,
+          requesterDepartment: ticket.requesterDepartment,
+          actorName,
+        });
+      } else if (isClaim) {
+        await syncBorrowingAssets(ctx, {
+          borrowingItems: linkedItems,
+          transition: "claim",
+          ticketNumber: ticket.ticketNumber,
+          requesterName: requesterName,
+          requesterDepartment: ticket.requesterDepartment,
+          actorName,
+        });
+      } else if (isReturn) {
+        await syncBorrowingAssets(ctx, {
+          borrowingItems: linkedItems,
+          transition: "return",
+          ticketNumber: ticket.ticketNumber,
+          requesterName: requesterName,
+          actorName,
+        });
+      } else if (isCancel) {
+        await syncBorrowingAssets(ctx, {
+          borrowingItems: linkedItems,
+          transition: "cancel",
+          ticketNumber: ticket.ticketNumber,
+          requesterName: requesterName,
+          actorName,
+        });
+      }
+    }
 
     return { success: true };
   },

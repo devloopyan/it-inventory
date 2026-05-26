@@ -1192,6 +1192,65 @@ export const reopenTravelOrder = mutation({
   },
 });
 
+// ─── Extend travel order ──────────────────────────────────────────────────────
+
+export const extendTravelOrder = mutation({
+  args: {
+    ticketId: v.id("monitoringTickets"),
+    newReturnAt: v.number(),
+    reason: v.optional(v.string()),
+    actorName: v.string(),
+  },
+  handler: async (ctx, { ticketId, newReturnAt, reason, actorName }) => {
+    const ticket = await ctx.db.get(ticketId);
+    if (!ticket) throw new Error("Travel order not found.");
+    if (ticket.category !== "Travel Order") throw new Error("Only travel orders can be extended.");
+
+    const doneStatuses = ["Fulfilled", "Closed", "Done"];
+    if (doneStatuses.includes(ticket.status)) {
+      throw new Error("Cannot extend a travel order that is already completed or closed.");
+    }
+
+    const now = Date.now();
+    const actor = normalizeRequired(actorName, "Actor name");
+
+    const fmt = (ts: number) =>
+      new Date(ts).toLocaleString("en-US", {
+        month: "short", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit",
+      });
+
+    const newReturnDate = fmt(newReturnAt);
+    const oldReturnDate = ticket.travelReturnAt ? fmt(ticket.travelReturnAt) : "unknown";
+
+    const updatedDetails = (ticket.requestDetails ?? "")
+      .split("\n")
+      .map((line) => (/^Return:/i.test(line.trim()) ? `Return: ${newReturnDate}` : line))
+      .join("\n");
+
+    const extensionNote = `[Extended by ${actor} on ${fmt(now)}]: Was due ${oldReturnDate}, new return ${newReturnDate}${reason ? ` — ${reason}` : ""}.`;
+
+    await ctx.db.patch(ticketId, {
+      travelReturnAt: newReturnAt,
+      travelReturnExtendedAt: now,
+      requestDetails: updatedDetails + "\n" + extensionNote,
+      updatedAt: now,
+      updatedBy: actor,
+    });
+
+    await logTravelOrderActivity(ctx, {
+      ticketId,
+      ticketNumber: ticket.ticketNumber,
+      event: "EXTENDED",
+      description: extensionNote,
+      actorName: actor,
+      actorRole: "admin",
+    });
+
+    return { success: true };
+  },
+});
+
 // ─── Seed ─────────────────────────────────────────────────────────────────────
 
 export const seedSampleData = mutation({

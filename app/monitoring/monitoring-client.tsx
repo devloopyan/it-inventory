@@ -458,18 +458,8 @@ function getFleetInitials(name: string) {
     .join("") || "DR";
 }
 
-function getFleetAvatarPalette(name: string): { background: string; color: string } {
-  const palettes = [
-    { background: "#dbeafe", color: "#1d4ed8" },
-    { background: "#d1fae5", color: "#065f46" },
-    { background: "#fce7f3", color: "#be185d" },
-    { background: "#ede9fe", color: "#5b21b6" },
-    { background: "#fee2e2", color: "#991b1b" },
-    { background: "#fef3c7", color: "#92400e" },
-    { background: "#e0f2fe", color: "#075985" },
-    { background: "#f0fdf4", color: "#166534" },
-  ];
-  return palettes[name.charCodeAt(0) % palettes.length];
+function getFleetAvatarPalette(_name: string): { background: string; color: string } {
+  return { background: "#e5e7eb", color: "#374151" };
 }
 
 function getFleetStatusBadgeStyle(status: string): CSSProperties {
@@ -515,7 +505,6 @@ function FleetAvailabilitySection(props: {
       <div className="monitoring-fleet-head">
         <div>
           <h2 className="type-section-title">Fleet Availability</h2>
-          <p className="type-section-copy">Available drivers and vehicles for travel order coordination.</p>
         </div>
         <div className="monitoring-fleet-head-actions">
           <div className="monitoring-fleet-counts" aria-label="Fleet availability counts">
@@ -587,9 +576,9 @@ function FleetAvailabilitySection(props: {
                       display: "grid",
                       placeItems: "center",
                       borderRadius: 999,
-                      border: "1px solid rgba(var(--brand-900-rgb), 0.18)",
-                      background: "rgba(var(--brand-900-rgb), 0.1)",
-                      color: "var(--foreground)",
+                      border: "1px solid #d1d5db",
+                      background: "#e5e7eb",
+                      color: "#374151",
                       fontSize: 14,
                       fontWeight: 900,
                       letterSpacing: 0,
@@ -674,9 +663,9 @@ function FleetAvailabilitySection(props: {
                       display: "grid",
                       placeItems: "center",
                       borderRadius: 999,
-                      border: "1px solid rgba(var(--brand-900-rgb), 0.18)",
-                      background: "rgba(var(--brand-900-rgb), 0.1)",
-                      color: "var(--foreground)",
+                      border: "1px solid #d1d5db",
+                      background: "#e5e7eb",
+                      color: "#374151",
                     }}
                   >
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1298,6 +1287,16 @@ function SharedTripIcon() {
   );
 }
 
+function ExtendTripIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 7v5l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M18 3h4M20 1v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const MONITORING_TABS: ReadonlyArray<{ key: MonitoringTab; label: string; description: string }> = [
   { key: "issues", label: "IT Queue", description: "IT issues, approvals, and service requests." },
   { key: "hrAdmin", label: "HR/Admin Queue", description: "Travel orders and HR/Admin service requests." },
@@ -1593,6 +1592,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const markTravelOrderDone = useMutation(api.fleet.markTravelOrderDone);
   const cancelTravelOrder = useMutation(api.fleet.cancelTravelOrder);
   const reopenTravelOrder = useMutation(api.fleet.reopenTravelOrder);
+  const extendTravelOrderMutation = useMutation(api.fleet.extendTravelOrder);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const [activeTab, setActiveTab] = useState<MonitoringTab>(() => {
     const requestedTab = searchParams?.get("tab") ?? null;
@@ -1610,6 +1610,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [hrAdminDateFilter, setHrAdminDateFilter] = useState("");
   const [hrAdminArchiveView, setHrAdminArchiveView] = useState<HrAdminArchiveView>("active");
   const [meetingArchiveView, setMeetingArchiveView] = useState<"active" | "archive">("active");
+  const [borrowingArchiveView, setBorrowingArchiveView] = useState<"active" | "archive">("active");
   const [filterNeedsApproval, setFilterNeedsApproval] = useState(false);
   const [filterMissingReport, setFilterMissingReport] = useState(false);
   const [filterForRevision, setFilterForRevision] = useState(false);
@@ -1662,6 +1663,20 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [travelDoneSavingId, setTravelDoneSavingId] = useState("");
   const [travelCancelSavingId, setTravelCancelSavingId] = useState("");
   const [travelReopenSavingId, setTravelReopenSavingId] = useState("");
+  const [borrowingActionSavingId, setBorrowingActionSavingId] = useState("");
+  const [borrowingConfirm, setBorrowingConfirm] = useState<{ message: string; label: string; onConfirm: () => void } | null>(null);
+  const [showExtendModal, setShowExtendModal] = useState(false);
+  const [extendTicketId, setExtendTicketId] = useState<Id<"monitoringTickets"> | null>(null);
+  const [extendNewReturnAt, setExtendNewReturnAt] = useState("");
+  const [extendReason, setExtendReason] = useState("");
+  const [extendSaving, setExtendSaving] = useState(false);
+  const [extendError, setExtendError] = useState("");
+  // Borrowing return condition modal
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnModalTicket, setReturnModalTicket] = useState<{ id: Id<"monitoringTickets">; items: Array<{ assetId: string; assetTag: string; assetLabel: string }> } | null>(null);
+  const [returnConditions, setReturnConditions] = useState<Record<string, { condition: string; note: string }>>({});
+  const [returnModalSaving, setReturnModalSaving] = useState(false);
+  const [returnModalError, setReturnModalError] = useState("");
   const issueAttachmentRef = useRef<HTMLInputElement | null>(null);
   const borrowingAttachmentRef = useRef<HTMLInputElement | null>(null);
   const deferredIssueSearch = useDeferredValue(issueSearch);
@@ -1743,6 +1758,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     .sort((left, right) => right.createdAt - left.createdAt);
   const borrowingRequestRows = [...(issueRows ?? [])]
     .filter((row) => row.category === MONITORING_BORROWING_REQUEST_CATEGORY)
+    .filter((row) => {
+      const archived = row.status === "Fulfilled" || row.status === "Closed";
+      return borrowingArchiveView === "archive" ? archived : !archived;
+    })
     .filter((row) => {
       if (requestStatusFilters.length === 0) return true;
       const requestState = getDisplayStatusLabel(row.status, row.category) === "Closed" ? "Closed" : "Open";
@@ -1830,6 +1849,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const showPriorityColumn = activeTab !== "meetings";
   const showFleetActionColumn = activeTab === "hrAdmin";
   const showMeetingActionColumn = activeTab === "meetings";
+  const showBorrowingActionColumn = activeTab === "borrowing";
   const showScheduleColumn = activeTab !== "hrAdmin";
   const requestColumnCount =
     6 +
@@ -1837,6 +1857,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     (showPriorityColumn ? 1 : 0) +
     (showFleetActionColumn ? 1 : 0) +
     (showMeetingActionColumn ? 1 : 0) +
+    (showBorrowingActionColumn ? 1 : 0) +
     (showScheduleColumn ? 1 : 0);
   const requestFilterCount = [filterNeedsApproval, filterMissingReport, filterForRevision].filter(Boolean).length;
   const requestFilterSummary = requestFilterCount === 0 ? "Select" : String(requestFilterCount);
@@ -2649,12 +2670,109 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     }
   }
 
+  function handleBorrowingAction(ticketId: Id<"monitoringTickets">, nextStatus: string) {
+    const messages: Record<string, string> = {
+      "Reserved": "The equipment will be marked as reserved in the asset inventory.",
+      "Claimed": "The equipment will be recorded as borrowed by the requestee.",
+      "Closed": "This borrowing request will be closed.",
+    };
+    const labels: Record<string, string> = {
+      "Reserved": "Reserve Equipment",
+      "Claimed": "Mark as Claimed",
+      "Closed": "Close Request",
+    };
+    setBorrowingConfirm({
+      message: messages[nextStatus] ?? `Set status to ${nextStatus}?`,
+      label: labels[nextStatus] ?? "Proceed",
+      onConfirm: async () => {
+        setBorrowingConfirm(null);
+        try {
+          setBorrowingActionSavingId(String(ticketId));
+          setRequestTableError("");
+          await updateTicket({ ticketId, actorName, status: nextStatus });
+        } catch (error) {
+          setRequestTableError(error instanceof Error ? error.message : "Unable to update status.");
+        } finally {
+          setBorrowingActionSavingId("");
+        }
+      },
+    });
+  }
+
+  function openReturnModal(row: { _id: Id<"monitoringTickets">; borrowingItems?: Array<{ assetId: string; assetTag: string; assetLabel: string }> | null }) {
+    const items = (row.borrowingItems ?? []) as Array<{ assetId: string; assetTag: string; assetLabel: string }>;
+    const initial: Record<string, { condition: string; note: string }> = {};
+    for (const item of items) {
+      initial[item.assetId] = { condition: MONITORING_BORROW_CONDITION_OPTIONS[0], note: "" };
+    }
+    setReturnModalTicket({ id: row._id, items });
+    setReturnConditions(initial);
+    setReturnModalError("");
+    setShowReturnModal(true);
+  }
+
+  async function handleBorrowingReturn() {
+    if (!returnModalTicket) return;
+    const items = returnModalTicket.items.map((item) => ({
+      assetId: item.assetId as Id<"hardwareInventory">,
+      releaseCondition: returnConditions[item.assetId]?.condition ?? MONITORING_BORROW_CONDITION_OPTIONS[0],
+      returnCondition: returnConditions[item.assetId]?.condition ?? MONITORING_BORROW_CONDITION_OPTIONS[0],
+      returnedAt: Date.now(),
+    }));
+    try {
+      setReturnModalSaving(true);
+      setReturnModalError("");
+      await updateTicket({
+        ticketId: returnModalTicket.id,
+        actorName,
+        status: "Fulfilled",
+        borrowingItems: items,
+      });
+      setShowReturnModal(false);
+      setReturnModalTicket(null);
+    } catch (error) {
+      setReturnModalError(error instanceof Error ? error.message : "Unable to complete return.");
+    } finally {
+      setReturnModalSaving(false);
+    }
+  }
+
+  async function handleExtendTravelOrder() {
+    if (!extendTicketId || !extendNewReturnAt) {
+      setExtendError("New return date and time is required.");
+      return;
+    }
+    const newReturnAt = toTimestamp(extendNewReturnAt);
+    if (!newReturnAt) {
+      setExtendError("Invalid date and time.");
+      return;
+    }
+    setExtendSaving(true);
+    setExtendError("");
+    try {
+      await extendTravelOrderMutation({
+        ticketId: extendTicketId,
+        newReturnAt,
+        reason: extendReason.trim() || undefined,
+        actorName,
+      });
+      setShowExtendModal(false);
+      setExtendTicketId(null);
+      setExtendNewReturnAt("");
+      setExtendReason("");
+    } catch (error) {
+      setExtendError(error instanceof Error ? error.message : "Extension failed.");
+    } finally {
+      setExtendSaving(false);
+    }
+  }
+
   return (
-    <div className="monitoring-page" style={{ display: "grid", gap: 18 }}>
+    <div className="monitoring-page" style={{ display: "grid", gap: 4 }}>
       <section
         className="panel"
         style={{
-          padding: 18,
+          padding: "14px 18px 4px",
           display: "grid",
           gap: 14,
           border: "none",
@@ -3497,6 +3615,110 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           </div>
         ) : null}
 
+        {borrowingConfirm ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 380, display: "grid", gap: 20 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Confirm Action</div>
+                <p style={{ fontSize: 13, color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>{borrowingConfirm.message}</p>
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button type="button" className="btn-secondary" onClick={() => setBorrowingConfirm(null)}>Cancel</button>
+                <button type="button" className="btn-primary" onClick={() => void borrowingConfirm.onConfirm()}>{borrowingConfirm.label}</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showReturnModal && returnModalTicket ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 520, display: "grid", gap: 16, maxHeight: "90vh", overflowY: "auto" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Log Return Condition</div>
+                <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Record the condition of each item before completing the return.</p>
+              </div>
+              <div style={{ display: "grid", gap: 12 }}>
+                {returnModalTicket.items.map((item) => (
+                  <div key={item.assetId} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px", display: "grid", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13 }}>{item.assetTag}</span>
+                      <span style={{ fontSize: 13, color: "var(--muted)" }}>{item.assetLabel}</span>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <label style={{ display: "grid", gap: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>Condition</span>
+                        <select
+                          className="input-base"
+                          value={returnConditions[item.assetId]?.condition ?? MONITORING_BORROW_CONDITION_OPTIONS[0]}
+                          onChange={(e) => setReturnConditions((prev) => ({ ...prev, [item.assetId]: { ...prev[item.assetId], condition: e.target.value } }))}
+                        >
+                          {MONITORING_BORROW_CONDITION_OPTIONS.map((condition) => (
+                            <option key={condition} value={condition}>{condition}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label style={{ display: "grid", gap: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>Note (optional)</span>
+                        <input
+                          className="input-base"
+                          placeholder="e.g. minor scratch on screen"
+                          value={returnConditions[item.assetId]?.note ?? ""}
+                          onChange={(e) => setReturnConditions((prev) => ({ ...prev, [item.assetId]: { ...prev[item.assetId], note: e.target.value } }))}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {returnModalError ? <div style={{ color: "#dc2626", fontSize: 13 }}>{returnModalError}</div> : null}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button type="button" className="btn-secondary" disabled={returnModalSaving} onClick={() => { setShowReturnModal(false); setReturnModalTicket(null); }}>Cancel</button>
+                <button type="button" className="btn-primary" disabled={returnModalSaving} onClick={() => void handleBorrowingReturn()}>
+                  {returnModalSaving ? "Saving…" : "Complete Return"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showExtendModal ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 420, display: "grid", gap: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Extend Return Time</div>
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                Set a new expected return date and time for this travel order.
+              </p>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>New Return Date / Time <span style={{ color: "#dc2626" }}>*</span></span>
+                <input
+                  className="input-base"
+                  type="datetime-local"
+                  value={extendNewReturnAt}
+                  onChange={(e) => setExtendNewReturnAt(e.target.value)}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Reason (optional)</span>
+                <textarea
+                  className="input-base"
+                  style={{ minHeight: 64, resize: "vertical" as const }}
+                  value={extendReason}
+                  onChange={(e) => setExtendReason(e.target.value)}
+                  placeholder="e.g. Traffic delay, additional client visit, weather"
+                />
+              </label>
+              {extendError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{extendError}</div> : null}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button type="button" className="btn-secondary" disabled={extendSaving} onClick={() => { setShowExtendModal(false); setExtendError(""); }}>Cancel</button>
+                <button type="button" className="btn-primary" disabled={extendSaving || !extendNewReturnAt} onClick={() => void handleExtendTravelOrder()}>
+                  {extendSaving ? "Saving..." : "Extend Return Time"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <div key={activeTab} className="monitoring-tab-content">
         {activeTab === "internet" ? (
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -3708,18 +3930,116 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                 </div>
               ) : null}
               {activeTab === "borrowing" ? (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  style={{ minHeight: 40, paddingInline: 16, marginLeft: "auto" }}
-                  onClick={() => openBorrowingCreateModal()}
-                >
-                  Create Ticket
-                </button>
+                <div className="asset-master-view-filters monitoring-archive-tabs" aria-label="Borrowing request view">
+                  <button
+                    type="button"
+                    aria-pressed={borrowingArchiveView === "active"}
+                    className={`asset-master-view-filter${borrowingArchiveView === "active" ? " active" : ""}`}
+                    onClick={() => setBorrowingArchiveView("active")}
+                  >
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={borrowingArchiveView === "archive"}
+                    className={`asset-master-view-filter${borrowingArchiveView === "archive" ? " active" : ""}`}
+                    onClick={() => setBorrowingArchiveView("archive")}
+                  >
+                    Archive
+                  </button>
+                </div>
               ) : null}
             </div>
 
-            {activeTab === "hrAdmin" ? (
+            {activeTab === "hrAdmin" && hrAdminArchiveView === "archive" ? (
+              <div className="saas-table-wrap monitoring-tab-table-wrap">
+                {requestTableError ? <FormErrorBanner message={requestTableError} /> : null}
+                <table className="saas-table" style={{ minWidth: 900 }}>
+                  <thead>
+                    <tr>
+                      <th>Ticket</th>
+                      <th>Requester</th>
+                      <th>Purpose</th>
+                      <th>Departure</th>
+                      <th>Return</th>
+                      <th>Driver</th>
+                      <th>Vehicle</th>
+                      <th>Status</th>
+                      <th>Closed</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requestRows.length === 0 ? (
+                      <tr><td colSpan={10} style={{ padding: "24px 16px", textAlign: "center", color: "var(--muted)" }}>{requestEmptyState}</td></tr>
+                    ) : requestRows.map((row) => {
+                      const rowId = String(row._id);
+                      const displayStatus = getTravelOrderDisplayStatus(row);
+                      const travelSchedule = getTravelScheduleFromDetails(row.requestDetails);
+                      const travelPurpose = row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? getTravelPurposeFromDetails(row.requestDetails) : null;
+                      return (
+                        <tr
+                          key={row._id}
+                          className="table-row-hover"
+                          style={{ cursor: "pointer" }}
+                          onClick={() => router.push(`/monitoring/${row._id}`)}
+                        >
+                          <td>
+                            <div className="monitoring-request-cell">
+                              <div className="monitoring-request-title-row">
+                                <strong>{row.ticketNumber}</strong>
+                                {row.sharedTripId ? (
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "#ede9fe", color: "#5b21b6" }}>Shared</span>
+                                ) : null}
+                              </div>
+                              <span className="monitoring-request-title">{row.title}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: "grid", gap: 2 }}>
+                              <span style={{ fontWeight: 600 }}>{row.requesterName}</span>
+                              <span style={{ color: "var(--muted)", fontSize: 12 }}>{row.requesterDepartment ?? "—"}</span>
+                            </div>
+                          </td>
+                          <td style={{ maxWidth: 200 }}>
+                            <span style={{ fontSize: 12, color: "var(--muted)", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {travelPurpose ?? (row.requestDetails?.slice(0, 60) ?? "—")}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: 12, whiteSpace: "nowrap" }}>{row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? formatCompactTravelDate(travelSchedule.departure) : "—"}</td>
+                          <td style={{ fontSize: 12, whiteSpace: "nowrap" }}>{row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? formatCompactTravelDate(travelSchedule.returnAt) : "—"}</td>
+                          <td style={{ fontSize: 12 }}>{row.fleetDriverName ?? "—"}</td>
+                          <td style={{ fontSize: 12 }}>{row.fleetVehicleName ? `${row.fleetVehicleName}${row.fleetVehiclePlateNumber ? ` · ${row.fleetVehiclePlateNumber}` : ""}` : "—"}</td>
+                          <td><Chip label={displayStatus} /></td>
+                          <td style={{ fontSize: 12, whiteSpace: "nowrap" }}>{formatDateTime(row.updatedAt)}</td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <div className="monitoring-table-actions">
+                              <button
+                                type="button"
+                                className="monitoring-icon-action-btn"
+                                title="View details"
+                                onClick={() => router.push(`/monitoring/${row._id}`)}
+                              >
+                                <ViewTicketIcon />
+                              </button>
+                              <button
+                                type="button"
+                                className="monitoring-icon-action-btn is-warning"
+                                title="Reopen travel order"
+                                onClick={() => void handleReopenTravelOrder(row._id)}
+                                disabled={travelReopenSavingId === rowId}
+                              >
+                                <ReopenTicketIcon />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : activeTab === "hrAdmin" ? (
               <div className="to-card-grid">
                 {requestTableError ? <FormErrorBanner message={requestTableError} /> : null}
                 {requestRows.length === 0 ? (
@@ -3730,6 +4050,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   const rowServiceGroup = getServiceGroupForCategory(row.category);
                   const isTODone = row.category === MONITORING_TRAVEL_ORDER_CATEGORY && (displayStatus === "Fulfilled" || displayStatus === "Closed");
                   const isUnopened = displayStatus === "New" && !(row.notificationSeenByGroups ?? []).includes(rowServiceGroup);
+                  const isOverdue = row.category === MONITORING_TRAVEL_ORDER_CATEGORY && !!row.travelReturnAt && Date.now() > row.travelReturnAt && !isTODone;
                   const travelSchedule = getTravelScheduleFromDetails(row.requestDetails);
                   const travelPurpose = row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? getTravelPurposeFromDetails(row.requestDetails) : null;
                   const avatarPalette = getFleetAvatarPalette(row.requesterName ?? "?");
@@ -3738,13 +4059,18 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   return (
                     <article
                       key={row._id}
-                      className={`to-card${isUnopened ? " to-card--unopened" : ""}`}
+                      className={`to-card${isUnopened ? " to-card--unopened" : ""}${isOverdue ? " to-card--overdue" : ""}`}
                       onClick={() => router.push(`/monitoring/${row._id}`)}
                     >
                       <div className="to-card-header">
                         <div className="to-card-header-left">
                           <span className="to-card-ticket">{row.ticketNumber}</span>
                           {isUnopened ? <span className="monitoring-unopened-pill">New</span> : null}
+                          {isOverdue ? (
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d" }}>
+                              Overdue
+                            </span>
+                          ) : null}
                           {row.sharedTripId ? (
                             <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "#ede9fe", color: "#5b21b6" }}>
                               Shared
@@ -3801,11 +4127,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                       ) : null}
 
                       <div className="to-card-footer" onClick={(e) => e.stopPropagation()}>
-                        {hrAdminArchiveView === "archive" ? (
-                          <button type="button" className="btn-secondary" style={{ fontSize: 12, padding: "4px 10px" }} onClick={() => void handleReopenTravelOrder(row._id)} disabled={travelReopenSavingId === rowId}>
-                            {travelReopenSavingId === rowId ? "…" : "Reopen"}
-                          </button>
-                        ) : row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
+                        {row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
                           <>
                             <select
                               className="input-base"
@@ -3820,6 +4142,11 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                             <button type="button" className="monitoring-icon-action-btn" title={row.fleetDriverId && row.fleetVehicleId ? "Edit fleet" : "Assign fleet"} onClick={() => openFleetAssignmentModal({ _id: row._id, ticketNumber: row.ticketNumber, title: row.title, fleetDriverId: row.fleetDriverId, fleetDriverName: row.fleetDriverName, fleetVehicleId: row.fleetVehicleId, fleetVehicleName: row.fleetVehicleName, fleetVehiclePlateNumber: row.fleetVehiclePlateNumber })}>
                               <FleetAssignIcon />
                             </button>
+                            {!isTODone ? (
+                              <button type="button" className="monitoring-icon-action-btn is-warning" title="Extend return time" onClick={() => { setExtendTicketId(row._id); setExtendNewReturnAt(""); setExtendReason(""); setExtendError(""); setShowExtendModal(true); }}>
+                                <ExtendTripIcon />
+                              </button>
+                            ) : null}
                             <button type="button" className="monitoring-icon-action-btn is-success" title="Mark travel done" disabled={isTODone || travelDoneSavingId === rowId} onClick={() => void handleMarkTravelDone(row._id)}>
                               <TravelDoneIcon />
                             </button>
@@ -3833,9 +4160,6 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                             ) : null}
                           </>
                         ) : null}
-                        <button type="button" className="monitoring-icon-action-btn" title="View details" onClick={() => router.push(`/monitoring/${row._id}`)}>
-                          <ViewTicketIcon />
-                        </button>
                       </div>
                     </article>
                   );
@@ -3855,9 +4179,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     {showPriorityColumn ? <th>Priority</th> : null}
                     <th>Status</th>
                     <th>{requestMetaColumnLabel}</th>
-                    <th>Last Updated</th>
+                    {!showBorrowingActionColumn ? <th>Last Updated</th> : null}
                     {showFleetActionColumn ? <th>Action</th> : null}
                     {showMeetingActionColumn ? <th>Action</th> : null}
+                    {showBorrowingActionColumn ? <th>Action</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -3948,7 +4273,20 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                         ) : null}
                         {showPriorityColumn ? (
                           <td onClick={(event) => event.stopPropagation()}>
-                            {row.priority ? <Chip label={row.priority} /> : "-"}
+                            {activeTab === "borrowing" && canSeeItQueue ? (
+                              <select
+                                className="input-base"
+                                style={{ fontSize: 11, padding: "3px 6px", height: 28, width: 64 }}
+                                value={row.priority ?? "P4"}
+                                onChange={(e) => void handleTravelOrderPriorityChange(row._id, e.target.value)}
+                                disabled={prioritySavingId === rowId}
+                                aria-label={`Priority for ${row.ticketNumber}`}
+                              >
+                                {MONITORING_PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+                              </select>
+                            ) : (
+                              row.priority ? <Chip label={row.priority} /> : "-"
+                            )}
                           </td>
                         ) : null}
                         <td onClick={(event) => event.stopPropagation()}>
@@ -3967,7 +4305,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                 ? <Chip label={row.approvalStage} />
                                 : "-"}
                         </td>
-                        <td>{formatDateTime(row.updatedAt)}</td>
+                        {!showBorrowingActionColumn ? <td>{formatDateTime(row.updatedAt)}</td> : null}
                         {showFleetActionColumn ? (
                           <td onClick={(event) => event.stopPropagation()}>
                             {row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
@@ -4125,6 +4463,71 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                             </div>
                           </td>
                         ) : null}
+                        {showBorrowingActionColumn ? (
+                          <td onClick={(event) => event.stopPropagation()}>
+                            <div className="monitoring-table-actions">
+                              {/* Approve & Reserve — New/Triage/For Revision/Pending Approval */}
+                              {borrowingArchiveView === "active" && (row.status === "New" || row.status === "Triage" || row.status === "For Revision" || row.status === "Pending Approval") ? (
+                                <button
+                                  type="button"
+                                  className="monitoring-icon-action-btn is-success"
+                                  title="Approve & Reserve equipment"
+                                  aria-label={`Approve and reserve ${row.ticketNumber}`}
+                                  disabled={borrowingActionSavingId === rowId}
+                                  onClick={() => void handleBorrowingAction(row._id, "Reserved")}
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M5 12l5 5L20 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                </button>
+                              ) : null}
+                              {/* Mark Claimed — Reserved */}
+                              {borrowingArchiveView === "active" && row.status === "Reserved" ? (
+                                <button
+                                  type="button"
+                                  className="monitoring-icon-action-btn is-success"
+                                  title="Mark as Claimed"
+                                  aria-label={`Mark ${row.ticketNumber} as claimed`}
+                                  disabled={borrowingActionSavingId === rowId}
+                                  onClick={() => void handleBorrowingAction(row._id, "Claimed")}
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" stroke="currentColor" strokeWidth="2"/>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                                  </svg>
+                                </button>
+                              ) : null}
+                              {/* Log Return — Claimed */}
+                              {borrowingArchiveView === "active" && row.status === "Claimed" ? (
+                                <button
+                                  type="button"
+                                  className="monitoring-icon-action-btn is-success"
+                                  title="Log Return Condition"
+                                  aria-label={`Log return for ${row.ticketNumber}`}
+                                  disabled={borrowingActionSavingId === rowId}
+                                  onClick={() => openReturnModal(row)}
+                                >
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 0 1 0 12h-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                </button>
+                              ) : null}
+                              {/* View */}
+                              <button
+                                type="button"
+                                className="monitoring-icon-action-btn"
+                                title="View details"
+                                aria-label={`View ${row.ticketNumber}`}
+                                onClick={() => router.push(`/monitoring/${row._id}`)}
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                  <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" stroke="currentColor" strokeWidth="2"/>
+                                  <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}
@@ -4139,6 +4542,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
             )}
           </div>
         )}
+        </div>
 
       </section>
     </div>

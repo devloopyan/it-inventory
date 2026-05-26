@@ -69,11 +69,11 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         href: "/dashboard",
         label: "Dashboard",
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M3 3H10V10H3V3Z" stroke="currentColor" strokeWidth="2" />
-            <path d="M14 3H21V7H14V3Z" stroke="currentColor" strokeWidth="2" />
-            <path d="M14 11H21V21H14V11Z" stroke="currentColor" strokeWidth="2" />
-            <path d="M3 14H10V21H3V14Z" stroke="currentColor" strokeWidth="2" />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M7,0H4A4,4,0,0,0,0,4V7a4,4,0,0,0,4,4H7a4,4,0,0,0,4-4V4A4,4,0,0,0,7,0ZM9,7A2,2,0,0,1,7,9H4A2,2,0,0,1,2,7V4A2,2,0,0,1,4,2H7A2,2,0,0,1,9,4Z"/>
+            <path d="M20,0H17a4,4,0,0,0-4,4V7a4,4,0,0,0,4,4h3a4,4,0,0,0,4-4V4A4,4,0,0,0,20,0Zm2,7a2,2,0,0,1-2,2H17a2,2,0,0,1-2-2V4a2,2,0,0,1,2-2h3a2,2,0,0,1,2,2Z"/>
+            <path d="M7,13H4a4,4,0,0,0-4,4v3a4,4,0,0,0,4,4H7a4,4,0,0,0,4-4V17A4,4,0,0,0,7,13Zm2,7a2,2,0,0,1-2,2H4a2,2,0,0,1-2-2V17a2,2,0,0,1,2-2H7a2,2,0,0,1,2,2Z"/>
+            <path d="M20,13H17a4,4,0,0,0-4,4v3a4,4,0,0,0,4,4h3a4,4,0,0,0,4-4V17A4,4,0,0,0,20,13Zm2,7a2,2,0,0,1-2,2H17a2,2,0,0,1-2-2V17a2,2,0,0,1,2-2h3a2,2,0,0,1,2,2Z"/>
           </svg>
         ),
       },
@@ -87,9 +87,12 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         label: "Monitoring",
         allowedRoles: ["admin", "service_staff", "it_staff", "approver"],
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 16L8.5 10.5L12 14L16 6L20 10" stroke="currentColor" strokeWidth="2" />
-            <path d="M4 20H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M23,22H3a1,1,0,0,1-1-1V1A1,1,0,0,0,0,1V21a3,3,0,0,0,3,3H23a1,1,0,0,0,0-2Z"/>
+            <path d="M15,20a1,1,0,0,0,1-1V12a1,1,0,0,0-2,0v7A1,1,0,0,0,15,20Z"/>
+            <path d="M7,20a1,1,0,0,0,1-1V12a1,1,0,0,0-2,0v7A1,1,0,0,0,7,20Z"/>
+            <path d="M19,20a1,1,0,0,0,1-1V7a1,1,0,0,0-2,0V19A1,1,0,0,0,19,20Z"/>
+            <path d="M11,20a1,1,0,0,0,1-1V7a1,1,0,0,0-2,0V19A1,1,0,0,0,11,20Z"/>
           </svg>
         ),
       },
@@ -97,9 +100,8 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         href: "/requests/new",
         label: "New Request",
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 5V19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M23,11H13V1a1,1,0,0,0-1-1h0a1,1,0,0,0-1,1V11H1a1,1,0,0,0-1,1H0a1,1,0,0,0,1,1H11V23a1,1,0,0,0,1,1h0a1,1,0,0,0,1-1V13H23a1,1,0,0,0,1-1h0A1,1,0,0,0,23,11Z"/>
           </svg>
         ),
       },
@@ -107,10 +109,8 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         href: "/requests/my",
         label: "My Requests",
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M7 5H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M7 12H17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M7 19H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="m4 6a2.982 2.982 0 0 1 -2.122-.879l-1.544-1.374a1 1 0 0 1 1.332-1.494l1.585 1.414a1 1 0 0 0 1.456.04l3.604-3.431a1 1 0 0 1 1.378 1.448l-3.589 3.414a2.964 2.964 0 0 1 -2.1.862zm20-2a1 1 0 0 0 -1-1h-10a1 1 0 0 0 0 2h10a1 1 0 0 0 1-1zm-17.9 9.138 3.589-3.414a1 1 0 1 0 -1.378-1.448l-3.6 3.431a1.023 1.023 0 0 1 -1.414 0l-1.59-1.585a1 1 0 0 0 -1.414 1.414l1.585 1.585a3 3 0 0 0 4.226.017zm17.9-1.138a1 1 0 0 0 -1-1h-10a1 1 0 0 0 0 2h10a1 1 0 0 0 1-1zm-17.9 9.138 3.585-3.414a1 1 0 1 0 -1.378-1.448l-3.6 3.431a1 1 0 0 1 -1.456-.04l-1.585-1.414a1 1 0 0 0 -1.332 1.494l1.544 1.374a3 3 0 0 0 4.226.017zm17.9-1.138a1 1 0 0 0 -1-1h-10a1 1 0 0 0 0 2h10a1 1 0 0 0 1-1z"/>
           </svg>
         ),
       },
@@ -121,10 +121,8 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         allowedRoles: ["admin", "service_staff", "it_staff"],
         requiredServiceGroups: ["IT"],
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="2" />
-            <path d="M8 21H16" stroke="currentColor" strokeWidth="2" />
-            <path d="M12 17V21" stroke="currentColor" strokeWidth="2" />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M19,1H5A5.006,5.006,0,0,0,0,6v8a5.006,5.006,0,0,0,5,5h6v2H7a1,1,0,0,0,0,2H17a1,1,0,0,0,0-2H13V19h6a5.006,5.006,0,0,0,5-5V6A5.006,5.006,0,0,0,19,1ZM5,3H19a3,3,0,0,1,3,3v7H2V6A3,3,0,0,1,5,3ZM19,17H5a3,3,0,0,1-2.816-2H21.816A3,3,0,0,1,19,17Z"/>
           </svg>
         ),
       },
@@ -134,11 +132,8 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         allowedRoles: ["admin", "service_staff", "it_staff"],
         requiredServiceGroups: ["IT"],
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="2" />
-            <path d="M8 9H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M8 13H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            <path d="M8 17H11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="m17 14a1 1 0 0 1 -1 1h-8a1 1 0 0 1 0-2h8a1 1 0 0 1 1 1zm-4 3h-5a1 1 0 0 0 0 2h5a1 1 0 0 0 0-2zm9-6.515v8.515a5.006 5.006 0 0 1 -5 5h-10a5.006 5.006 0 0 1 -5-5v-14a5.006 5.006 0 0 1 5-5h4.515a6.958 6.958 0 0 1 4.95 2.05l3.484 3.486a6.951 6.951 0 0 1 2.051 4.949zm-6.949-7.021a5.01 5.01 0 0 0 -1.051-.78v4.316a1 1 0 0 0 1 1h4.316a4.983 4.983 0 0 0 -.781-1.05zm4.949 7.021c0-.165-.032-.323-.047-.485h-4.953a3 3 0 0 1 -3-3v-4.953c-.162-.015-.321-.047-.485-.047h-4.515a3 3 0 0 0 -3 3v14a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3z"/>
           </svg>
         ),
       },
@@ -148,14 +143,9 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         allowedRoles: ["admin", "service_staff", "it_staff"],
         requiredServiceGroups: ["IT"],
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5 2.5-2.5z"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12,0A12,12,0,1,0,24,12,12.013,12.013,0,0,0,12,0Zm0,22A10,10,0,1,1,22,12,10.011,10.011,0,0,1,12,22Z"/>
+            <path d="M12,6a1,1,0,0,0-1,1v4.325L7.629,13.437a1,1,0,0,0,1.062,1.7l3.84-2.4A1,1,0,0,0,13,11.879V7A1,1,0,0,0,12,6Z"/>
           </svg>
         ),
       },
@@ -169,30 +159,10 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         label: "Users",
         allowedRoles: ["admin"],
         icon: (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M16 11C17.6569 11 19 9.65685 19 8C19 6.34315 17.6569 5 16 5"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-            />
-            <path
-              d="M8 12C10.2091 12 12 10.2091 12 8C12 5.79086 10.2091 4 8 4C5.79086 4 4 5.79086 4 8C4 10.2091 5.79086 12 8 12Z"
-              stroke="currentColor"
-              strokeWidth="1.8"
-            />
-            <path
-              d="M3 20C3 16.6863 5.23858 14 8 14C10.7614 14 13 16.6863 13 20"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-            />
-            <path
-              d="M14.5 14.5C17.2614 14.5 19.5 16.7386 19.5 19.5"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-            />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M23,11H21V9a1,1,0,0,0-2,0v2H17a1,1,0,0,0,0,2h2v2a1,1,0,0,0,2,0V13h2a1,1,0,0,0,0-2Z"/>
+            <path d="M9,12A6,6,0,1,0,3,6,6.006,6.006,0,0,0,9,12ZM9,2A4,4,0,1,1,5,6,4,4,0,0,1,9,2Z"/>
+            <path d="M9,14a9.01,9.01,0,0,0-9,9,1,1,0,0,0,2,0,7,7,0,0,1,14,0,1,1,0,0,0,2,0A9.01,9.01,0,0,0,9,14Z"/>
           </svg>
         ),
       },
@@ -574,14 +544,8 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
                         aria-label={index === 0 ? crumb.label : undefined}
                       >
                         {index === 0 ? (
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path
-                              d="M4 10.5L12 4L20 10.5V20H14.5V14H9.5V20H4V10.5Z"
-                              stroke="currentColor"
-                              strokeWidth="1.9"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M13.338.833a2,2,0,0,0-2.676,0L0,10.429v10.4a3.2,3.2,0,0,0,3.2,3.2H20.8a3.2,3.2,0,0,0,3.2-3.2v-10.4ZM15,22.026H9V17a3,3,0,0,1,6,0Zm7-1.2a1.2,1.2,0,0,1-1.2,1.2H17V17A5,5,0,0,0,7,17v5.026H3.2a1.2,1.2,0,0,1-1.2-1.2V11.319l10-9,10,9Z"/>
                           </svg>
                         ) : (
                           crumb.label
@@ -599,14 +563,8 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
                         title={index === 0 ? crumb.label : undefined}
                       >
                         {index === 0 ? (
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path
-                              d="M4 10.5L12 4L20 10.5V20H14.5V14H9.5V20H4V10.5Z"
-                              stroke="currentColor"
-                              strokeWidth="1.9"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                            <path d="M13.338.833a2,2,0,0,0-2.676,0L0,10.429v10.4a3.2,3.2,0,0,0,3.2,3.2H20.8a3.2,3.2,0,0,0,3.2-3.2v-10.4ZM15,22.026H9V17a3,3,0,0,1,6,0Zm7-1.2a1.2,1.2,0,0,1-1.2,1.2H17V17A5,5,0,0,0,7,17v5.026H3.2a1.2,1.2,0,0,1-1.2-1.2V11.319l10-9,10,9Z"/>
                           </svg>
                         ) : (
                           crumb.label

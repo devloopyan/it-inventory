@@ -232,11 +232,61 @@ export default defineSchema({
     expectedReturnAt: v.optional(v.number()),
     fleetDriverId: v.optional(v.id("fleetDrivers")),
     fleetDriverName: v.optional(v.string()),
+    fleetDriverContactNumber: v.optional(v.string()),
     fleetVehicleId: v.optional(v.id("fleetVehicles")),
     fleetVehicleName: v.optional(v.string()),
     fleetVehiclePlateNumber: v.optional(v.string()),
+    fleetVehicleType: v.optional(v.string()),
     fleetAssignedAt: v.optional(v.number()),
     fleetAssignedBy: v.optional(v.string()),
+    // Travel Order: extended trip status (separate from generic system status)
+    travelOrderStatus: v.optional(v.string()),
+    // ETA & delay tracking
+    estimatedArrivalTime: v.optional(v.number()),
+    etaUpdatedAt: v.optional(v.number()),
+    etaUpdatedBy: v.optional(v.string()),
+    delayReason: v.optional(v.string()),
+    // Cancellation
+    cancellationReason: v.optional(v.string()),
+    cancellationReasonDetail: v.optional(v.string()),
+    cancelledBy: v.optional(v.string()),
+    cancelledByRole: v.optional(v.string()),
+    cancelledAt: v.optional(v.number()),
+    // Travel return tracking
+    travelReturnAt: v.optional(v.number()),
+    travelReturnExtendedAt: v.optional(v.number()),
+    // Multi-stop trip support
+    tripMode: v.optional(v.string()),
+    travelStops: v.optional(
+      v.array(
+        v.object({
+          order: v.number(),
+          type: v.string(),
+          location: v.string(),
+          scheduledTime: v.optional(v.number()),
+          passengerNames: v.optional(v.array(v.string())),
+        }),
+      ),
+    ),
+    // Incident reporting
+    incidentType: v.optional(v.string()),
+    incidentDescription: v.optional(v.string()),
+    incidentLocation: v.optional(v.string()),
+    incidentReportedAt: v.optional(v.number()),
+    incidentReportedBy: v.optional(v.string()),
+    incidentResolvedAt: v.optional(v.number()),
+    incidentResolvedBy: v.optional(v.string()),
+    incidentResolutionNote: v.optional(v.string()),
+    // Shared trip & billing
+    sharedTripId: v.optional(v.string()),
+    sharedTripRole: v.optional(v.string()),
+    sharedTripLinkedTicketId: v.optional(v.id("monitoringTickets")),
+    sharedTripCost: v.optional(v.number()),
+    billingDepartment: v.optional(v.string()),
+    billingCostCenter: v.optional(v.string()),
+    // Conflict override
+    conflictOverrideReason: v.optional(v.string()),
+    conflictOverrideBy: v.optional(v.string()),
     notificationSeenByGroups: v.optional(v.array(v.string())),
     notificationSeenAt: v.optional(v.number()),
     notificationSeenBy: v.optional(v.string()),
@@ -445,4 +495,31 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_renewalDate", ["renewalDate"])
     .index("by_updatedAt", ["updatedAt"]),
+  travelOrderNotifications: defineTable({
+    ticketId: v.id("monitoringTickets"),
+    ticketNumber: v.string(),
+    recipientName: v.string(),
+    recipientRole: v.string(),
+    event: v.string(),
+    message: v.string(),
+    isRead: v.boolean(),
+    deliveryStatus: v.string(),
+    createdAt: v.number(),
+    readAt: v.optional(v.number()),
+  })
+    .index("by_recipientName", ["recipientName"])
+    .index("by_ticketId", ["ticketId"])
+    .index("by_createdAt", ["createdAt"]),
+  travelOrderActivityLog: defineTable({
+    ticketId: v.id("monitoringTickets"),
+    ticketNumber: v.string(),
+    event: v.string(),
+    description: v.string(),
+    actorName: v.string(),
+    actorRole: v.optional(v.string()),
+    metadata: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_ticketId", ["ticketId"])
+    .index("by_createdAt", ["createdAt"]),
 });

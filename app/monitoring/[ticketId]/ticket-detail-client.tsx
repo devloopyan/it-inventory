@@ -609,6 +609,20 @@ function MeetingAssetLookup(props: {
   );
 }
 
+function BorrowingAssetCardImage({ storageId, assetTag, topColor }: { storageId: Id<"_storage">; assetTag: string; topColor: string }) {
+  const imageUrl = useQuery(api.hardwareInventory.getImageUrl, { storageId });
+  if (!imageUrl) return (
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ color: topColor, opacity: 0.5 }}>
+      <rect x="2" y="5" width="20" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M8 19h8M12 17v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={imageUrl} alt={assetTag} style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: 6 }} />
+  );
+}
+
 export default function TicketDetailClient({ ticketId, actorName }: TicketDetailClientProps) {
   const router = useRouter();
   const currentUser = useCurrentUser();
@@ -1712,15 +1726,9 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                       : "Link Assets First"
                 }
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M6 10V8C6 4.7 8.7 2 12 2C15.3 2 18 4.7 18 8V10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  <path
-                    d="M5 10H19V20H5V10Z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M19,8.424V7A7,7,0,0,0,5,7V8.424A5,5,0,0,0,2,13v6a5.006,5.006,0,0,0,5,5H17a5.006,5.006,0,0,0,5-5V13A5,5,0,0,0,19,8.424ZM7,7A5,5,0,0,1,17,7V8H7ZM20,19a3,3,0,0,1-3,3H7a3,3,0,0,1-3-3V13a3,3,0,0,1,3-3H17a3,3,0,0,1,3,3Z"/>
+                  <path d="M12,14a1,1,0,0,0-1,1v2a1,1,0,0,0,2,0V15A1,1,0,0,0,12,14Z"/>
                 </svg>
               </button>
             ) : null}
@@ -1773,7 +1781,6 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
 
         {feedback ? <div className="monitoring-detail-feedback">{feedback}</div> : null}
         {meetingRoutingBanner}
-
 
         <div className="monitoring-detail-body">
           <main className="monitoring-detail-main">
@@ -2155,9 +2162,6 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               <section className="monitoring-detail-section">
                 <div className="type-subsection-title">Travel Details</div>
                 <div className="monitoring-detail-stack">
-                  {ticket.tripMode ? (
-                    <DetailTextRow label="Trip Mode" value={ticket.tripMode.replace(/_/g, " ")} />
-                  ) : null}
                   <DetailTextRow label="Destination" value={travelOrderDetails.destination} />
                   <DetailTextRow label="Passengers" value={travelOrderDetails.passengers} />
                   <DetailTextRow label="Purpose" value={travelOrderDetails.purpose} />
@@ -2496,9 +2500,177 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               </section>
             ) : null}
 
+            {isBorrowingRequest && ticket.borrowingItems?.length ? (
+              <section className="monitoring-detail-section">
+                <div className="type-subsection-title">{borrowingAssetLabel}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+                  {ticket.borrowingItems.map((item) => {
+                    const assetRow = assets?.find((a) => String(a._id) === item.assetId);
+                    const assetStatus = assetRow?.status ?? "";
+                    const topColor =
+                      assetStatus === "Borrowed"  ? { bg: "#dbeafe", accent: "#3b82f6" } :
+                      assetStatus === "Reserved"  ? { bg: "#ffedd5", accent: "#f97316" } :
+                      assetStatus === "Available" ? { bg: "#dcfce7", accent: "#16a34a" } :
+                                                    { bg: "#f3f4f6", accent: "#6b7280" };
+                    return (
+                      <div key={item.assetId} style={{
+                        borderRadius: 14,
+                        border: "1px solid var(--border-subtle)",
+                        background: "var(--surface)",
+                        overflow: "hidden",
+                        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                        display: "flex",
+                        flexDirection: "column",
+                      }}>
+                        {/* Top colored area */}
+                        <div style={{
+                          background: topColor.bg,
+                          padding: "18px 14px 14px",
+                          position: "relative",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          minHeight: 90,
+                        }}>
+                          {/* Status badge top-right */}
+                          {assetStatus ? (
+                            <span style={{
+                              position: "absolute", top: 10, right: 10,
+                              fontSize: 10, fontWeight: 700,
+                              padding: "3px 8px", borderRadius: 999,
+                              background: topColor.accent, color: "#fff",
+                            }}>
+                              {assetStatus}
+                            </span>
+                          ) : null}
+                          {/* Asset image or fallback icon */}
+                          {assetRow?.imageStorageId ? (
+                            <BorrowingAssetCardImage storageId={assetRow.imageStorageId} assetTag={item.assetTag} topColor={topColor.accent} />
+                          ) : (
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ color: topColor.accent, opacity: 0.7 }}>
+                              <rect x="2" y="5" width="20" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                              <path d="M8 19h8M12 17v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                            </svg>
+                          )}
+                        </div>
+                        {/* Banner strip */}
+                        <div style={{
+                          background: topColor.bg,
+                          borderTop: `1px solid ${topColor.accent}33`,
+                          padding: "5px 12px",
+                          fontSize: 10,
+                          color: topColor.accent,
+                          fontWeight: 600,
+                          textAlign: "center",
+                        }}>
+                          {item.releaseCondition || "No condition recorded"}
+                        </div>
+                        {/* Footer */}
+                        <div style={{ padding: "10px 12px 12px", display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6 }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{item.assetTag}</div>
+                              <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.3, marginTop: 2 }}>{item.assetLabel}</div>
+                            </div>
+                            <Link href={`/hardware-inventory/${item.assetId}`} style={{
+                              fontSize: 11, fontWeight: 600, color: topColor.accent,
+                              whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 3, flexShrink: 0,
+                            }}>
+                              View ↗
+                            </Link>
+                          </div>
+                          {/* Tags */}
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {item.releaseCondition ? (
+                              <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, border: "1px solid var(--border-subtle)", color: "var(--muted)", background: "var(--surface-subtle)" }}>
+                                Out: {item.releaseCondition}
+                              </span>
+                            ) : null}
+                            {item.returnCondition ? (
+                              <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 999, border: "1px solid var(--border-subtle)", color: "var(--muted)", background: "var(--surface-subtle)" }}>
+                                In: {item.returnCondition}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
           </main>
 
           <aside className="monitoring-detail-side">
+            {isBorrowingRequest ? (() => {
+              const BORROWING_STEPS = [
+                { label: "Requested", desc: "Request submitted",       statuses: ["New", "Triage", "Pending Approval", "For Revision"] },
+                { label: "Reserved",  desc: "Equipment reserved",      statuses: ["Reserved"] },
+                { label: "Claimed",   desc: "Equipment with borrower", statuses: ["Claimed", "In Progress"] },
+                { label: "Returned",  desc: "Equipment returned",      statuses: ["Fulfilled"] },
+                { label: "Closed",    desc: "Request closed",          statuses: ["Closed"] },
+              ];
+              const STEP_COLORS = ["#3b82f6", "#f97316", "#7c3aed", "#16a34a", "#6b7280"] as const;
+              const currentIndex = BORROWING_STEPS.findIndex((s) => s.statuses.includes(ticket.status));
+              const progressIndex = currentIndex >= 0 ? currentIndex : 0;
+              return (
+                <section className="monitoring-detail-section monitoring-detail-section-compact">
+                  <div className="type-section-title">Progress</div>
+                  <div
+                    className="monitoring-detail-progress-stepper"
+                    style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+                    aria-label="Borrowing request progress"
+                  >
+                    {BORROWING_STEPS.map((step, index) => {
+                      const isComplete = index < progressIndex;
+                      const isCurrent = index === progressIndex;
+                      const stepColor = STEP_COLORS[index];
+                      return (
+                        <div
+                          key={step.label}
+                          className={`monitoring-detail-progress-item${isComplete ? " is-complete" : ""}${isCurrent ? " is-current" : ""}`}
+                        >
+                          {index > 0 ? (
+                            <span
+                              className={`monitoring-detail-progress-connector${index <= progressIndex ? " is-complete" : ""}`}
+                              style={{ top: 7 }}
+                              aria-hidden="true"
+                            />
+                          ) : null}
+                          <span
+                            className="monitoring-detail-progress-marker"
+                            style={{
+                              width: 16, height: 16,
+                              ...(isCurrent ? { borderColor: stepColor, background: "var(--surface)" } : {}),
+                            }}
+                            aria-hidden="true"
+                          >
+                            {isComplete ? (
+                              <svg width="8" height="8" viewBox="0 0 10 10" fill="none">
+                                <path d="M2 5.25L4.125 7.25L8 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            ) : isCurrent ? (
+                              <span className="monitoring-detail-progress-marker-dot" style={{ background: stepColor, width: 5, height: 5 }} />
+                            ) : null}
+                          </span>
+                          <span
+                            className="monitoring-detail-progress-label"
+                            style={{ fontSize: 9, ...(isCurrent ? { color: stepColor, fontWeight: 700 } : {}) }}
+                          >
+                            {step.label}
+                          </span>
+                          <span style={{ fontSize: 9, color: isCurrent ? stepColor : "var(--muted)", marginTop: 1, textAlign: "center", lineHeight: 1.3 }}>
+                            {step.desc}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })() : null}
+
             {isMeetingRequest && meetingProgress ? (() => {
               const STEP_COLORS = ["#3b82f6", "#f97316", "#7c3aed", "#16a34a"] as const;
               return (
@@ -2722,7 +2894,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               </section>
             ) : null}
 
-          {!isMeetingRequest ? (
+          {!isMeetingRequest && !isBorrowingRequest ? (
             <section className="monitoring-detail-section monitoring-detail-section-compact">
               <div className="type-section-title">Approvals</div>
               {canRecordApproval ? (
@@ -2862,7 +3034,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
             ) : null}
 
               <div className="monitoring-detail-upload-block">
-                {!isTravelOrder && !isMeetingRequest ? (
+                {!isTravelOrder && !isMeetingRequest && !isBorrowingRequest ? (
                   <FileUploadCard
                     label="Engineer's Report"
                     inputRef={attachmentRef}

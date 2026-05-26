@@ -59,6 +59,8 @@ export const SERVICE_REQUEST_STATUSES = [
   "In Progress",
   "Assigned",
   "Pending",
+  "Reserved",
+  "Claimed",
   "Fulfilled",
   "Closed",
 ] as const;
@@ -446,4 +448,108 @@ export function isMonitoringIsp(value?: string): value is MonitoringIsp {
 
 export function isMonitoringArea(value?: string): value is MonitoringArea {
   return (MONITORING_AREAS as readonly string[]).includes(value ?? "");
+}
+
+// ─── Travel Order extended constants ────────────────────────────────────────
+
+export const TRAVEL_ORDER_STATUSES = [
+  "PENDING",
+  "APPROVED",
+  "DRIVER_ASSIGNED",
+  "EN_ROUTE_TO_PICKUP",
+  "PASSENGER_PICKED_UP",
+  "IN_TRANSIT",
+  "DROPPED_OFF",
+  "COMPLETED",
+  "DELAYED",
+  "INCIDENT_REPORTED",
+  "CANCELLED",
+  "RESCHEDULED",
+  "DRIVER_REPLACED",
+  "VEHICLE_REPLACED",
+] as const;
+
+export const TRAVEL_ORDER_CANCELLATION_REASONS = [
+  "No longer needed",
+  "Schedule conflict",
+  "Requester request",
+  "Vehicle unavailable",
+  "Driver unavailable",
+  "Weather or road conditions",
+  "Budget constraints",
+  "Admin decision",
+  "Other",
+] as const;
+
+export const TRAVEL_ORDER_INCIDENT_TYPES = ["MINOR", "MAJOR"] as const;
+
+export const TRAVEL_ORDER_TRIP_MODES = [
+  "PASSENGER_ONLY",
+  "VEHICLE_ONLY",
+  "BOTH",
+] as const;
+
+export const TRAVEL_ORDER_STOP_TYPES = ["PICKUP", "DROPOFF"] as const;
+
+export const TRAVEL_ORDER_SHARED_ROLES = ["PRIMARY", "SHARED_RIDER"] as const;
+
+export const LATE_DETECTION_THRESHOLD_MINUTES = 15;
+
+export type TravelOrderStatus = (typeof TRAVEL_ORDER_STATUSES)[number];
+export type TravelOrderCancellationReason = (typeof TRAVEL_ORDER_CANCELLATION_REASONS)[number];
+export type TravelOrderIncidentType = (typeof TRAVEL_ORDER_INCIDENT_TYPES)[number];
+export type TravelOrderTripMode = (typeof TRAVEL_ORDER_TRIP_MODES)[number];
+export type TravelOrderStopType = (typeof TRAVEL_ORDER_STOP_TYPES)[number];
+export type TravelOrderSharedRole = (typeof TRAVEL_ORDER_SHARED_ROLES)[number];
+
+export function isTravelOrderStatus(value?: string): value is TravelOrderStatus {
+  return (TRAVEL_ORDER_STATUSES as readonly string[]).includes(value ?? "");
+}
+
+export function getTravelOrderStatusTone(
+  status?: string,
+): "blue" | "amber" | "red" | "green" | "gray" | "violet" {
+  switch (status) {
+    case "PENDING":
+    case "APPROVED":
+    case "DRIVER_ASSIGNED":
+      return "blue";
+    case "EN_ROUTE_TO_PICKUP":
+    case "PASSENGER_PICKED_UP":
+    case "IN_TRANSIT":
+      return "violet";
+    case "DROPPED_OFF":
+    case "COMPLETED":
+      return "green";
+    case "DELAYED":
+    case "RESCHEDULED":
+    case "DRIVER_REPLACED":
+    case "VEHICLE_REPLACED":
+      return "amber";
+    case "INCIDENT_REPORTED":
+    case "CANCELLED":
+      return "red";
+    default:
+      return "gray";
+  }
+}
+
+export function getTravelOrderStatusLabel(status?: string): string {
+  switch (status) {
+    case "PENDING": return "Pending";
+    case "APPROVED": return "Approved";
+    case "DRIVER_ASSIGNED": return "Driver Assigned";
+    case "EN_ROUTE_TO_PICKUP": return "En Route to Pickup";
+    case "PASSENGER_PICKED_UP": return "Passenger Picked Up";
+    case "IN_TRANSIT": return "In Transit";
+    case "DROPPED_OFF": return "Dropped Off";
+    case "COMPLETED": return "Completed";
+    case "DELAYED": return "Delayed";
+    case "INCIDENT_REPORTED": return "Incident Reported";
+    case "CANCELLED": return "Cancelled";
+    case "RESCHEDULED": return "Rescheduled";
+    case "DRIVER_REPLACED": return "Driver Replaced";
+    case "VEHICLE_REPLACED": return "Vehicle Replaced";
+    default: return status ?? "Unknown";
+  }
 }
