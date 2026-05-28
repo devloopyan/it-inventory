@@ -21,20 +21,6 @@ function formatDate(value?: number) {
   });
 }
 
-function formatCompact(value?: number | string) {
-  if (!value) return "—";
-  const d = typeof value === "string" ? new Date(value) : new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
-
-function timeAgo(ts?: number) {
-  if (!ts) return "";
-  const days = Math.floor((Date.now() - ts) / 86_400_000);
-  if (days === 0) return "today";
-  if (days === 1) return "1 day ago";
-  return `${days} days ago`;
-}
 
 function getStatusStyle(status: string) {
   const s = status.toLowerCase();
@@ -51,6 +37,57 @@ function getStatusStyle(status: string) {
   return { background: "#e5e7eb", color: "#374151" };
 }
 
+
+function getPriorityLabel(priority?: string | null): string {
+  if (priority === "P1") return "P1 — Critical";
+  if (priority === "P2") return "P2 — High";
+  if (priority === "P3") return "P3 — Medium";
+  if (priority === "P4") return "P4 — Low";
+  return "Normal";
+}
+
+function getPriorityTagStyle(priority?: string | null) {
+  if (priority === "P1") return { color: "#991b1b", borderColor: "#fca5a5" };
+  if (priority === "P2") return { color: "#ea580c", borderColor: "#fed7aa" };
+  if (priority === "P3") return { color: "#b45309", borderColor: "#fde68a" };
+  if (priority === "P4") return { color: "#166534", borderColor: "#bbf7d0" };
+  return {};
+}
+
+function getProgress(status: string): number {
+  const s = status.toLowerCase();
+  if (s.includes("fulfilled") || s.includes("closed") || s.includes("done") || s.includes("resolved") || s.includes("meeting held"))
+    return 100;
+  if (s.includes("cancel") || s.includes("reject"))
+    return 100;
+  if (s.includes("monitoring") || s.includes("ready") || s.includes("approved") || s.includes("assigned") || s.includes("reserved"))
+    return 50;
+  if (s.includes("progress") || s.includes("investigating") || s.includes("pending") || s.includes("review"))
+    return 25;
+  return 0;
+}
+
+const AVATAR_COLORS = [
+  { bg: "#dbeafe", color: "#1e40af" },
+  { bg: "#dcfce7", color: "#166534" },
+  { bg: "#fef3c7", color: "#92400e" },
+  { bg: "#ede9fe", color: "#5b21b6" },
+  { bg: "#ffedd5", color: "#c2410c" },
+  { bg: "#fce7f3", color: "#9d174d" },
+];
+
+function getAvatarColor(name: string) {
+  const hash = name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+function getInitials(name?: string) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0][0]?.toUpperCase() ?? "?";
+  return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase();
+}
+
 function getCategoryVisual(category: string) {
   if (category === MONITORING_TRAVEL_ORDER_CATEGORY)
     return { bg: "#ede9fe", color: "#5b21b6", icon: TravelIcon };
@@ -61,16 +98,23 @@ function getCategoryVisual(category: string) {
   return { bg: "#f1f5f9", color: "#475569", icon: TicketIcon };
 }
 
-function getTravelSchedule(requestDetails?: string) {
-  const lines = requestDetails?.split(/\r?\n/).map((l) => l.trim()) ?? [];
-  const departure = lines.find((l) => /^Departure:/i.test(l))?.replace(/^Departure:\s*/i, "").trim();
-  const returnAt = lines.find((l) => /^Return:/i.test(l))?.replace(/^Return:\s*/i, "").trim();
-  return { departure: departure || "—", returnAt: returnAt || "—" };
+function formatMeetingSchedule(startAt?: number, endAt?: number): string | null {
+  if (!startAt) return null;
+  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" };
+  const start = new Date(startAt).toLocaleString("en-US", opts);
+  if (!endAt) return start;
+  const end = new Date(endAt).toLocaleString("en-US", opts);
+  return `${start} – ${end}`;
 }
 
 function getTravelPurpose(requestDetails?: string) {
   const line = requestDetails?.split(/\r?\n/).find((l) => /^Purpose of travel:/i.test(l.trim()));
   return line?.replace(/^Purpose of travel:\s*/i, "").trim() || null;
+}
+
+function getBorrowingPurpose(requestDetails?: string): string | null {
+  const firstLine = requestDetails?.split(/\r?\n/)[0]?.trim();
+  return firstLine || null;
 }
 
 function extractUserNote(requestDetails?: string): string | null {
@@ -82,11 +126,60 @@ function extractUserNote(requestDetails?: string): string | null {
   return notes.length > 0 ? notes.join(" ") : null;
 }
 
+function getCardDescription(request: {
+  category: string;
+  requestDetails?: string;
+  requestedItemsText?: string;
+  borrowingItems?: Array<{ assetTag: string }>;
+}): string | null {
+  if (request.category === MONITORING_TRAVEL_ORDER_CATEGORY) {
+    return getTravelPurpose(request.requestDetails) ?? null;
+  }
+  if (request.category === MONITORING_BORROWING_REQUEST_CATEGORY) {
+    const count = request.borrowingItems?.length ?? 0;
+    if (count > 0) return `${count} equipment ${count === 1 ? "item" : "items"}`;
+    return null;
+  }
+  if (request.requestDetails) {
+    const cleaned = request.requestDetails
+      .split(/\r?\n/)
+      .filter((l) => l.trim() && !/^[A-Za-z ]{1,40}:\s/.test(l.trim()))
+      .join(" ")
+      .trim();
+    return cleaned.slice(0, 140) || null;
+  }
+  return null;
+}
+
 function isArchivedStatus(status: string) {
   const s = status.toLowerCase();
   return s.includes("closed") || s.includes("done") || s.includes("fulfilled") ||
     s.includes("resolved") || s.includes("meeting held") ||
     s.includes("cancel") || s.includes("reject");
+}
+
+
+
+function ProgressCircle({ pct }: { pct: number }) {
+  const r = 8;
+  const circumference = 2 * Math.PI * r;
+  const dash = (pct / 100) * circumference;
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="10" cy="10" r={r} fill="none" stroke="var(--border)" strokeWidth="2"/>
+      {pct > 0 ? (
+        <circle
+          cx="10" cy="10" r={r}
+          fill="none"
+          stroke={pct === 100 ? "#22c55e" : "#4f6cf7"}
+          strokeWidth="2"
+          strokeDasharray={`${dash} ${circumference}`}
+          strokeLinecap="round"
+          transform="rotate(-90 10 10)"
+        />
+      ) : null}
+    </svg>
+  );
 }
 
 function TravelIcon() {
@@ -176,139 +269,80 @@ export default function MyRequestsClient() {
             const isTravelOrder = request.category === MONITORING_TRAVEL_ORDER_CATEGORY;
             const isMeeting = request.category === MONITORING_MEETING_REQUEST_CATEGORY;
             const isBorrowing = request.category === MONITORING_BORROWING_REQUEST_CATEGORY;
-            const travelSchedule = isTravelOrder ? getTravelSchedule(request.requestDetails) : null;
-            const travelPurpose = isTravelOrder ? getTravelPurpose(request.requestDetails) : null;
             const requestType = formatRequesterRequestType(request);
-            const statusStyle = getStatusStyle(request.status);
-            const { bg: iconBg, color: iconColor, icon: Icon } = getCategoryVisual(request.category);
-            const hasFleet = isTravelOrder && (request.fleetDriverName || request.fleetVehicleName);
-            const userNote = extractUserNote(request.requestDetails);
-            const displayTitle = isMeeting
+            const displayTitle = isTravelOrder
+              ? request.title.replace(/^Travel Order\s*[-–]\s*/i, "").trim() || request.title
+              : isMeeting
               ? request.title.replace(/^Meeting Support\s*-\s*/i, "").replace(/\s*-\s*[^-]*$/, "").trim() || request.title
               : isBorrowing
-              ? userNote ?? requestType ?? request.category
+              ? getBorrowingPurpose(request.requestDetails) ?? requestType ?? request.category
               : request.title;
+
+            const { color: categoryColor, bg: categoryBg } = getCategoryVisual(request.category);
+            const progress = getProgress(request.status);
+            const initials = getInitials(request.requesterName);
+            const avatarColor = getAvatarColor(request.requesterName ?? "");
+            const description = isMeeting
+              ? formatMeetingSchedule(request.meetingStartAt, request.meetingEndAt)
+              : getCardDescription(request);
 
             return (
               <Link key={String(request._id)} href={`/requests/my/${request._id}`} className="mr-card">
 
-                {/* Top: icon + status */}
+                {/* Top row: ticket type + date */}
                 <div className="mr-card-top">
-                  <div className="mr-card-icon" style={{ background: iconBg, color: iconColor }}>
-                    <Icon />
-                  </div>
-                  <span className="mr-card-status" style={statusStyle}>{request.status}</span>
-                </div>
-
-                {/* Meta: category · time */}
-                <div className="mr-card-meta">
-                  <span>{request.category}</span>
-                  <span className="mr-card-meta-sep">·</span>
-                  <span>{timeAgo(request.createdAt)}</span>
+                  <span className="mr-card-priority" style={{ background: categoryBg, color: categoryColor }}>
+                    {isTravelOrder || isMeeting || isBorrowing ? request.category : "IT Support"}
+                  </span>
+                  <span className="mr-card-header-date">{request.ticketNumber}</span>
                 </div>
 
                 {/* Title */}
                 <div className="mr-card-title">{displayTitle}</div>
 
+                {/* Description */}
+                {description ? (
+                  <div className="mr-card-desc">{description}</div>
+                ) : null}
+
                 {/* Tags */}
                 <div className="mr-card-tags">
-                  <span className="mr-card-tag">{request.ticketNumber}</span>
-                  {request.sharedTripId ? (
-                    <span className="mr-card-tag mr-card-tag--shared">Shared</span>
-                  ) : null}
-                  {requestType && requestType !== request.category ? (
-                    <span className="mr-card-tag">{requestType}</span>
-                  ) : null}
+                  {!isTravelOrder && !isMeeting && !isBorrowing ? (
+                    <>
+                      <span className="mr-card-tag"># {request.category}</span>
+                      {request.priority ? (
+                        <span className="mr-card-tag" style={getPriorityTagStyle(request.priority)}># {getPriorityLabel(request.priority)}</span>
+                      ) : null}
+                    </>
+                  ) : isTravelOrder ? (
+                    request.sharedTripId ? (
+                      <span className="mr-card-tag mr-card-tag--shared"># Shared Trip</span>
+                    ) : null
+                  ) : isBorrowing ? (
+                    <>
+                      <span className="mr-card-tag"># {request.ticketNumber}</span>
+                      {request.expectedReturnAt ? (
+                        <span className="mr-card-tag"># Return: {formatDate(request.expectedReturnAt)}</span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <span className="mr-card-tag"># {request.ticketNumber}</span>
+                      <span className="mr-card-tag"># {request.category}</span>
+                      {request.sharedTripId ? (
+                        <span className="mr-card-tag mr-card-tag--shared"># Shared Trip</span>
+                      ) : null}
+                    </>
+                  )}
                 </div>
 
-                {/* Body: schedule / details / fleet */}
-                <div className="mr-card-body">
-                  {travelSchedule ? (
-                    <div className="to-card-schedule">
-                      <div>
-                        <span className="to-card-schedule-label">Departure</span>
-                        <span className="to-card-schedule-val">{travelSchedule.departure}</span>
-                      </div>
-                      <div>
-                        <span className="to-card-schedule-label">Return</span>
-                        <span className="to-card-schedule-val">{travelSchedule.returnAt}</span>
-                      </div>
-                    </div>
-                  ) : request.meetingStartAt ? (
-                    <div className="to-card-schedule">
-                      <div>
-                        <span className="to-card-schedule-label">Start</span>
-                        <span className="to-card-schedule-val">{formatCompact(request.meetingStartAt)}</span>
-                      </div>
-                      <div>
-                        <span className="to-card-schedule-label">{request.meetingEndAt ? "End" : "Location"}</span>
-                        <span className="to-card-schedule-val">
-                          {request.meetingEndAt ? formatCompact(request.meetingEndAt) : (request.meetingLocation ?? "—")}
-                        </span>
-                      </div>
-                    </div>
-                  ) : request.expectedReturnAt ? (
-                    <div className="to-card-schedule">
-                      <div>
-                        <span className="to-card-schedule-label">Return by</span>
-                        <span className="to-card-schedule-val">{formatCompact(request.expectedReturnAt)}</span>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {travelPurpose ? (
-                    <div className="to-card-purpose">{travelPurpose}</div>
-                  ) : isBorrowing && userNote ? (
-                    <div className="to-card-purpose">{userNote}</div>
-                  ) : !isMeeting && !isBorrowing && request.requestDetails ? (
-                    <div className="to-card-purpose">
-                      {request.requestDetails.slice(0, 80)}{request.requestDetails.length > 80 ? "…" : ""}
-                    </div>
-                  ) : null}
-
-                  {isBorrowing && (request.borrowingItems?.length || request.requestedItemsText) ? (
-                    <div className="to-card-fleet">
-                      <span className="to-card-fleet-driver">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                          <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="2"/>
-                          <path d="M8 21h8M12 17v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                        </svg>
-                        {request.borrowingItems?.length
-                          ? `${request.borrowingItems.length} asset${request.borrowingItems.length > 1 ? "s" : ""} — ${request.borrowingItems.map((i) => i.assetTag).slice(0, 2).join(", ")}${request.borrowingItems.length > 2 ? "…" : ""}`
-                          : request.requestedItemsText}
-                      </span>
-                    </div>
-                  ) : null}
-
-                  {isTravelOrder ? (
-                    <div className="to-card-fleet">
-                      {hasFleet ? (
-                        <>
-                          <span className="to-card-fleet-driver">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-                            {request.fleetDriverName ?? "No driver"}
-                          </span>
-                          <span className="to-card-fleet-vehicle">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h14l4 4v4a2 2 0 0 1-2 2h-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="7.5" cy="17.5" r="2.5" stroke="currentColor" strokeWidth="2"/><circle cx="17.5" cy="17.5" r="2.5" stroke="currentColor" strokeWidth="2"/></svg>
-                            {request.fleetVehicleName ?? "No vehicle"}{request.fleetVehiclePlateNumber ? ` · ${request.fleetVehiclePlateNumber}` : ""}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="to-card-fleet-empty">Pending fleet assignment</span>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Footer */}
+                {/* Footer: submitted date + progress */}
                 <div className="mr-card-footer">
-                  <span className="mr-card-date">Submitted {formatDate(request.createdAt)}</span>
-                  <span className="mr-card-cta">
-                    View
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </span>
+                  <span className="mr-card-submitted">Submitted {formatDate(request.createdAt)}</span>
+                  <div className="mr-card-progress">
+                    <ProgressCircle pct={progress} />
+                    <span>{progress}%</span>
+                  </div>
                 </div>
               </Link>
             );
@@ -339,13 +373,12 @@ export default function MyRequestsClient() {
                   const isBorrowing = request.category === MONITORING_BORROWING_REQUEST_CATEGORY;
                   const isMeeting = request.category === MONITORING_MEETING_REQUEST_CATEGORY;
                   const requestType = formatRequesterRequestType(request);
-                  const userNote = extractUserNote(request.requestDetails);
                   const statusStyle = getStatusStyle(request.status);
                   const { bg: iconBg, color: iconColor, icon: Icon } = getCategoryVisual(request.category);
                   const displayTitle = isMeeting
                     ? request.title.replace(/^Meeting Support\s*-\s*/i, "").replace(/\s*-\s*[^-]*$/, "").trim() || request.title
                     : isBorrowing
-                    ? userNote ?? requestType ?? request.category
+                    ? getBorrowingPurpose(request.requestDetails) ?? requestType ?? request.category
                     : request.title;
 
                   return (
