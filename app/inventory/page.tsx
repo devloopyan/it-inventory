@@ -2,45 +2,40 @@
 
 import { Suspense, useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import WorkflowsPanel from "./workflows-panel";
-import WorkflowLogPanel from "./workflow-log-panel";
+import HardwareInventoryPage from "../hardware-inventory/page";
+import DigitalInventoryClient from "../digital-inventory/digital-inventory-client";
 
-const OPERATIONS_TABS = [
+const INVENTORY_TABS = [
   {
-    key: "planner",
-    label: "Planner",
-    description: "Kanban board for IT operations tasks.",
+    key: "hardware",
+    label: "Hardware",
+    description: "Physical IT assets and equipment.",
   },
   {
-    key: "workflows",
-    label: "Workflows",
-    description: "Guided processes like Onboarding and Offboarding.",
-  },
-  {
-    key: "log",
-    label: "Log",
-    description: "Audit record of completed workflows.",
+    key: "digital",
+    label: "Digital",
+    description: "Software, licenses, and subscriptions.",
   },
 ] as const;
 
-type OperationsTabKey = (typeof OPERATIONS_TABS)[number]["key"];
+type InventoryTabKey = (typeof INVENTORY_TABS)[number]["key"];
 
-function isOperationsTabKey(value: string | null): value is OperationsTabKey {
-  return OPERATIONS_TABS.some((tab) => tab.key === value);
+function isInventoryTabKey(value: string | null): value is InventoryTabKey {
+  return INVENTORY_TABS.some((tab) => tab.key === value);
 }
 
-function OperationsTabsInner() {
+function InventoryTabsInner() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const currentPathname = pathname ?? "/operations";
+  const currentPathname = pathname ?? "/inventory";
   const tabParam = searchParams?.get("tab") ?? null;
-  const activeTab: OperationsTabKey = isOperationsTabKey(tabParam) ? tabParam : "planner";
+  const activeTab: InventoryTabKey = isInventoryTabKey(tabParam) ? tabParam : "hardware";
 
   const setActiveTab = useCallback(
-    (key: OperationsTabKey) => {
+    (key: InventoryTabKey) => {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
-      if (key === "planner") {
+      if (key === "hardware") {
         params.delete("tab");
       } else {
         params.set("tab", key);
@@ -52,9 +47,8 @@ function OperationsTabsInner() {
   );
 
   return (
-    <div className="dashboard-page operations-page">
+    <div className="dashboard-page">
       <section
-        className="panel"
         style={{
           padding: "14px 18px 4px",
           display: "grid",
@@ -66,19 +60,16 @@ function OperationsTabsInner() {
         }}
       >
         <div style={{ display: "grid", gap: 6 }}>
-          <h1 className="type-page-title">Operations</h1>
+          <h1 className="type-page-title">Inventory</h1>
           <div className="type-page-subtitle">
-            Task planning, guided workflows, and an audit log for IT operations.
+            Hardware assets and digital software in one place.
           </div>
         </div>
       </section>
 
       <section
-        className="panel operations-tab-panel"
         style={{
-          padding: 16,
-          display: "grid",
-          gap: 14,
+          padding: "0 16px",
           border: "none",
           boxShadow: "none",
           borderRadius: 0,
@@ -88,9 +79,9 @@ function OperationsTabsInner() {
         <div
           className="monitoring-tab-strip"
           role="tablist"
-          aria-label="Operations sections"
+          aria-label="Inventory sections"
         >
-          {OPERATIONS_TABS.map((tab) => (
+          {INVENTORY_TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"
@@ -110,24 +101,19 @@ function OperationsTabsInner() {
         </div>
       </section>
 
-      {activeTab === "planner" ? (
-        <div className="request-empty-state" style={{ margin: "40px 18px" }}>
-          <div className="request-empty-title">Coming soon</div>
-          <div className="request-empty-copy">The Planner is under development and will be available shortly.</div>
-        </div>
-      ) : activeTab === "workflows" ? (
-        <WorkflowsPanel />
+      {activeTab === "hardware" ? (
+        <HardwareInventoryPage />
       ) : (
-        <WorkflowLogPanel />
+        <DigitalInventoryClient />
       )}
     </div>
   );
 }
 
-export default function OperationsTabs() {
+export default function InventoryPage() {
   return (
     <Suspense fallback={null}>
-      <OperationsTabsInner />
+      <InventoryTabsInner />
     </Suspense>
   );
 }
