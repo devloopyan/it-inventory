@@ -284,6 +284,11 @@ export default defineSchema({
     sharedTripCost: v.optional(v.number()),
     billingDepartment: v.optional(v.string()),
     billingCostCenter: v.optional(v.string()),
+    // Odometer readings recorded at trip completion
+    odometerStart: v.optional(v.number()),
+    odometerEnd: v.optional(v.number()),
+    odometerStartPhotoId: v.optional(v.id("_storage")),
+    odometerEndPhotoId: v.optional(v.id("_storage")),
     // Conflict override
     conflictOverrideReason: v.optional(v.string()),
     conflictOverrideBy: v.optional(v.string()),

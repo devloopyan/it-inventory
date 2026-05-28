@@ -849,18 +849,22 @@ export default function DigitalInventoryClient() {
 
       <section className="digital-workspace panel dashboard-panel">
         <div className="digital-toolbar">
-          <div className="digital-tabs" role="tablist" aria-label="Digital inventory sections">
+          <div className="monitoring-tab-strip" role="tablist" aria-label="Digital inventory sections">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
                 role="tab"
                 aria-selected={activeTab === tab.key}
-                className={`digital-tab${activeTab === tab.key ? " is-active" : ""}`}
+                className={`monitoring-tab-btn${activeTab === tab.key ? " active" : ""}`}
                 onClick={() => handleTabChange(tab.key)}
               >
-                <span>{tab.label}</span>
-                <small>{tab.description}</small>
+                <span className="monitoring-tab-copy">
+                  <span className="monitoring-tab-label-row">
+                    <span className="monitoring-tab-label">{tab.label}</span>
+                  </span>
+                  <span className="monitoring-tab-description">{tab.description}</span>
+                </span>
               </button>
             ))}
           </div>

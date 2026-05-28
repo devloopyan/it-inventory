@@ -281,7 +281,7 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
         <section className="my-request-detail-block">
           <h2>Progress</h2>
           <div className="req-progress-bar" aria-label="Request progress">
-            {/* Track line */}
+            {/* Connecting track line */}
             <div className="req-progress-track">
               <div
                 className="req-progress-fill"
@@ -292,7 +292,7 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
                 }}
               />
             </div>
-            {/* Nodes */}
+            {/* Step nodes */}
             {progressSteps.map((step, index) => {
               const isDone = index < progressIndex;
               const isCurrent = index === progressIndex;
@@ -300,7 +300,7 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
                 <div key={step.label} className="req-progress-node">
                   <div className={`req-progress-circle${isDone ? " is-done" : isCurrent ? " is-current" : ""}`}>
                     {isDone ? (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                       </svg>
                     ) : (

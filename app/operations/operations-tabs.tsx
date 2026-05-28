@@ -55,6 +55,26 @@ function OperationsTabsInner() {
   return (
     <div className="dashboard-page operations-page">
       <section
+        className="panel"
+        style={{
+          padding: "14px 18px 4px",
+          display: "grid",
+          gap: 14,
+          border: "none",
+          boxShadow: "none",
+          borderRadius: 0,
+          background: "transparent",
+        }}
+      >
+        <div style={{ display: "grid", gap: 6 }}>
+          <h1 className="type-page-title">Operations</h1>
+          <div className="type-page-subtitle">
+            Task planning, guided workflows, and an audit log for IT operations.
+          </div>
+        </div>
+      </section>
+
+      <section
         className="panel operations-tab-panel"
         style={{
           padding: 16,
@@ -67,7 +87,7 @@ function OperationsTabsInner() {
         }}
       >
         <div
-          className="operations-tab-strip"
+          className="monitoring-tab-strip"
           role="tablist"
           aria-label="Operations sections"
         >
@@ -77,12 +97,14 @@ function OperationsTabsInner() {
               type="button"
               role="tab"
               aria-selected={activeTab === tab.key}
-              className={`operations-tab-btn${activeTab === tab.key ? " active" : ""}`}
+              className={`monitoring-tab-btn${activeTab === tab.key ? " active" : ""}`}
               onClick={() => setActiveTab(tab.key)}
             >
-              <span className="operations-tab-copy">
-                <span className="operations-tab-label">{tab.label}</span>
-                <span className="operations-tab-description">{tab.description}</span>
+              <span className="monitoring-tab-copy">
+                <span className="monitoring-tab-label-row">
+                  <span className="monitoring-tab-label">{tab.label}</span>
+                </span>
+                <span className="monitoring-tab-description">{tab.description}</span>
               </span>
             </button>
           ))}

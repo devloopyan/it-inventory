@@ -1000,6 +1000,10 @@ export const markTravelOrderDone = mutation({
   args: {
     ticketId: v.id("monitoringTickets"),
     actorName: v.string(),
+    odometerStart: v.optional(v.number()),
+    odometerEnd: v.optional(v.number()),
+    odometerStartPhotoId: v.optional(v.id("_storage")),
+    odometerEndPhotoId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
     const ticket = await ctx.db.get(args.ticketId);
@@ -1033,6 +1037,10 @@ export const markTravelOrderDone = mutation({
       fulfilledAt: now,
       updatedAt: now,
       updatedBy: actorName,
+      odometerStart: args.odometerStart,
+      odometerEnd: args.odometerEnd,
+      odometerStartPhotoId: args.odometerStartPhotoId,
+      odometerEndPhotoId: args.odometerEndPhotoId,
     });
 
     await sendTravelOrderNotification(ctx, {

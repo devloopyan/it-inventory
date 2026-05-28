@@ -1663,6 +1663,15 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [travelDoneSavingId, setTravelDoneSavingId] = useState("");
   const [travelCancelSavingId, setTravelCancelSavingId] = useState("");
   const [travelReopenSavingId, setTravelReopenSavingId] = useState("");
+  // Odometer modal for marking travel done
+  const [showOdometerModal, setShowOdometerModal] = useState(false);
+  const [odometerTicketId, setOdometerTicketId] = useState<Id<"monitoringTickets"> | null>(null);
+  const [odometerStart, setOdometerStart] = useState("");
+  const [odometerEnd, setOdometerEnd] = useState("");
+  const [odometerStartFile, setOdometerStartFile] = useState<File | null>(null);
+  const [odometerEndFile, setOdometerEndFile] = useState<File | null>(null);
+  const [odometerSaving, setOdometerSaving] = useState(false);
+  const [odometerError, setOdometerError] = useState("");
   const [borrowingActionSavingId, setBorrowingActionSavingId] = useState("");
   const [borrowingConfirm, setBorrowingConfirm] = useState<{ message: string; label: string; onConfirm: () => void } | null>(null);
   const [showExtendModal, setShowExtendModal] = useState(false);
@@ -2612,22 +2621,41 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     }
   }
 
-  async function handleMarkTravelDone(ticketId: Id<"monitoringTickets">) {
-    if (!window.confirm("Mark this travel order as done? The assigned driver and vehicle will become available again.")) {
+  function handleMarkTravelDone(ticketId: Id<"monitoringTickets">) {
+    setOdometerTicketId(ticketId);
+    setOdometerStart("");
+    setOdometerEnd("");
+    setOdometerStartFile(null);
+    setOdometerEndFile(null);
+    setOdometerError("");
+    setShowOdometerModal(true);
+  }
+
+  async function handleConfirmTravelDone() {
+    if (!odometerTicketId) return;
+    if (!odometerStart || !odometerStartFile || !odometerEnd || !odometerEndFile) {
+      setOdometerError("Both odometer readings and photos are required before marking as done.");
       return;
     }
-
     try {
-      setTravelDoneSavingId(String(ticketId));
-      setRequestTableError("");
+      setOdometerSaving(true);
+      setOdometerError("");
+      const startPhotoId = await uploadFileToStorage(odometerStartFile, "Odometer start photo upload failed.");
+      const endPhotoId = await uploadFileToStorage(odometerEndFile, "Odometer end photo upload failed.");
       await markTravelOrderDone({
-        ticketId,
+        ticketId: odometerTicketId,
         actorName,
+        odometerStart: odometerStart ? Number(odometerStart) : undefined,
+        odometerEnd: odometerEnd ? Number(odometerEnd) : undefined,
+        odometerStartPhotoId: startPhotoId,
+        odometerEndPhotoId: endPhotoId,
       });
+      setShowOdometerModal(false);
+      setOdometerTicketId(null);
     } catch (error) {
-      setRequestTableError(error instanceof Error ? error.message : "Unable to mark travel as done.");
+      setOdometerError(error instanceof Error ? error.message : "Unable to mark travel as done.");
     } finally {
-      setTravelDoneSavingId("");
+      setOdometerSaving(false);
     }
   }
 
@@ -3675,6 +3703,83 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                 <button type="button" className="btn-secondary" disabled={returnModalSaving} onClick={() => { setShowReturnModal(false); setReturnModalTicket(null); }}>Cancel</button>
                 <button type="button" className="btn-primary" disabled={returnModalSaving} onClick={() => void handleBorrowingReturn()}>
                   {returnModalSaving ? "Saving…" : "Complete Return"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showOdometerModal ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 520, display: "grid", gap: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Mark Travel Order as Done</div>
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                Record the odometer readings before completing this trip. Photos and typed values are both optional but recommended.
+              </p>
+
+              {/* Odometer Start */}
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>Odometer — Start of Trip</div>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Reading (km)</span>
+                  <input
+                    className="input-base"
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 12500"
+                    value={odometerStart}
+                    onChange={(e) => setOdometerStart(e.target.value)}
+                  />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Photo of odometer</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="input-base"
+                    style={{ padding: "6px 10px" }}
+                    onChange={(e) => setOdometerStartFile(e.target.files?.[0] ?? null)}
+                  />
+                  {odometerStartFile ? (
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{odometerStartFile.name}</span>
+                  ) : null}
+                </label>
+              </div>
+
+              {/* Odometer End */}
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>Odometer — End of Trip</div>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Reading (km)</span>
+                  <input
+                    className="input-base"
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 12850"
+                    value={odometerEnd}
+                    onChange={(e) => setOdometerEnd(e.target.value)}
+                  />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Photo of odometer</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="input-base"
+                    style={{ padding: "6px 10px" }}
+                    onChange={(e) => setOdometerEndFile(e.target.files?.[0] ?? null)}
+                  />
+                  {odometerEndFile ? (
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{odometerEndFile.name}</span>
+                  ) : null}
+                </label>
+              </div>
+
+              {odometerError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{odometerError}</div> : null}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button type="button" className="btn-secondary" disabled={odometerSaving} onClick={() => { setShowOdometerModal(false); setOdometerError(""); }}>Cancel</button>
+                <button type="button" className="btn-primary" disabled={odometerSaving || !odometerStart || !odometerStartFile || !odometerEnd || !odometerEndFile} onClick={() => void handleConfirmTravelDone()}>
+                  {odometerSaving ? "Saving..." : "Mark as Done"}
                 </button>
               </div>
             </div>

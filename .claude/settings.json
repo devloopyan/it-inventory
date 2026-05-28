@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(npx tsc *)",
+      "Bash(Get-ChildItem -Recurse -Path \"c:\\\\Users\\\\Leanne\\\\OneDrive - ENVI-COMM CORPORATION\\\\Desktop\\\\it-inventory-system\\\\app\\\\hardware-inventory\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName, Name)",
+      "Bash(git restore *)",
+      "Read(//c/Users/Leanne/.claude/projects/c--Users-Leanne-OneDrive---ENVI-COMM-CORPORATION-Desktop-it-inventory-system/memory/**)",
+      "Bash(git commit *)",
+      "Bash(grep -E \"\\(export|mutation|query|//|status|cancel|conflict|billing|trip|stop|late\\)\")"
+    ]
+  }
+}

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
+import { useMemo, useState, useEffect, useRef, type ChangeEvent, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 
 function parseError(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
@@ -116,6 +117,8 @@ export default function UsersClient() {
   const [selectedUserId, setSelectedUserId] = useState<Id<"users"> | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [userSearch, setUserSearch] = useState("");
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
@@ -469,14 +472,13 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
       </div>
     </div>
 
-    {/* Edit User Panel */}
-    {selectedUser ? (
-      <>
-        <div
-          className="member-panel-backdrop"
-          onClick={() => { setSelectedUserId(null); setTemporaryPassword(""); }}
-        />
-        <aside className="member-panel">
+    {/* Edit User Panel — portalled to body so backdrop-filter works outside overflow:clip ancestors */}
+    {mounted && selectedUser ? createPortal(
+      <div
+        className="member-panel-backdrop"
+        onClick={() => { setSelectedUserId(null); setTemporaryPassword(""); }}
+      >
+        <aside className="member-panel" onClick={(e) => e.stopPropagation()}>
           <div className="member-panel-head">
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div className="member-panel-avatar" style={getAvatarStyle(selectedUser.displayName)}>
@@ -587,7 +589,8 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
             {errorMessage ? <div className="reservation-error" style={{ marginTop: 4 }}>{errorMessage}</div> : null}
           </div>
         </aside>
-      </>
+      </div>,
+      document.body
     ) : null}
     </>
   );

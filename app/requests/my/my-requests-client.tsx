@@ -320,7 +320,6 @@ export default function MyRequestsClient() {
                     ) : null
                   ) : isBorrowing ? (
                     <>
-                      <span className="mr-card-tag"># {request.ticketNumber}</span>
                       {request.expectedReturnAt ? (
                         <span className="mr-card-tag"># Return: {formatDate(request.expectedReturnAt)}</span>
                       ) : null}

@@ -297,7 +297,6 @@ export default function EquipmentBorrowerRequestClient() {
         trimmedPurpose,
         `Requested date: ${new Date(requestedBorrowTimestamp).toLocaleDateString()}.`,
         `Expected return: ${new Date(expectedReturnTimestamp).toLocaleString()}.`,
-        "Requested equipment:",
         ...assetLines,
       ].join("\n");
       const requestSnapshot = [
