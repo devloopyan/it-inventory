@@ -930,6 +930,18 @@ export default function DashboardPage() {
       ).length,
     [allRows, openBorrowingAssetIds],
   );
+  const openBorrowingTicketsCount = useMemo(
+    () =>
+      (openBorrowingRequests ?? []).filter(
+        (r) => r.category === MONITORING_BORROWING_REQUEST_CATEGORY,
+      ).length,
+    [openBorrowingRequests],
+  );
+  const reservedCount = useMemo(
+    () =>
+      (allRows ?? []).filter((row) => isReservedRecord(row as Record<string, unknown>)).length,
+    [allRows],
+  );
   const searchedReservableEquipmentRows = useMemo(
     () =>
       searched.filter(
@@ -1388,27 +1400,49 @@ export default function DashboardPage() {
       <section className="panel dashboard-top-card">
         <div className="dashboard-top-card-head">
           <div className="dashboard-heading">
-            <h1 className="dashboard-title">Asset Operations</h1>
-            <p className="dashboard-subtitle">Hardware performance and operations overview.</p>
+            <h1 className="dashboard-title">Pending Actions</h1>
+            <p className="dashboard-subtitle">Items needing attention right now.</p>
           </div>
         </div>
         <div className="dashboard-top-card-metrics">
+          <div className="dashboard-top-card-metric">
+            <div className="metric-head">Open Requests</div>
+            <div className="metric-value">
+              <strong>{openBorrowingTicketsCount}</strong>
+            </div>
+          </div>
+          <div className="dashboard-top-card-metric">
+            <div className="metric-head">Reserved</div>
+            <div className="metric-value">
+              <strong>{reservedCount}</strong>
+            </div>
+          </div>
+          <div className="dashboard-top-card-metric">
+            <div className="metric-head">Borrowed</div>
+            <div className="metric-value">
+              <strong>{counts.byStatus["Borrowed"]}</strong>
+            </div>
+          </div>
+          <div className="dashboard-top-card-metric">
+            <div className="metric-head">For Repair</div>
+            <div className="metric-value">
+              <strong>{counts.byStatus["For Repair"]}</strong>
+            </div>
+          </div>
+          <div className="dashboard-top-card-metric">
+            <div className="metric-head">Available</div>
+            <div className="metric-value">
+              <strong>{adjustedAvailableCount}</strong>
+            </div>
+          </div>
           <div className="dashboard-top-card-metric">
             <div className="metric-head">Total Assets</div>
             <div className="metric-value">
               <strong>{counts.total}</strong>
             </div>
           </div>
-          {HARDWARE_STATUSES.slice(0, 5).map((status) => (
-            <div key={status} className="dashboard-top-card-metric">
-              <div className="metric-head">{status}</div>
-              <div className="metric-value">
-                <strong>{status === "Available" ? adjustedAvailableCount : counts.byStatus[status]}</strong>
-              </div>
-            </div>
-          ))}
           <div className="dashboard-top-card-metric">
-            <div className="metric-head">Active Internet Outages</div>
+            <div className="metric-head">Active Outages</div>
             <div className="metric-value">
               <strong>{monitoringOverview?.activeInternetOutages ?? "-"}</strong>
             </div>

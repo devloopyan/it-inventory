@@ -20,7 +20,16 @@
       "Bash(xargs grep -l \"Sign In\\\\|login\\\\|Login\")",
       "Bash(xargs grep -l \"markTravelOrderDone\\\\|assignTravelOrderFleet\\\\|updateTravelOrderStatus\")",
       "Bash(grep -n \"^svg\\\\b\\\\|^\\\\*, svg\\\\|^img, svg\\\\|\\\\bsvg\\\\b {\" \"c:/Users/Leanne/OneDrive - ENVI-COMM CORPORATION/Desktop/it-inventory-system/app/globals.css\")",
-      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Leanne\\\\OneDrive - ENVI-COMM CORPORATION\\\\Desktop\\\\it-inventory-system\\\\app\" -Recurse -Directory | Where-Object {$_.Name -match 'users|admin'} | Select-Object FullName)"
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Leanne\\\\OneDrive - ENVI-COMM CORPORATION\\\\Desktop\\\\it-inventory-system\\\\app\" -Recurse -Directory | Where-Object {$_.Name -match 'users|admin'} | Select-Object FullName)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\Leanne\\\\OneDrive - ENVI-COMM CORPORATION\\\\Desktop\\\\it-inventory-system\" -Recurse -Include \"*.tsx\", \"*.ts\", \"*.jsx\", \"*.js\")",
+      "Bash(Format-Table Name, FullName)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\)\")",
+      "PowerShell(ls \"c:\\\\Users\\\\Leanne\\\\OneDrive - ENVI-COMM CORPORATION\\\\Desktop\\\\it-inventory-system\\\\.claude\\\\skills\\\\\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(npx playwright --version 2>$null)",
+      "PowerShell(node -e \"require\\('playwright'\\)\" 2>$null)",
+      "PowerShell(npm root -g)",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Leanne\\\\OneDrive - ENVI-COMM CORPORATION\\\\Desktop\\\\it-inventory-system\" -Exclude \"node_modules\",\".next\" -Recurse -Depth 2 | Where-Object { $_.FullName -notmatch 'node_modules|\\\\.next' } | Select-Object -ExpandProperty FullName)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Leanne\\.claude\\projects\\c--Users-Leanne-OneDrive---ENVI-COMM-CORPORATION-Desktop-it-inventory-system"

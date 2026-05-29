@@ -222,14 +222,6 @@ export default function TravelOrderRequestClient() {
       let departureText = "";
       let returnText = "";
       let singleStopReturnAt: number | undefined;
-      let stopsData: Array<{
-        order: number;
-        type: string;
-        location: string;
-        scheduledTime?: number;
-        passengerNames?: string[];
-      }> = [];
-
       if (useMultiStop) {
         // Validate multi-stop
         const filledStops = travelStops.filter((s) => s.location.trim());
@@ -240,18 +232,6 @@ export default function TravelOrderRequestClient() {
         const hasDropoff = travelStops.some((s) => s.type === "DROPOFF" && s.location.trim());
         if (!hasPickup) throw new Error("At least one PICKUP stop is required.");
         if (!hasDropoff) throw new Error("At least one DROP-OFF stop is required.");
-
-        stopsData = travelStops
-          .filter((s) => s.location.trim())
-          .map((s) => ({
-            order: s.order,
-            type: s.type,
-            location: s.location.trim(),
-            scheduledTime: s.scheduledTime ? toTimestamp(s.scheduledTime) ?? undefined : undefined,
-            passengerNames: s.passengerNames.trim()
-              ? s.passengerNames.split(",").map((n) => n.trim()).filter(Boolean)
-              : undefined,
-          }));
 
         const firstPickup = travelStops.find((s) => s.type === "PICKUP" && s.location.trim());
         const lastDropoff = [...travelStops].reverse().find((s) => s.type === "DROPOFF" && s.location.trim());
@@ -281,7 +261,6 @@ export default function TravelOrderRequestClient() {
         departureText = new Date(departureTimestamp).toLocaleString();
         returnText = new Date(returnTimestamp).toLocaleString();
         singleStopReturnAt = returnTimestamp;
-        stopsData = [];
       }
 
       setSubmitting(true);

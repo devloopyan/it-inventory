@@ -908,6 +908,40 @@ export const listBorrowingNotifications = query({
   },
 });
 
+export const listAdminOverdueBorrowing = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const tickets = await ctx.db
+      .query("monitoringTickets")
+      .withIndex("by_updatedAt")
+      .order("desc")
+      .collect();
+
+    return tickets
+      .filter(
+        (t) =>
+          t.category === MONITORING_BORROWING_REQUEST_CATEGORY &&
+          t.status === "Claimed" &&
+          t.expectedReturnAt != null &&
+          (t.expectedReturnAt as number) < now,
+      )
+      .map((t) => ({
+        _id: t._id,
+        title: t.title,
+        ticketNumber: t.ticketNumber,
+        requesterName: t.requesterName,
+        expectedReturnAt: t.expectedReturnAt as number,
+        status: t.status,
+        borrowingItems: (t.borrowingItems ?? []).map((item) => ({
+          assetTag: item.assetTag,
+          assetLabel: item.assetLabel,
+          returnedAt: item.returnedAt,
+        })),
+      }));
+  },
+});
+
 export const listRoomBookings = query({
   args: {
     rangeStart: v.number(),
@@ -2066,8 +2100,20 @@ export const deleteTicket = mutation({
 
     const isMeetingRequest =
       ticket.category === MONITORING_MEETING_REQUEST_CATEGORY || Boolean(ticket.meetingStartAt || ticket.meetingLocation);
-    if (!isMeetingRequest) {
-      throw new Error("Only meeting requests can be deleted from this view.");
+    const isBorrowingRequest = ticket.category === MONITORING_BORROWING_REQUEST_CATEGORY;
+
+    if (!isMeetingRequest && !isBorrowingRequest) {
+      throw new Error("Only meeting or borrowing requests can be deleted.");
+    }
+
+    if (isBorrowingRequest && ticket.borrowingItems?.length) {
+      await syncBorrowingAssets(ctx, {
+        borrowingItems: ticket.borrowingItems as Array<{ assetId: Id<"hardwareInventory">; assetTag: string }>,
+        transition: "cancel",
+        ticketNumber: ticket.ticketNumber,
+        requesterName: ticket.requesterName,
+        actorName: args.actorName,
+      });
     }
 
     const approvalHistory = await ctx.db

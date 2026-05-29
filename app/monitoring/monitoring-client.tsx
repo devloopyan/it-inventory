@@ -14,7 +14,6 @@ import {
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import ChecklistSelect, { type ChecklistSelectOption } from "../hardware-inventory/checklist-select";
 import FileUploadCard from "../hardware-inventory/file-upload-card";
 import {
   MONITORING_BORROW_CONDITION_OPTIONS,
@@ -409,24 +408,6 @@ function getChipStyle(status: string) {
   }
 }
 
-function buildMeetingStatusSelectOptions(statusOptions: ReadonlyArray<string>): ReadonlyArray<ChecklistSelectOption> {
-  return statusOptions.map((statusOption) => {
-    const style = getChipStyle(statusOption);
-    return {
-      value: statusOption,
-      label: statusOption,
-      markerVariant: "dot",
-      markerColor: style.color,
-      triggerStyle: {
-        backgroundColor: style.background,
-        color: style.color,
-        borderColor: style.borderColor,
-        fontWeight: 600,
-      },
-    };
-  });
-}
-
 function Chip({ label }: { label: string }) {
   const style = getChipStyle(label);
   return (
@@ -458,7 +439,7 @@ function getFleetInitials(name: string) {
     .join("") || "DR";
 }
 
-function getFleetAvatarPalette(_name: string): { background: string; color: string } {
+function getFleetAvatarPalette(): { background: string; color: string } {
   return { background: "#e5e7eb", color: "#374151" };
 }
 
@@ -806,7 +787,7 @@ function FleetManagementModal(props: {
                 props.drivers.map((driver) => (
                   <article key={driver._id} className="fleet-manage-card">
                     <div className="fleet-manage-card-top">
-                      <div className="fleet-manage-avatar" style={getFleetAvatarPalette(driver.name)}>
+                      <div className="fleet-manage-avatar" style={getFleetAvatarPalette()}>
                         {getFleetInitials(driver.name)}
                       </div>
                       <span className="fleet-manage-badge" style={getFleetStatusBadgeStyle(driver.status)}>
@@ -1590,7 +1571,6 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const cancelTravelOrderWithReason = useMutation(api.fleet.cancelTravelOrderWithReason);
   const assignSharedTripMutation = useMutation(api.fleet.assignSharedTrip);
   const markTravelOrderDone = useMutation(api.fleet.markTravelOrderDone);
-  const cancelTravelOrder = useMutation(api.fleet.cancelTravelOrder);
   const reopenTravelOrder = useMutation(api.fleet.reopenTravelOrder);
   const extendTravelOrderMutation = useMutation(api.fleet.extendTravelOrder);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
@@ -1629,7 +1609,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [formError, setFormError] = useState("");
   const [requestTableError, setRequestTableError] = useState("");
   const [meetingStatusSavingId, setMeetingStatusSavingId] = useState("");
-  const [meetingStatusDrafts, setMeetingStatusDrafts] = useState<Record<string, string>>({});
+  const [, setMeetingStatusDrafts] = useState<Record<string, string>>({});
   const [showFleetManage, setShowFleetManage] = useState(false);
   const [fleetSaving, setFleetSaving] = useState(false);
   const [fleetError, setFleetError] = useState("");
@@ -1660,8 +1640,8 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [sharedTripSaving, setSharedTripSaving] = useState(false);
   const [sharedTripError, setSharedTripError] = useState("");
   const [prioritySavingId, setPrioritySavingId] = useState("");
-  const [travelDoneSavingId, setTravelDoneSavingId] = useState("");
-  const [travelCancelSavingId, setTravelCancelSavingId] = useState("");
+  const [travelDoneSavingId] = useState("");
+  const [travelCancelSavingId] = useState("");
   const [travelReopenSavingId, setTravelReopenSavingId] = useState("");
   // Odometer modal for marking travel done
   const [showOdometerModal, setShowOdometerModal] = useState(false);
@@ -1686,6 +1666,12 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [returnConditions, setReturnConditions] = useState<Record<string, { condition: string; note: string }>>({});
   const [returnModalSaving, setReturnModalSaving] = useState(false);
   const [returnModalError, setReturnModalError] = useState("");
+  const [meetingDoneConfirmId, setMeetingDoneConfirmId] = useState<Id<"monitoringTickets"> | null>(null);
+  const [meetingDoneNote, setMeetingDoneNote] = useState("");
+  const [meetingDoneRecording, setMeetingDoneRecording] = useState<File | null>(null);
+  const [meetingDoneSaving, setMeetingDoneSaving] = useState(false);
+  const [meetingDoneError, setMeetingDoneError] = useState("");
+  const meetingDoneRecordingRef = useRef<HTMLInputElement | null>(null);
   const issueAttachmentRef = useRef<HTMLInputElement | null>(null);
   const borrowingAttachmentRef = useRef<HTMLInputElement | null>(null);
   const deferredIssueSearch = useDeferredValue(issueSearch);
@@ -2106,6 +2092,51 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     }
   }
 
+  async function handleMeetingMarkDone() {
+    if (!meetingDoneConfirmId) return;
+    if (!meetingDoneNote.trim()) {
+      setMeetingDoneError("A fulfillment note is required.");
+      return;
+    }
+    setMeetingDoneSaving(true);
+    setMeetingDoneError("");
+    try {
+      const recordingStorageId = meetingDoneRecording
+        ? await uploadFileToStorage(meetingDoneRecording, "Recording upload failed.")
+        : undefined;
+      await updateTicket({
+        ticketId: meetingDoneConfirmId,
+        actorName,
+        status: "Done",
+        fulfillmentNote: meetingDoneNote.trim(),
+        ...(recordingStorageId
+          ? {
+              attachments: [{
+                kind: "Meeting Recording" as const,
+                label: "Meeting recording",
+                fileName: meetingDoneRecording?.name ?? "Meeting recording",
+                contentType: meetingDoneRecording?.type || undefined,
+                storageId: recordingStorageId,
+                uploadedBy: actorName,
+              }],
+            }
+          : {}),
+      });
+      setMeetingDoneConfirmId(null);
+      setMeetingDoneNote("");
+      setMeetingDoneRecording(null);
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : "Failed to mark as Done.";
+      const cleaned = raw
+        .replace(/^\[CONVEX[^\]]*\]\s*(\[Request[^\]]*\])?\s*(Server Error\s*)?(Uncaught Error:\s*)?/i, "")
+        .replace(/\s+at handler[\s\S]*$/i, "")
+        .trim();
+      setMeetingDoneError(cleaned || raw);
+    } finally {
+      setMeetingDoneSaving(false);
+    }
+  }
+
   async function handleIssueCreate() {
     setFormError("");
     setIssueSubmitting(true);
@@ -2352,22 +2383,6 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     } finally {
       setInternetSubmitting(false);
     }
-  }
-
-  function openIssueTicketModal(preset?: Partial<IssueFormState>) {
-    setFormError("");
-    if (preset) {
-      setIssueForm((prev) => ({ ...prev, ...preset }));
-    }
-    setShowIssueCreate(true);
-  }
-
-  function openBorrowingCreateModal() {
-    setFormError("");
-    setBorrowingForm(defaultBorrowingForm);
-    setBorrowingAttachmentFile(null);
-    setBorrowingAssetSearch("");
-    setShowBorrowingCreate(true);
   }
 
   function resetFleetDriverForm() {
@@ -2656,25 +2671,6 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
       setOdometerError(error instanceof Error ? error.message : "Unable to mark travel as done.");
     } finally {
       setOdometerSaving(false);
-    }
-  }
-
-  async function handleCancelTravelOrder(ticketId: Id<"monitoringTickets">) {
-    if (!window.confirm("Cancel this travel order? The assigned driver and vehicle will become available again.")) {
-      return;
-    }
-
-    try {
-      setTravelCancelSavingId(String(ticketId));
-      setRequestTableError("");
-      await cancelTravelOrder({
-        ticketId,
-        actorName,
-      });
-    } catch (error) {
-      setRequestTableError(error instanceof Error ? error.message : "Unable to cancel travel order.");
-    } finally {
-      setTravelCancelSavingId("");
     }
   }
 
@@ -3573,6 +3569,87 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           </div>
         ) : null}
 
+        {meetingDoneConfirmId ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 480, display: "grid", gap: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Mark Meeting as Done?</div>
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                This will mark the meeting as completed. All linked equipment will be released back to inventory.
+              </p>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>
+                  Fulfillment Note <span style={{ color: "var(--color-error, #dc2626)" }}>*</span>
+                </span>
+                <textarea
+                  className="input-base monitoring-form-textarea"
+                  rows={3}
+                  placeholder="Describe what was set up, equipment deployed, or any relevant notes…"
+                  value={meetingDoneNote}
+                  onChange={(e) => setMeetingDoneNote(e.target.value)}
+                  disabled={meetingDoneSaving}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Meeting Recording <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional)</span></span>
+                <input
+                  ref={meetingDoneRecordingRef}
+                  type="file"
+                  accept="video/*,audio/*,.mp4,.mov,.mkv,.avi,.webm,.mp3,.m4a"
+                  style={{ display: "none" }}
+                  onChange={(e) => setMeetingDoneRecording(e.target.files?.[0] ?? null)}
+                />
+                {meetingDoneRecording ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meetingDoneRecording.name}</span>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: "2px 10px", fontSize: 12 }}
+                      onClick={() => { setMeetingDoneRecording(null); if (meetingDoneRecordingRef.current) meetingDoneRecordingRef.current.value = ""; }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ justifySelf: "start" }}
+                    disabled={meetingDoneSaving}
+                    onClick={() => meetingDoneRecordingRef.current?.click()}
+                  >
+                    Upload Recording
+                  </button>
+                )}
+              </label>
+              {meetingDoneError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{meetingDoneError}</div> : null}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={meetingDoneSaving}
+                  onClick={() => {
+                    setMeetingDoneConfirmId(null);
+                    setMeetingDoneNote("");
+                    setMeetingDoneRecording(null);
+                    setMeetingDoneError("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={meetingDoneSaving}
+                  onClick={() => void handleMeetingMarkDone()}
+                >
+                  {meetingDoneSaving ? "Saving…" : "Mark as Done"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {showSharedTripModal ? (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 480, display: "grid", gap: 14 }}>
@@ -4158,7 +4235,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   const isOverdue = row.category === MONITORING_TRAVEL_ORDER_CATEGORY && !!row.travelReturnAt && Date.now() > row.travelReturnAt && !isTODone;
                   const travelSchedule = getTravelScheduleFromDetails(row.requestDetails);
                   const travelPurpose = row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? getTravelPurposeFromDetails(row.requestDetails) : null;
-                  const avatarPalette = getFleetAvatarPalette(row.requesterName ?? "?");
+                  const avatarPalette = getFleetAvatarPalette();
                   const requesterInitials = getFleetInitials(row.requesterName ?? "?");
                   const hasFleet = Boolean(row.fleetDriverName || row.fleetVehicleName);
                   return (
@@ -4304,12 +4381,17 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                       activeTab === "meetings" ? getMeetingRequestListTitle(row.title) : row.title;
                     const borrowingRequestType = formatRequesterRequestType(row);
                     const borrowingAssetLabel = formatRequesterAssetLabel(row);
-                    const travelSchedule = getTravelScheduleFromDetails(row.requestDetails);
+                    const isBorrowingPastDue =
+                      activeTab === "borrowing" &&
+                      row.category === MONITORING_BORROWING_REQUEST_CATEGORY &&
+                      row.status === "Claimed" &&
+                      row.expectedReturnAt != null &&
+                      row.expectedReturnAt < Date.now();
                     return (
                       <tr
                         key={row._id}
                         className={`table-row-hover${isUnopenedRequest ? " monitoring-row-unopened" : ""}`}
-                        style={{ cursor: "pointer" }}
+                        style={{ cursor: "pointer", background: isBorrowingPastDue ? "#fff1f2" : undefined }}
                         onClick={() => router.push(`/monitoring/${row._id}`)}
                       >
                         <td>
@@ -4364,7 +4446,14 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                               </div>
                             ) : row.expectedReturnAt ? (
                               <div style={{ display: "grid", gap: 4 }}>
-                                <span>{formatDateTime(row.expectedReturnAt)}</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span>{formatDateTime(row.expectedReturnAt)}</span>
+                                  {isBorrowingPastDue ? (
+                                    <span style={{ padding: "2px 7px", borderRadius: 999, background: "#fee2e2", color: "#991b1b", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                                      Past Due
+                                    </span>
+                                  ) : null}
+                                </div>
                                 <span style={{ color: "var(--muted)", fontSize: 12 }}>
                                   {row.requestedBorrowDate
                                     ? `Borrow ${formatDateTime(row.requestedBorrowDate)}`
@@ -4522,6 +4611,21 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                       </svg>
                                     </button>
                                   ) : null}
+                                  {normalizeMeetingRequestStatusValue(row.status) === "Ready" ? (
+                                    <button
+                                      type="button"
+                                      className="monitoring-icon-action-btn is-success"
+                                      aria-label={`Mark ${row.ticketNumber} as Done`}
+                                      title="Mark as Done"
+                                      disabled={meetingStatusSavingId === rowId}
+                                      onClick={() => setMeetingDoneConfirmId(row._id)}
+                                    >
+                                      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                                        <path d="M1 7.5L4.5 11L11 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                        <path d="M5 7.5L8.5 11L14.5 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                      </svg>
+                                    </button>
+                                  ) : null}
                                   {normalizeMeetingRequestStatusValue(row.status) !== "Done" && row.status !== "Closed" ? (
                                     <button
                                       type="button"
@@ -4582,7 +4686,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                   onClick={() => void handleBorrowingAction(row._id, "Reserved")}
                                 >
                                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M5 12l5 5L20 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M4 12L9 17L20 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                                   </svg>
                                 </button>
                               ) : null}
@@ -4613,7 +4717,8 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                   onClick={() => openReturnModal(row)}
                                 >
                                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 0 1 0 12h-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M2 12L7 17L18 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                                    <path d="M8 12L13 17L24 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                                   </svg>
                                 </button>
                               ) : null}

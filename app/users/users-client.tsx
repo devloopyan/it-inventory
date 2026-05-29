@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useEffect, useRef, type ChangeEvent, type FormEvent } from "react";
+import { useMemo, useState, useEffect, type ChangeEvent, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 
 function parseError(error: unknown, fallback: string): string {
@@ -88,7 +88,7 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-function getAvatarStyle(_name: string): { background: string; color: string } {
+function getAvatarStyle(): { background: string; color: string } {
   return { background: "#e5e7eb", color: "#374151" };
 }
 
@@ -433,7 +433,7 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                     </tr>
                   ) : filteredUsers.map((user) => {
                     const initials = getInitials(user.displayName);
-                    const avatarStyle = getAvatarStyle(user.displayName);
+                    const avatarStyle = getAvatarStyle();
                     const roleLabel = roleOptions.find((r) => r.value === normalizeRoleForSelect(user.role))?.label ?? user.role;
                     return (
                       <tr
@@ -481,7 +481,7 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
         <aside className="member-panel" onClick={(e) => e.stopPropagation()}>
           <div className="member-panel-head">
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div className="member-panel-avatar" style={getAvatarStyle(selectedUser.displayName)}>
+              <div className="member-panel-avatar" style={getAvatarStyle()}>
                 {getInitials(selectedUser.displayName)}
               </div>
               <div>

@@ -24,7 +24,6 @@ const assetTypeOptions = HARDWARE_ASSET_TYPES;
 const departmentOptions = HARDWARE_DEPARTMENTS;
 const locationOptions = ["MAIN", "MAIN STORAGE", "FOODLAND", "WAREHOUSE", "HYBRID"] as const;
 const workstationTypes = ["Laptop", "Desktop/PC"] as const;
-const specsTierOptions = ["BASIC", "STANDARD", "ADVANCED", "HIGH-PERFORMANCE"] as const;
 const componentTypeOptions = ["Monitor", "Headset", "Keyboard", "Mouse", "Speaker", "AVR", "Other"] as const;
 const INITIAL_VISIBLE_TABLE_ROWS = 20;
 const assetTypeSelectOptions: ReadonlyArray<ChecklistSelectOption> = assetTypeOptions.map((assetType) => ({
@@ -72,7 +71,7 @@ const hardwareInventoryPendingToastKey = "hardware-inventory:pending-toast";
 type RegisterMode = "general" | "workstation" | "droneKit";
 type MasterTableView = "master" | "workstation" | "storage";
 type WorkstationType = (typeof workstationTypes)[number];
-type SpecsTier = (typeof specsTierOptions)[number];
+type SpecsTier = "BASIC" | "STANDARD" | "ADVANCED" | "HIGH-PERFORMANCE";
 type ExtraComponent = {
   assetTag: string;
   componentType: string;

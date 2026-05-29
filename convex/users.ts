@@ -48,24 +48,6 @@ function ensureRole(value: string): UserRole {
   throw new Error("Invalid user role.");
 }
 
-function normalizeStringList<T extends readonly string[]>(values: string[] | undefined, validValues: T, label: string) {
-  const next = Array.from(
-    new Set(
-      (values ?? [])
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
-  );
-
-  for (const value of next) {
-    if (!(validValues as readonly string[]).includes(value)) {
-      throw new Error(`Invalid ${label}: ${value}.`);
-    }
-  }
-
-  return next as Array<T[number]>;
-}
-
 function normalizeServiceGroups(role: UserRole, values?: string[]): string[] | undefined {
   if (role === "admin") return [...ALL_DEFAULT_GROUPS];
 

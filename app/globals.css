@@ -719,6 +719,18 @@ a {
   color: var(--muted-strong);
 }
 
+@keyframes bell-ring {
+  0%   { transform: rotate(0deg); }
+  6%   { transform: rotate(16deg); }
+  12%  { transform: rotate(-13deg); }
+  18%  { transform: rotate(10deg); }
+  24%  { transform: rotate(-7deg); }
+  30%  { transform: rotate(4deg); }
+  36%  { transform: rotate(0deg); }
+  100% { transform: rotate(0deg); }
+}
+
+
 .activity-trigger-label {
   display: inline-block;
   width: 0;
@@ -751,17 +763,17 @@ a {
 
 .activity-trigger-badge {
   position: absolute;
-  top: -7px;
-  right: -7px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
+  top: -1px;
+  right: -1px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
   border-radius: 999px;
   background: #ef4444;
   color: #fff;
   display: inline-grid;
   place-items: center;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
   border: 1.5px solid var(--surface);
@@ -13985,8 +13997,6 @@ select.status-select optgroup {
 
 .mr-card-priority {
   display: inline-block;
-  padding: 6px 16px;
-  border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -14880,7 +14890,7 @@ select.status-select optgroup {
   display: grid;
   gap: 12px;
   min-width: 0;
-  padding: 14px;
+  padding: 20px 14px;
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
   background: var(--surface);
@@ -18184,6 +18194,14 @@ select.status-select optgroup {
 
 .notif-card:hover {
   background: var(--hover-bg);
+}
+
+.notif-card--unread {
+  background: rgba(99, 102, 241, 0.07);
+}
+
+.notif-card--unread:hover {
+  background: rgba(99, 102, 241, 0.13);
 }
 
 .attendee-suggestion-row:hover {

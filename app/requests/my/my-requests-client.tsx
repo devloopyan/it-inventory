@@ -67,26 +67,6 @@ function getProgress(status: string): number {
   return 0;
 }
 
-const AVATAR_COLORS = [
-  { bg: "#dbeafe", color: "#1e40af" },
-  { bg: "#dcfce7", color: "#166534" },
-  { bg: "#fef3c7", color: "#92400e" },
-  { bg: "#ede9fe", color: "#5b21b6" },
-  { bg: "#ffedd5", color: "#c2410c" },
-  { bg: "#fce7f3", color: "#9d174d" },
-];
-
-function getAvatarColor(name: string) {
-  const hash = name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
-}
-
-function getInitials(name?: string) {
-  if (!name) return "?";
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0][0]?.toUpperCase() ?? "?";
-  return ((parts[0][0] ?? "") + (parts[parts.length - 1][0] ?? "")).toUpperCase();
-}
 
 function getCategoryVisual(category: string) {
   if (category === MONITORING_TRAVEL_ORDER_CATEGORY)
@@ -115,15 +95,6 @@ function getTravelPurpose(requestDetails?: string) {
 function getBorrowingPurpose(requestDetails?: string): string | null {
   const firstLine = requestDetails?.split(/\r?\n/)[0]?.trim();
   return firstLine || null;
-}
-
-function extractUserNote(requestDetails?: string): string | null {
-  if (!requestDetails) return null;
-  const notes = requestDetails
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l && !/^[^:]{1,50}:\s/.test(l) && !/^[-•]/.test(l));
-  return notes.length > 0 ? notes.join(" ") : null;
 }
 
 function getCardDescription(request: {
@@ -236,6 +207,8 @@ export default function MyRequestsClient() {
 
   const activeRequests = useMemo(() => myRequests.filter((r) => !isArchivedStatus(r.status)), [myRequests]);
   const archivedRequests = useMemo(() => myRequests.filter((r) => isArchivedStatus(r.status)), [myRequests]);
+  // eslint-disable-next-line react-hooks/purity
+  const now = useMemo(() => Date.now(), []);
 
   return (
     <div className="request-page">
@@ -278,20 +251,28 @@ export default function MyRequestsClient() {
               ? getBorrowingPurpose(request.requestDetails) ?? requestType ?? request.category
               : request.title;
 
-            const { color: categoryColor, bg: categoryBg } = getCategoryVisual(request.category);
+            const { color: categoryColor } = getCategoryVisual(request.category);
             const progress = getProgress(request.status);
-            const initials = getInitials(request.requesterName);
-            const avatarColor = getAvatarColor(request.requesterName ?? "");
             const description = isMeeting
               ? formatMeetingSchedule(request.meetingStartAt, request.meetingEndAt)
               : getCardDescription(request);
+            const isBorrowingPastDue =
+              isBorrowing &&
+              request.status === "Claimed" &&
+              request.expectedReturnAt != null &&
+              request.expectedReturnAt < now;
 
             return (
-              <Link key={String(request._id)} href={`/requests/my/${request._id}`} className="mr-card">
+              <Link
+                key={String(request._id)}
+                href={`/requests/my/${request._id}`}
+                className="mr-card"
+                style={isBorrowingPastDue ? { borderColor: "#fca5a5", background: "var(--surface)" } : undefined}
+              >
 
                 {/* Top row: ticket type + date */}
                 <div className="mr-card-top">
-                  <span className="mr-card-priority" style={{ background: categoryBg, color: categoryColor }}>
+                  <span className="mr-card-priority" style={{ color: categoryColor }}>
                     {isTravelOrder || isMeeting || isBorrowing ? request.category : "IT Support"}
                   </span>
                   <span className="mr-card-header-date">{request.ticketNumber}</span>
@@ -322,6 +303,11 @@ export default function MyRequestsClient() {
                     <>
                       {request.expectedReturnAt ? (
                         <span className="mr-card-tag"># Return: {formatDate(request.expectedReturnAt)}</span>
+                      ) : null}
+                      {isBorrowingPastDue ? (
+                        <span className="mr-card-tag" style={{ background: "#fee2e2", color: "#991b1b", borderColor: "#fca5a5", fontWeight: 700 }}>
+                          Past Due
+                        </span>
                       ) : null}
                     </>
                   ) : (

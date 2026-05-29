@@ -31,7 +31,6 @@ import {
   isMonitoringWorkflowType,
   normalizeMeetingRequestStatusValue,
   type MonitoringApprovalReference,
-  type TravelOrderStatus,
 } from "@/lib/monitoring";
 import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/requestDisplay";
 import { isAdminRole, normalizeServiceGroups } from "@/lib/roles";
@@ -1160,14 +1159,6 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
 
   async function handleSaveItAssets(nextStatus?: string) {
     if (!detail?.ticket) return;
-    if (nextStatus === "Ready") {
-      const missing = supportChecklistItems.filter((item) => !isSupportItemCovered(item, meetingAssets));
-      if (missing.length > 0) {
-        setItFeedbackIsError(true);
-        setItFeedback(`Cannot mark as Ready — the following have not been assigned yet: ${missing.join(", ")}.`);
-        return;
-      }
-    }
     if (nextStatus === "Done" && !itFulfillmentNote.trim()) {
       setItFeedbackIsError(true);
       setItFeedback("A setup note is required before marking as Done.");
@@ -1675,8 +1666,8 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 className="asset-action-btn asset-action-btn-primary"
                 onClick={handleEditDetails}
                 type="button"
-                aria-label={`Edit ${detailSectionTitle}`}
-                title={`Edit ${detailSectionTitle}`}
+                aria-label={isBorrowingRequest ? "Edit Status" : `Edit ${detailSectionTitle}`}
+                title={isBorrowingRequest ? "Edit Status" : `Edit ${detailSectionTitle}`}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M12 20H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -1944,36 +1935,6 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                     </select>
                   </FieldBlock>
                 ) : null}
-                {isBorrowingRequest ? (
-                  <FieldBlock label={`Requested ${borrowingAssetLabel}`}>
-                    <textarea
-                      className="input-base"
-                      style={{ minHeight: 88, resize: "vertical" }}
-                      value={requestedItemsText}
-                      onChange={(event) => setRequestedItemsText(event.target.value)}
-                    />
-                  </FieldBlock>
-                ) : null}
-                {isBorrowingRequest ? (
-                  <FieldBlock label="Planned Borrow Date">
-                    <input
-                      className="input-base"
-                      type="datetime-local"
-                      value={requestedBorrowDate}
-                      onChange={(event) => setRequestedBorrowDate(event.target.value)}
-                    />
-                  </FieldBlock>
-                ) : null}
-                {isBorrowingRequest ? (
-                  <FieldBlock label="Expected Return">
-                    <input
-                      className="input-base"
-                      type="datetime-local"
-                      value={expectedReturnAt}
-                      onChange={(event) => setExpectedReturnAt(event.target.value)}
-                    />
-                  </FieldBlock>
-                ) : null}
                 {status === "Pending" ? (
                   <FieldBlock label="Pending Reason">
                     <select className="input-base" value={pendingReason} onChange={(event) => setPendingReason(event.target.value)}>
@@ -1999,6 +1960,38 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                   </FieldBlock>
                   ) : null}
                 </div>
+
+              {isBorrowingRequest && selectedStatus === "Reserved" ? (
+                <div className="monitoring-detail-note-stack">
+                  <div className="type-helper">Log the condition of each asset being reserved.</div>
+                  {borrowingItems.length === 0 ? (
+                    <div className="monitoring-detail-empty">No linked assets yet — link assets below before marking as Reserved.</div>
+                  ) : (
+                    borrowingItems.map((item, index) => (
+                      <div key={`condition-${item.assetId}-${index}`} className="monitoring-detail-list-card" style={{ display: "grid", gap: 8, padding: "10px 12px" }}>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{item.assetTag} <span style={{ fontWeight: 400, color: "var(--muted)" }}>{item.assetLabel}</span></div>
+                        <FieldBlock label="Condition">
+                          <select
+                            className="input-base"
+                            value={item.releaseCondition}
+                            onChange={(event) =>
+                              setBorrowingItems((prev) =>
+                                prev.map((entry, i) =>
+                                  i === index ? { ...entry, releaseCondition: event.target.value } : entry,
+                                )
+                              )
+                            }
+                          >
+                            {MONITORING_BORROW_CONDITION_OPTIONS.map((condition) => (
+                              <option key={condition} value={condition}>{condition}</option>
+                            ))}
+                          </select>
+                        </FieldBlock>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : null}
 
               {isMeetingRequest ? (
                 <FieldBlock label="Reserved Assets">
@@ -2052,7 +2045,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
               ) : null}
 
               <div className="monitoring-detail-note-stack">
-                {!isMeetingRequest && !isTravelOrder ? (
+                {!isMeetingRequest && !isTravelOrder && !isBorrowingRequest ? (
                   <FieldBlock label="Resolution / Action Taken">
                     <textarea
                       className="input-base"
@@ -2075,17 +2068,19 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                     />
                   </FieldBlock>
                 ) : null}
-                <FieldBlock label={isMeetingRequest ? "Fulfillment / Setup Note" : "Fulfillment Note"}>
-                  <textarea
-                    className="input-base"
-                    style={textareaStyle}
-                    placeholder={isMeetingRequest ? "Fulfillment / Setup Note" : "Fulfillment Note"}
-                    value={fulfillmentNote}
-                    disabled={isMeetingRequest ? !isMeetingEditing : false}
-                    onChange={(event) => setFulfillmentNote(event.target.value)}
-                  />
-                </FieldBlock>
-                {!isMeetingRequest && !isTravelOrder ? (
+                {!isBorrowingRequest ? (
+                  <FieldBlock label={isMeetingRequest ? "Fulfillment / Setup Note" : "Fulfillment Note"}>
+                    <textarea
+                      className="input-base"
+                      style={textareaStyle}
+                      placeholder={isMeetingRequest ? "Fulfillment / Setup Note" : "Fulfillment Note"}
+                      value={fulfillmentNote}
+                      disabled={isMeetingRequest ? !isMeetingEditing : false}
+                      onChange={(event) => setFulfillmentNote(event.target.value)}
+                    />
+                  </FieldBlock>
+                ) : null}
+                {!isMeetingRequest && !isTravelOrder && !isBorrowingRequest ? (
                   <FieldBlock label="Cause / Action Taken">
                     <textarea
                       className="input-base"
@@ -2109,7 +2104,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 ) : null}
               </div>
 
-              {!isMeetingRequest && !isTravelOrder ? (
+              {!isMeetingRequest && !isTravelOrder && !isBorrowingRequest ? (
                 <label className="monitoring-detail-toggle">
                   <input type="checkbox" checked={majorIncident} onChange={(event) => setMajorIncident(event.target.checked)} />
                   <span>Major incident</span>
