@@ -825,6 +825,7 @@ export default function HardwareInventoryPage() {
           }
           inputRef={imageInputRef}
           accept="image/*"
+          sourcePicker
           onFileChange={(file) => setSelectedImageFiles(file ? [file] : [])}
           file={selectedImageFile}
           hasAttachment={Boolean(selectedImageFile)}
@@ -908,6 +909,7 @@ export default function HardwareInventoryPage() {
           }
           inputRef={batteryImageInputRef}
           accept="image/*"
+          sourcePicker
           onFileChange={(file) =>
             setDroneKitComponentImageFiles((prev) => ({ ...prev, battery: file }))
           }
@@ -981,6 +983,7 @@ export default function HardwareInventoryPage() {
           }
           inputRef={propellerImageInputRef}
           accept="image/*"
+          sourcePicker
           onFileChange={(file) =>
             setDroneKitComponentImageFiles((prev) => ({ ...prev, propeller: file }))
           }
@@ -1070,6 +1073,7 @@ export default function HardwareInventoryPage() {
           }
           inputRef={chargerImageInputRef}
           accept="image/*"
+          sourcePicker
           onFileChange={(file) =>
             setDroneKitComponentImageFiles((prev) => ({ ...prev, charger: file }))
           }
@@ -1159,6 +1163,7 @@ export default function HardwareInventoryPage() {
           }
           inputRef={controllerImageInputRef}
           accept="image/*"
+          sourcePicker
           onFileChange={(file) =>
             setDroneKitComponentImageFiles((prev) => ({ ...prev, controller: file }))
           }
@@ -1258,6 +1263,7 @@ export default function HardwareInventoryPage() {
               label="Component Image (optional)"
               inputRef={monitorImageInputRef}
               accept="image/*"
+              sourcePicker
               onFileChange={(file) => setDesktopComponentImageFiles((prev) => ({ ...prev, monitor: file }))}
               file={desktopComponentImageFiles.monitor}
               hasAttachment={Boolean(desktopComponentImageFiles.monitor)}
@@ -1330,6 +1336,7 @@ export default function HardwareInventoryPage() {
               label="Component Image (optional)"
               inputRef={mouseImageInputRef}
               accept="image/*"
+              sourcePicker
               onFileChange={(file) => setDesktopComponentImageFiles((prev) => ({ ...prev, mouse: file }))}
               file={desktopComponentImageFiles.mouse}
               hasAttachment={Boolean(desktopComponentImageFiles.mouse)}
@@ -1402,6 +1409,7 @@ export default function HardwareInventoryPage() {
               label="Component Image (optional)"
               inputRef={keyboardImageInputRef}
               accept="image/*"
+              sourcePicker
               onFileChange={(file) => setDesktopComponentImageFiles((prev) => ({ ...prev, keyboard: file }))}
               file={desktopComponentImageFiles.keyboard}
               hasAttachment={Boolean(desktopComponentImageFiles.keyboard)}
@@ -1521,6 +1529,7 @@ export default function HardwareInventoryPage() {
               label="Component Image (optional)"
               inputRef={systemUnitImageInputRef}
               accept="image/*"
+              sourcePicker
               onFileChange={(file) => setDesktopComponentImageFiles((prev) => ({ ...prev, systemUnit: file }))}
               file={desktopComponentImageFiles.systemUnit}
               hasAttachment={Boolean(desktopComponentImageFiles.systemUnit)}
@@ -2680,6 +2689,7 @@ export default function HardwareInventoryPage() {
               }
               inputRef={imageInputRef}
               accept="image/*"
+              sourcePicker
               multiple
               onFileChange={(file) => setSelectedImageFiles(file ? [file] : [])}
               onFilesChange={(files) => setSelectedImageFiles(files)}

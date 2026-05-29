@@ -4358,6 +4358,47 @@ select.status-select optgroup {
   color: var(--brand-900);
 }
 
+.file-card-source-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 172px;
+  background: var(--dropdown-menu-bg);
+  border: 1px solid var(--dropdown-menu-border);
+  border-radius: 10px;
+  box-shadow: var(--dropdown-card-outline), var(--dropdown-card-shadow);
+  padding: 4px;
+  display: grid;
+  gap: 2px;
+}
+
+.file-card-source-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--dropdown-row-radius);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+  text-align: left;
+  line-height: 1;
+}
+
+.file-card-source-option:hover {
+  background: var(--dropdown-menu-hover-bg);
+}
+
+.file-card-source-option:focus-visible {
+  outline: none;
+  background: var(--dropdown-menu-hover-bg);
+}
+
 .file-card-field.is-compact {
   gap: 6px;
 }
@@ -7752,6 +7793,10 @@ select.status-select optgroup {
 :root[data-theme="dark"] .file-card-icon-btn:focus-visible {
   background: rgba(var(--brand-900-rgb), 0.12);
   color: var(--brand-500);
+}
+
+:root[data-theme="dark"] .file-card-source-option {
+  color: var(--foreground);
 }
 
 :root[data-theme="dark"] .register-pill-tabs {
