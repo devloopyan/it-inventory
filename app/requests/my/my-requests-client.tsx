@@ -6,7 +6,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useCurrentUser } from "@/app/current-user-context";
 import { formatRequesterRequestType } from "@/lib/requestDisplay";
-import { MONITORING_TRAVEL_ORDER_CATEGORY, MONITORING_MEETING_REQUEST_CATEGORY, MONITORING_BORROWING_REQUEST_CATEGORY } from "@/lib/monitoring";
+import { MONITORING_TRAVEL_ORDER_CATEGORY, MONITORING_MEETING_REQUEST_CATEGORY, MONITORING_BORROWING_REQUEST_CATEGORY, normalizeMeetingRequestStatusValue, getMeetingRequestStatusTone } from "@/lib/monitoring";
 
 function normalizeName(value?: string) {
   return value?.trim().toLowerCase() ?? "";
@@ -120,6 +120,14 @@ function getCardDescription(request: {
     return cleaned.slice(0, 140) || null;
   }
   return null;
+}
+
+function getMeetingStatusPillStyle(tone: string) {
+  if (tone === "blue")   return { background: "#dbeafe", color: "#1d4ed8" };
+  if (tone === "amber")  return { background: "#fef3c7", color: "#92400e" };
+  if (tone === "violet") return { background: "#ede9fe", color: "#5b21b6" };
+  if (tone === "green")  return { background: "#dcfce7", color: "#166534" };
+  return { background: "#e5e7eb", color: "#374151" };
 }
 
 function isArchivedStatus(status: string) {
@@ -311,13 +319,12 @@ export default function MyRequestsClient() {
                       ) : null}
                     </>
                   ) : (
-                    <>
-                      <span className="mr-card-tag"># {request.ticketNumber}</span>
-                      <span className="mr-card-tag"># {request.category}</span>
-                      {request.sharedTripId ? (
-                        <span className="mr-card-tag mr-card-tag--shared"># Shared Trip</span>
-                      ) : null}
-                    </>
+                    <span
+                      className="mr-card-tag"
+                      style={getMeetingStatusPillStyle(getMeetingRequestStatusTone(request.status))}
+                    >
+                      # {normalizeMeetingRequestStatusValue(request.status)}
+                    </span>
                   )}
                 </div>
 

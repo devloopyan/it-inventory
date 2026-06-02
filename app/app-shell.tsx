@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import {
   MONITORING_BORROWING_REQUEST_CATEGORY,
   MONITORING_MEETING_REQUEST_CATEGORY,
@@ -235,15 +236,31 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
     }))
     .filter((section) => section.items.length > 0);
   const pathnameSegments = pathname?.split("/").filter(Boolean) ?? [];
+  const myRequestTicketId =
+    pathnameSegments[0] === "requests" &&
+    pathnameSegments[1] === "my" &&
+    pathnameSegments[2]
+      ? (pathnameSegments[2] as Id<"monitoringTickets">)
+      : null;
+  const myRequestDetail = useQuery(
+    api.monitoring.getById,
+    myRequestTicketId ? { ticketId: myRequestTicketId } : "skip",
+  );
   const accountMenuOpen = Boolean(pathname && accountMenuPath === pathname);
   const breadcrumbs = [
     { href: "/dashboard", label: "Dashboard", isCurrent: pathname === "/dashboard" || pathnameSegments.length === 0 },
     ...pathnameSegments
-      .map((segment, index) => ({
-        href: `/${pathnameSegments.slice(0, index + 1).join("/")}`,
-        label: formatBreadcrumbLabel(segment, index, pathnameSegments),
-        isCurrent: index === pathnameSegments.length - 1,
-      }))
+      .map((segment, index) => {
+        let label = formatBreadcrumbLabel(segment, index, pathnameSegments);
+        if (myRequestTicketId && segment === myRequestTicketId) {
+          label = myRequestDetail?.ticket?.ticketNumber ?? "Request";
+        }
+        return {
+          href: `/${pathnameSegments.slice(0, index + 1).join("/")}`,
+          label,
+          isCurrent: index === pathnameSegments.length - 1,
+        };
+      })
       .filter((crumb) => crumb.href !== "/dashboard"),
   ];
 

@@ -297,6 +297,12 @@ const locationFilterSelectOptions: ReadonlyArray<ChecklistSelectOption> = [
   ...locationSelectOptions,
 ];
 
+const categoryFilterSelectOptions: ReadonlyArray<ChecklistSelectOption> = [
+  { value: "master", label: "All" },
+  { value: "workstation", label: "Workstation" },
+  { value: "storage", label: "Storage" },
+];
+
 const DRONE_KIT_DEFAULT_DEPARTMENT = "IT OPERATIONS";
 const masterTableViews: Array<{ key: Exclude<MasterTableView, "master">; label: string }> = [
   { key: "workstation", label: "Workstation" },
@@ -620,7 +626,7 @@ export default function HardwareInventoryPage() {
   const selectedImageFile = selectedImageFiles[0] ?? null;
 
   const hasActiveMasterFilters = Boolean(
-    search.trim() || assetTypeFilter.length || statusFilter || locationFilter,
+    search.trim() || assetTypeFilter.length || statusFilter || locationFilter || masterTableView !== "master",
   );
 
   const result = useQuery(api.hardwareInventory.list, {
@@ -1712,6 +1718,7 @@ export default function HardwareInventoryPage() {
 
   function resetMasterFilters() {
     setSearch("");
+    setMasterTableView("master");
     setAssetTypeFilter([]);
     setStatusFilter("");
     setLocationFilter("");
@@ -2160,43 +2167,37 @@ export default function HardwareInventoryPage() {
         {!isRegisterCollapsed ? (
           <div id="hardware-register-form-panel" className="hardware-register-body">
             <div className="register-tab-stack hardware-register-tab-stack">
-              <div className="operations-reference-tabs register-pill-tabs">
+              <div className="operations-reference-tabs">
                 <button
                   type="button"
-                  className={`operations-reference-tab register-pill-tab ${registerMode === "general" ? "is-active active" : ""}`}
+                  className={`operations-reference-tab ${registerMode === "general" ? "is-active" : ""}`}
                   onClick={() => {
                     setRegisterMode("general");
                     setSpecTier("");
                   }}
                 >
-                  <span className="register-pill-tab-inner">
-                    <span>General Asset</span>
-                  </span>
+                  General Asset
                 </button>
                 <button
                   type="button"
-                  className={`operations-reference-tab register-pill-tab ${registerMode === "workstation" ? "is-active active" : ""}`}
+                  className={`operations-reference-tab ${registerMode === "workstation" ? "is-active" : ""}`}
                   onClick={() => {
                     setRegisterMode("workstation");
                     setForm((prev) => ({ ...prev, assetType: workstationType }));
                   }}
                 >
-                  <span className="register-pill-tab-inner">
-                    <span>Add Workstation</span>
-                  </span>
+                  Add Workstation
                 </button>
                 <button
                   type="button"
-                  className={`operations-reference-tab register-pill-tab ${registerMode === "droneKit" ? "is-active active" : ""}`}
+                  className={`operations-reference-tab ${registerMode === "droneKit" ? "is-active" : ""}`}
                   onClick={() => {
                     setRegisterMode("droneKit");
                     setSpecTier("");
                     setForm((prev) => ({ ...prev, assetType: "Drone" }));
                   }}
                 >
-                  <span className="register-pill-tab-inner">
-                    <span>Add Drone Kit</span>
-                  </span>
+                  Add Drone Kit
                 </button>
               </div>
               {registerMode === "workstation" ? (
@@ -2817,6 +2818,20 @@ export default function HardwareInventoryPage() {
                 }}
               />
             </div>
+            <div className="asset-master-toolbar-filter asset-master-toolbar-filter-category">
+              <ChecklistSelect
+                value={masterTableView}
+                options={categoryFilterSelectOptions}
+                placeholder="Category"
+                ariaLabel="Filter by category"
+                compact
+                minMenuWidth={148}
+                onChange={(value) => {
+                  setMasterTableView((value || "master") as MasterTableView);
+                  setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+                }}
+              />
+            </div>
             <div className="asset-master-toolbar-filter asset-master-toolbar-filter-type">
               <ChecklistSelect
                 values={assetTypeFilter}
@@ -2871,27 +2886,6 @@ export default function HardwareInventoryPage() {
               <span aria-hidden="true">×</span>
               <span>Clear filters</span>
             </button>
-          </div>
-          <div className="asset-master-toolbar-right">
-            <div className="asset-master-view-filters" aria-label="Asset master quick filters">
-              {masterToolbarViews.map((view) => {
-                const active = masterTableView === view.key;
-                return (
-                  <button
-                    key={view.key}
-                    type="button"
-                    aria-pressed={active}
-                    className={`asset-master-view-filter${active ? " active" : ""}`}
-                    onClick={() => {
-                      setMasterTableView(view.key);
-                      setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
-                    }}
-                  >
-                    {view.label}
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
 

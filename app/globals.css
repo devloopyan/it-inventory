@@ -131,7 +131,7 @@
   --card-soft-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
   --interaction-duration: 140ms;
   --interaction-ease: ease-out;
-  --sidebar-width: 224px;
+  --sidebar-width: 256px;
   --sidebar-collapsed-width: 58px;
   --topbar-height: 54px;
 }
@@ -2099,7 +2099,11 @@ a {
 
 .request-selected-assets {
   display: grid;
-  gap: 12px;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
 }
 
 .request-selected-assets-head {
@@ -2107,11 +2111,14 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  padding: 15px 20px 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .request-selected-assets-head h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .request-selected-asset-list {
@@ -2447,30 +2454,6 @@ a {
   color: var(--muted);
 }
 
-.my-request-detail-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.my-request-detail-summary > div {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-subtle);
-}
-
-.my-request-detail-summary span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.my-request-detail-summary strong {
-  color: var(--text);
-}
 
 .my-request-detail-grid {
   display: grid;
@@ -2497,135 +2480,27 @@ a {
   color: var(--text);
 }
 
-.my-request-progress {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
 
-.my-request-progress-step {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-subtle);
-  color: var(--muted-strong);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.my-request-progress-marker {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: #e5e7eb;
-  color: #475569;
-  font-size: 12px;
-}
-
-.my-request-progress-step.is-complete,
-.my-request-progress-step.is-current {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.my-request-progress-step.is-complete .my-request-progress-marker,
-.my-request-progress-step.is-current .my-request-progress-marker {
-  background: #3b82f6;
-  color: #ffffff;
-}
-
-/* ── Progress bar (My Request detail) ──────────────────── */
-.req-progress-bar {
-  position: relative;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 0 0 36px;
-}
-
-.req-progress-track {
-  position: absolute;
-  top: 19px;
-  left: 19px;
-  right: 19px;
-  height: 2px;
-  background: #e2e8f0;
-}
-
-.req-progress-fill {
-  height: 100%;
-  background: var(--color-primary-700, #4f6cf7);
-  transition: width 0.4s ease;
-}
-
-.req-progress-node {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  z-index: 1;
-}
-
-.req-progress-circle {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: #fff;
-  color: #9ca3af;
-  border: 1.5px solid #d1d5db;
-  display: grid;
-  place-items: center;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.req-progress-circle.is-done {
-  background: var(--color-primary-700, #4f6cf7);
-  color: #fff;
-  border-color: var(--color-primary-700, #4f6cf7);
-}
-
-.req-progress-circle.is-current {
-  background: #fff;
-  color: var(--color-primary-700, #4f6cf7);
-  border: 2px solid var(--color-primary-700, #4f6cf7);
-}
-
-.req-progress-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: #9ca3af;
-  white-space: nowrap;
-  position: absolute;
-  top: 48px;
-  text-align: center;
-}
-
-.req-progress-label.is-current {
-  color: var(--foreground);
-  font-weight: 700;
-}
-
-.req-progress-label.is-done {
-  color: var(--foreground);
-  font-weight: 600;
-}
 
 .my-request-detail-block {
   display: grid;
-  gap: 8px;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
 }
 
 .my-request-detail-block h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 15px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.my-request-detail-block > *:not(h2) {
+  padding: 18px 20px;
 }
 
 .my-request-detail-block p {
@@ -14016,7 +13891,7 @@ select.status-select optgroup {
 
 .mr-card {
   background: var(--surface);
-  border-radius: 20px;
+  border-radius: 12px;
   padding: 20px;
   display: grid;
   gap: 12px;
@@ -17072,12 +16947,7 @@ select.status-select optgroup {
     justify-items: start;
   }
 
-  .my-request-detail-summary {
-    grid-template-columns: 1fr;
-  }
-
-  .my-request-detail-grid,
-  .my-request-progress {
+  .my-request-detail-grid {
     grid-template-columns: 1fr;
   }
 

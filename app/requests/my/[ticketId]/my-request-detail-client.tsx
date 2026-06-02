@@ -27,6 +27,21 @@ function formatDateTime(value?: number) {
   });
 }
 
+function getStatusBadgeStyle(status: string) {
+  const s = status.toLowerCase();
+  if (s.includes("closed") || s.includes("done") || s.includes("fulfilled") || s.includes("resolved") || s.includes("meeting held"))
+    return { background: "#dcfce7", color: "#166534" };
+  if (s.includes("assigned") || s.includes("approved") || s.includes("monitoring"))
+    return { background: "#dcfce7", color: "#166534" };
+  if (s.includes("new"))
+    return { background: "#dbeafe", color: "#1d4ed8" };
+  if (s.includes("progress") || s.includes("pending") || s.includes("investigating") || s.includes("reserved") || s.includes("claimed"))
+    return { background: "#fef3c7", color: "#92400e" };
+  if (s.includes("cancel") || s.includes("reject"))
+    return { background: "#fee2e2", color: "#991b1b" };
+  return { background: "#e5e7eb", color: "#374151" };
+}
+
 type ParsedDetails = {
   notes: string[];
   pairs: Array<{ key: string; value: string }>;
@@ -209,7 +224,7 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
   if (detail === undefined) {
     return (
       <div className="request-page">
-        <section className="panel request-page-panel">
+        <section className="request-page-panel">
           <div className="request-empty-state">
             <div className="request-empty-title">Loading request...</div>
           </div>
@@ -221,7 +236,7 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
   if (!ticket || !isOwnRequest) {
     return (
       <div className="request-page">
-        <section className="panel request-page-panel">
+        <section className="request-page-panel">
           <div className="request-page-head">
             <div>
               <h1 className="request-page-title">Request Not Available</h1>
@@ -245,60 +260,78 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
     approvalRequired: ticket.approvalRequired,
   });
   const progressIndex = resolveProgressIndex(progressSteps, ticket.status);
+  const isBorrowing = ticket.category === MONITORING_BORROWING_REQUEST_CATEGORY;
 
   return (
     <div className="request-page">
-      <section className="panel request-page-panel">
+      <section className="request-page-panel">
         <div className="request-page-head">
           <div>
             <h1 className="request-page-title">{ticket.ticketNumber}</h1>
-            <p className="request-page-subtitle">{ticket.title}</p>
+            <p className="request-page-subtitle">
+              {ticket.category}
+              {" · "}
+              {ticket.createdBy}
+              {ticket.borrowingItems?.[0]?.assetTag ? ` · ${ticket.borrowingItems[0].assetTag}` : null}
+            </p>
           </div>
-          <Link href="/requests/my" className="btn-secondary">
+          <Link href="/requests/my" className="btn-secondary" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 12H5M12 5l-7 7 7 7"/>
+            </svg>
             Back
           </Link>
         </div>
 
-        <div className="my-request-detail-summary">
-          <div>
-            <span>Status</span>
-            <strong>{ticket.status}</strong>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 4 }}>
+          <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "13px 16px" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.7px", color: "var(--muted)", marginBottom: 6 }}>Status</div>
+            <span style={{ ...getStatusBadgeStyle(ticket.status), display: "inline-block", padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+              {ticket.status}
+            </span>
           </div>
-          <div>
-            <span>Request Type</span>
-            <strong>{formatRequesterRequestType(ticket)}</strong>
+          <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "13px 16px" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.7px", color: "var(--muted)", marginBottom: 6 }}>Request Type</div>
+            <span style={{ background: "#eff4ff", color: "#2563eb", display: "inline-block", padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+              {formatRequesterRequestType(ticket)}
+            </span>
           </div>
-          <div>
-            <span>Submitted</span>
-            <strong>{formatDateTime(ticket.createdAt)}</strong>
-          </div>
-          <div>
-            <span>{ticket.expectedReturnAt ? "Expected Return" : "Approval"}</span>
-            <strong>{ticket.expectedReturnAt ? formatDateTime(ticket.expectedReturnAt) : ticket.approvalStage}</strong>
+          <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "13px 16px" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.7px", color: "var(--muted)", marginBottom: 6 }}>Submitted</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{formatDateTime(ticket.createdAt)}</div>
           </div>
         </div>
 
         <section className="my-request-detail-block">
           <h2>Progress</h2>
-          <div className="req-progress-bar" aria-label="Request progress">
-            {/* Connecting track line */}
-            <div className="req-progress-track">
-              <div
-                className="req-progress-fill"
-                style={{
-                  width: progressSteps.length <= 1
-                    ? "100%"
-                    : `${(progressIndex / (progressSteps.length - 1)) * 100}%`,
-                }}
-              />
-            </div>
-            {/* Step nodes */}
+          <div style={{ display: "flex", alignItems: "flex-start", padding: "20px 16px 16px" }} aria-label="Request progress">
             {progressSteps.map((step, index) => {
               const isDone = index < progressIndex;
               const isCurrent = index === progressIndex;
+              const isLast = index === progressSteps.length - 1;
               return (
-                <div key={step.label} className="req-progress-node">
-                  <div className={`req-progress-circle${isDone ? " is-done" : isCurrent ? " is-current" : ""}`}>
+                <div key={step.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
+                  {!isLast && (
+                    <div style={{
+                      position: "absolute",
+                      top: 15,
+                      left: "calc(50% + 17px)",
+                      right: "calc(-50% + 17px)",
+                      height: 2,
+                      background: isDone ? "#22c55e" : "var(--border)",
+                      zIndex: 0,
+                    }} />
+                  )}
+                  <div style={{
+                    width: 32, height: 32,
+                    borderRadius: "50%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 12, fontWeight: 700,
+                    border: `2px solid ${isDone ? "#22c55e" : isCurrent ? "var(--foreground)" : "var(--border)"}`,
+                    background: isDone ? "#22c55e" : isCurrent ? "var(--foreground)" : "var(--surface)",
+                    color: isDone || isCurrent ? "#fff" : "var(--muted)",
+                    position: "relative", zIndex: 1,
+                  }}>
                     {isDone ? (
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -307,7 +340,13 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
                       <span>{index + 1}</span>
                     )}
                   </div>
-                  <span className={`req-progress-label${isCurrent ? " is-current" : isDone ? " is-done" : ""}`}>
+                  <span style={{
+                    marginTop: 8,
+                    fontSize: 11.5, fontWeight: 600,
+                    color: isDone ? "#22c55e" : isCurrent ? "var(--foreground)" : "var(--muted)",
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                  }}>
                     {step.label}
                   </span>
                 </div>
@@ -322,11 +361,49 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
               <h2>{assetLabel}</h2>
               <span className="request-type-status">{ticket.borrowingItems.length}</span>
             </div>
-            <div className="request-selected-asset-list">
+            <div style={{ display: "grid", gap: 8, padding: "16px 20px" }}>
               {ticket.borrowingItems.map((item) => (
-                <div key={String(item.assetId)} className="request-selected-asset-row">
-                  <strong>{item.assetTag}</strong>
-                  <span>{item.assetLabel}</span>
+                <div key={String(item.assetId)} style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "12px 14px",
+                  background: "var(--surface-subtle)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                }}>
+                  <div style={{
+                    width: 40, height: 40, flexShrink: 0,
+                    borderRadius: 9,
+                    background: "#dcfce7",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#166534",
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M3 18v-6a9 9 0 0 1 18 0v6"/>
+                      <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <span style={{
+                      fontFamily: "monospace",
+                      fontSize: 11, fontWeight: 500,
+                      color: "#166534", background: "#dcfce7",
+                      borderRadius: 4, padding: "2px 6px",
+                      display: "inline-block", marginBottom: 3,
+                    }}>
+                      {item.assetTag}
+                    </span>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--foreground)" }}>{item.assetLabel}</div>
+                  </div>
+                  {item.releaseCondition ? (
+                    <span style={{
+                      marginLeft: "auto", flexShrink: 0,
+                      fontSize: 11.5, fontWeight: 700,
+                      color: "#166534", background: "#dcfce7",
+                      borderRadius: 20, padding: "4px 11px",
+                    }}>
+                      ✓ {item.releaseCondition}
+                    </span>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -359,7 +436,27 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
 
         <section className="my-request-detail-block">
           <h2>Request Details</h2>
-          <DetailsBlock text={ticket.requestDetails} />
+          {isBorrowing ? (
+            <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+              {[
+                { label: "Purpose", value: ticket.requestDetails.split(/\r?\n/)[0]?.trim() || "-", mono: false },
+                { label: "Requested Date", value: ticket.requestedBorrowDate ? formatDateTime(ticket.requestedBorrowDate) : "-", mono: true },
+                { label: "Expected Return", value: ticket.expectedReturnAt ? formatDateTime(ticket.expectedReturnAt) : "-", mono: true },
+              ].map(({ label, value, mono }, i, arr) => (
+                <div key={label} style={{
+                  display: "flex", alignItems: "center",
+                  padding: "12px 16px", gap: 12,
+                  borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none",
+                  background: "var(--surface)",
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", minWidth: 130 }}>{label}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--foreground)", fontFamily: mono ? "monospace" : "inherit" }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <DetailsBlock text={ticket.requestDetails} />
+          )}
         </section>
 
         {approvalHistory.length ? (
@@ -400,7 +497,14 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
               ))}
             </div>
           ) : (
-            <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>No attachments uploaded.</p>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: 28, color: "var(--muted)" }}>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: "var(--surface-subtle)", border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                </svg>
+              </div>
+              <p style={{ fontSize: 13, fontWeight: 600, margin: 0 }}>No attachments uploaded.</p>
+            </div>
           )}
         </section>
       </section>
