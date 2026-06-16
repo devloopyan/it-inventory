@@ -41,7 +41,7 @@ type DashboardCalendarEvent = {
   meetingLocation?: string;
   workflowType: string;
   category: string;
-  eventKind: "meeting" | "ticket" | "borrowing" | "internet" | "support";
+  eventKind: "meeting" | "ticket" | "borrowing" | "internet" | "support" | "travel";
   eventStartAt: number;
   eventEndAt?: number;
   status: string;
@@ -325,6 +325,8 @@ function getDashboardCalendarEventClass(event: DashboardCalendarEvent) {
       return "is-borrowing";
     case "support":
       return "is-support";
+    case "travel":
+      return "is-travel";
     case "ticket":
     default:
       return "is-ticket";
@@ -341,6 +343,8 @@ function getDashboardCalendarEventKindLabel(event: DashboardCalendarEvent) {
       return "Borrowing Request";
     case "support":
       return "IT Support";
+    case "travel":
+      return "Travel Order";
     case "ticket":
     default:
       return "Ticket";
@@ -535,6 +539,12 @@ export default function DashboardPage() {
     (currentRole === "approver" || currentServiceGroups.includes("OSMD"));
   const shouldLoadHardwareDashboardData = currentRole === "requester" || hasItDashboardAccess;
   const shouldLoadSupportCalendar = !isHrAdminCalendarOnlyDashboard;
+  // Travel order calendar visibility:
+  //  - admins and approvers (team leaders/managers): see ALL travel orders
+  //  - everyone else: see only travel orders filed within their own SECTION (their own + teammates')
+  const viewerSection = currentUser?.section ?? "";
+  const travelTeamScope: "all" | "section" =
+    currentRole === "admin" || currentRole === "approver" ? "all" : "section";
   const [calendarMonth, setCalendarMonth] = useState(() => getCalendarMonthStart(new Date()));
   const [selectedMeetingDay, setSelectedMeetingDay] = useState(() => getCalendarDateKey(new Date()));
   const [scheduleWeekOffset, setScheduleWeekOffset] = useState(0);
@@ -560,11 +570,13 @@ export default function DashboardPage() {
   const monitoringCalendarFeed = useQuery(api.monitoring.getMeetingCalendar, {
     rangeStart: meetingCalendarRange.gridStart.getTime(),
     rangeEnd: meetingCalendarRange.gridEnd.getTime(),
+    viewerUsername: currentUser?.username,
   }) as DashboardCalendarEvent[] | undefined;
   const scheduleWeekStart = getScheduleWeekStart(scheduleWeekOffset);
   const scheduleWeekFeed = useQuery(api.monitoring.getMeetingCalendar, {
     rangeStart: scheduleWeekStart.getTime(),
     rangeEnd: scheduleWeekStart.getTime() + 7 * 24 * 60 * 60 * 1000,
+    viewerUsername: currentUser?.username,
   }) as DashboardCalendarEvent[] | undefined;
   const monitoringOverview = useQuery(api.monitoring.getOverview, hasItDashboardAccess ? {} : "skip");
   const supportCalendarFeed = useQuery(
@@ -628,9 +640,16 @@ export default function DashboardPage() {
   }, [monitoringCalendarFeed, shouldLoadSupportCalendar, supportCalendarFeed]);
   const dashboardCalendarFeed = useMemo(() => {
     if (calendarFeed === undefined) return undefined;
-    if (!isHrAdminCalendarOnlyDashboard) return calendarFeed;
-    return calendarFeed.filter((event) => getServiceGroupForCategory(event.category) === "HR/Admin");
-  }, [calendarFeed, isHrAdminCalendarOnlyDashboard]);
+    // Scope travel orders to the viewer's level in the org hierarchy.
+    const teamScoped =
+      travelTeamScope === "all"
+        ? calendarFeed
+        : calendarFeed.filter(
+            (event) => event.eventKind !== "travel" || (event.requesterSection ?? "") === viewerSection,
+          );
+    if (!isHrAdminCalendarOnlyDashboard) return teamScoped;
+    return teamScoped.filter((event) => getServiceGroupForCategory(event.category) === "HR/Admin");
+  }, [calendarFeed, isHrAdminCalendarOnlyDashboard, travelTeamScope, viewerSection]);
 
   useEffect(() => {
     const selectedDate = parseCalendarDateKey(selectedMeetingDay);
@@ -1063,10 +1082,16 @@ export default function DashboardPage() {
   const requesterUpcomingMeetings = useMemo(
     () =>
       (calendarFeed ?? [])
+        .filter(
+          (event) =>
+            travelTeamScope === "all" ||
+            event.eventKind !== "travel" ||
+            (event.requesterSection ?? "") === viewerSection,
+        )
         .filter((event) => event.eventStartAt >= Date.now())
         .sort((left, right) => left.eventStartAt - right.eventStartAt)
         .slice(0, 5),
-    [calendarFeed],
+    [calendarFeed, travelTeamScope, viewerSection],
   );
   const requesterBorrowingListRows = useMemo(
     () =>

@@ -25,6 +25,11 @@ export default defineSchema({
     name: v.string(),
     active: v.boolean(),
     createdAt: v.number(),
+    // Department leadership — the Team Leader and Manager of this department.
+    // Shared across approval processes (Travel Orders today, more later).
+    // Stored as usernames so they survive display-name changes.
+    teamLeaderUsername: v.optional(v.string()),
+    managerUsername: v.optional(v.string()),
   }).index("by_active", ["active"]),
   assets: defineTable({
     assetTag: v.string(),
@@ -166,6 +171,9 @@ export default defineSchema({
     requesterName: v.string(),
     requesterSection: v.optional(v.string()),
     requesterDepartment: v.optional(v.string()),
+    // Requester's account username — used to route Travel Order approvals
+    // (so a requester who is their own Team Leader/Manager skips that step).
+    requesterUsername: v.optional(v.string()),
     requestReceivedAt: v.number(),
     assetId: v.optional(v.id("hardwareInventory")),
     assetTag: v.optional(v.string()),
@@ -241,6 +249,22 @@ export default defineSchema({
     fleetAssignedBy: v.optional(v.string()),
     // Travel Order: extended trip status (separate from generic system status)
     travelOrderStatus: v.optional(v.string()),
+    // Travel Order approval chain (snapshot taken at submit time): the ordered
+    // steps Team Leader → Manager → HR Fleet Manager, minus steps the requester fills.
+    travelApprovalChain: v.optional(
+      v.array(
+        v.object({
+          role: v.string(),
+          approverUsername: v.optional(v.string()),
+          status: v.string(),
+          decidedByName: v.optional(v.string()),
+          decidedByUsername: v.optional(v.string()),
+          decidedAt: v.optional(v.number()),
+          reference: v.optional(v.string()),
+          note: v.optional(v.string()),
+        }),
+      ),
+    ),
     // ETA & delay tracking
     estimatedArrivalTime: v.optional(v.number()),
     etaUpdatedAt: v.optional(v.number()),
@@ -252,9 +276,15 @@ export default defineSchema({
     cancelledBy: v.optional(v.string()),
     cancelledByRole: v.optional(v.string()),
     cancelledAt: v.optional(v.number()),
+    // Scheduled departure timestamp (for fleet availability / overlap checks)
+    travelDepartAt: v.optional(v.number()),
     // Travel return tracking
     travelReturnAt: v.optional(v.number()),
     travelReturnExtendedAt: v.optional(v.number()),
+    // Actual departure time recorded when the trip is marked as departed
+    actualDepartureTime: v.optional(v.number()),
+    // Actual arrival time recorded when the trip is marked complete
+    actualArrivalTime: v.optional(v.number()),
     // Multi-stop trip support
     tripMode: v.optional(v.string()),
     travelStops: v.optional(

@@ -129,6 +129,75 @@ export const checkFleetConflict = query({
   },
 });
 
+// Parse the scheduled departure timestamp from a travel order's request details
+// ("Departure: <date>"), as a fallback for older orders saved before travelDepartAt existed.
+function parseDepartureMs(requestDetails?: string): number | undefined {
+  const line = (requestDetails ?? "")
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => /^Departure:/i.test(entry));
+  if (!line) return undefined;
+  const ms = new Date(line.replace(/^Departure:\s*/i, "").trim()).getTime();
+  return Number.isNaN(ms) ? undefined : ms;
+}
+
+/**
+ * For a chosen [from, to] window, returns each driver and vehicle with whether it is
+ * available — i.e. not out of service and not already booked on an overlapping travel order.
+ * Lets managers/team leaders see what's bookable for a planned trip date/time.
+ */
+export const getFleetAvailability = query({
+  args: {
+    from: v.number(),
+    to: v.number(),
+  },
+  handler: async (ctx, { from, to }) => {
+    const drivers = await ctx.db.query("fleetDrivers").withIndex("by_updatedAt").order("desc").collect();
+    const vehicles = await ctx.db.query("fleetVehicles").withIndex("by_updatedAt").order("desc").collect();
+    const tickets = await ctx.db.query("monitoringTickets").collect();
+
+    const CANCELLED = new Set(["Cancelled", "Canceled"]);
+    // Travel orders with a fleet assignment whose departure→return window overlaps [from, to].
+    const overlapping = tickets.filter((t) => {
+      if (t.category !== "Travel Order") return false;
+      if (!t.fleetDriverId && !t.fleetVehicleId) return false;
+      if (CANCELLED.has(t.status) || t.travelOrderStatus === "CANCELLED") return false;
+      const start = t.travelDepartAt ?? parseDepartureMs(t.requestDetails);
+      if (start === undefined) return false;
+      const end = t.travelReturnAt ?? start;
+      return start <= to && end >= from;
+    });
+
+    return {
+      drivers: drivers.map((d) => {
+        const outOfService = d.status === "Unavailable";
+        const trip = outOfService ? undefined : overlapping.find((t) => t.fleetDriverId === d._id);
+        return {
+          _id: d._id,
+          name: d.name,
+          status: d.status,
+          available: !outOfService && !trip,
+          outOfService,
+          conflict: trip ? { ticketNumber: trip.ticketNumber, title: trip.title } : null,
+        };
+      }),
+      vehicles: vehicles.map((vh) => {
+        const outOfService = vh.status === "Unavailable" || vh.status === "Maintenance";
+        const trip = outOfService ? undefined : overlapping.find((t) => t.fleetVehicleId === vh._id);
+        return {
+          _id: vh._id,
+          name: vh.name,
+          plateNumber: vh.plateNumber,
+          status: vh.status,
+          available: !outOfService && !trip,
+          outOfService,
+          conflict: trip ? { ticketNumber: trip.ticketNumber, title: trip.title } : null,
+        };
+      }),
+    };
+  },
+});
+
 // ─── Driver CRUD ──────────────────────────────────────────────────────────────
 
 export const createDriver = mutation({
@@ -1004,6 +1073,7 @@ export const markTravelOrderDone = mutation({
     odometerEnd: v.optional(v.number()),
     odometerStartPhotoId: v.optional(v.id("_storage")),
     odometerEndPhotoId: v.optional(v.id("_storage")),
+    arrivalTime: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const ticket = await ctx.db.get(args.ticketId);
@@ -1041,6 +1111,7 @@ export const markTravelOrderDone = mutation({
       odometerEnd: args.odometerEnd,
       odometerStartPhotoId: args.odometerStartPhotoId,
       odometerEndPhotoId: args.odometerEndPhotoId,
+      actualArrivalTime: args.arrivalTime,
     });
 
     await sendTravelOrderNotification(ctx, {
@@ -1068,7 +1139,48 @@ export const markTravelOrderDone = mutation({
       ticketId: args.ticketId,
       ticketNumber: ticket.ticketNumber,
       event: "COMPLETED",
-      description: `Travel order marked complete by ${actorName}.`,
+      description: `Travel order marked complete by ${actorName}.${args.arrivalTime ? " Arrival time recorded." : ""}`,
+      actorName,
+      actorRole: "admin",
+    });
+
+    return { success: true };
+  },
+});
+
+// Record the actual time the trip departed (its own step before completion).
+export const markTravelOrderDeparted = mutation({
+  args: {
+    ticketId: v.id("monitoringTickets"),
+    actorName: v.string(),
+    departureTime: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const ticket = await ctx.db.get(args.ticketId);
+    if (!ticket) {
+      throw new Error("Travel order could not be found.");
+    }
+    if (ticket.category !== "Travel Order") {
+      throw new Error("This action is only available for Travel Orders.");
+    }
+    if (["Fulfilled", "Closed", "Done"].includes(ticket.status)) {
+      throw new Error("Cannot mark a completed or closed travel order as departed.");
+    }
+
+    const now = Date.now();
+    const actorName = normalizeRequired(args.actorName, "Actor name");
+
+    await ctx.db.patch(args.ticketId, {
+      actualDepartureTime: args.departureTime,
+      updatedAt: now,
+      updatedBy: actorName,
+    });
+
+    await logTravelOrderActivity(ctx, {
+      ticketId: args.ticketId,
+      ticketNumber: ticket.ticketNumber,
+      event: "DEPARTED",
+      description: `Travel order marked as departed by ${actorName}.`,
       actorName,
       actorRole: "admin",
     });

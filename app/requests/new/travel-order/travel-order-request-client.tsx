@@ -198,7 +198,7 @@ export default function TravelOrderRequestClient() {
       const actorName = currentUser?.displayName ?? trimmedRequesterName;
 
       if (!trimmedRequesterName) throw new Error("Requester name is required.");
-      if (!trimmedDepartment) throw new Error("Department is required.");
+      if (!trimmedDepartment) throw new Error("Team is required.");
       if (!trimmedTravelPurpose) throw new Error("Purpose of travel is required.");
       if (!trimmedProjectName) throw new Error("Project name is required.");
       if (!trimmedExpectedOutput) throw new Error("Expected output is required.");
@@ -221,6 +221,7 @@ export default function TravelOrderRequestClient() {
       let destinationText = "";
       let departureText = "";
       let returnText = "";
+      let travelDepartAt: number | undefined;
       let singleStopReturnAt: number | undefined;
       if (useMultiStop) {
         // Validate multi-stop
@@ -242,6 +243,8 @@ export default function TravelOrderRequestClient() {
         returnText = lastDropoff?.scheduledTime
           ? new Date(lastDropoff.scheduledTime).toLocaleString()
           : "See stops";
+        travelDepartAt = firstPickup?.scheduledTime ? toTimestamp(firstPickup.scheduledTime) ?? undefined : undefined;
+        singleStopReturnAt = lastDropoff?.scheduledTime ? toTimestamp(lastDropoff.scheduledTime) ?? undefined : undefined;
       } else {
         // Single-stop validation
         const trimmedDestination = destination.trim();
@@ -260,6 +263,7 @@ export default function TravelOrderRequestClient() {
         destinationText = trimmedDestination;
         departureText = new Date(departureTimestamp).toLocaleString();
         returnText = new Date(returnTimestamp).toLocaleString();
+        travelDepartAt = departureTimestamp;
         singleStopReturnAt = returnTimestamp;
       }
 
@@ -291,7 +295,7 @@ export default function TravelOrderRequestClient() {
       const requestSnapshot = [
         "Request type: Travel Order",
         `Requester: ${trimmedRequesterName}`,
-        `Department: ${trimmedDepartment}`,
+        `Team: ${trimmedDepartment}`,
         trimmedSection ? `Section: ${trimmedSection}` : null,
         `Destination: ${destinationText}`,
         `Passengers: ${passengersText}`,
@@ -314,6 +318,7 @@ export default function TravelOrderRequestClient() {
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
         requesterSection: trimmedSection || undefined,
+        requesterUsername: currentUser?.username || undefined,
         impact: "Single User",
         urgency: "Can Wait",
         attachments: attachmentStorageId
@@ -329,6 +334,7 @@ export default function TravelOrderRequestClient() {
             ]
           : undefined,
         createdBy: actorName,
+        travelDepartAt,
         travelReturnAt: singleStopReturnAt,
       });
 
@@ -365,16 +371,16 @@ export default function TravelOrderRequestClient() {
           </label>
 
           <label className="request-form-field">
-            <span>Department</span>
+            <span>Team</span>
             <input
               className="input-base"
               value={department}
               readOnly
-              placeholder="Enter department"
+              placeholder="Enter team"
             />
             {missingDepartment ? (
               <small className="request-form-help is-warning">
-                Department is missing from your account. Please contact HR/Admin.
+                Team is missing from your account. Please contact HR/Admin.
               </small>
             ) : null}
           </label>

@@ -21,6 +21,7 @@ export type SessionPayload = {
   displayName?: string;
   role?: string;
   serviceGroups?: string[];
+  approvalScopes?: string[];
   email?: string;
   department?: string;
   section?: string;
@@ -125,6 +126,7 @@ export async function createSessionToken(user?: SessionUser): Promise<SessionTok
     displayName: user?.displayName,
     role: user?.role,
     serviceGroups: user?.serviceGroups,
+    approvalScopes: user?.approvalScopes,
     email: user?.email,
     department: user?.department,
     section: user?.section,

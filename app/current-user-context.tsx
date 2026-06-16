@@ -7,6 +7,7 @@ export type CurrentUser = {
   username: string;
   role?: string;
   serviceGroups?: string[];
+  approvalScopes?: string[];
   department?: string;
   section?: string;
 };

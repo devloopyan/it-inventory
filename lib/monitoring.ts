@@ -107,6 +107,10 @@ export const MONITORING_APPROVAL_STAGES = [
   "Pending OSMD Manager",
   "Pending Department Approver",
   "Pending HR/Admin Approver",
+  // Travel Order role-based chain stages
+  "Pending Team Leader",
+  "Pending Manager",
+  "Pending HR Fleet Manager",
   "Approved",
   "For Revision",
 ] as const;
@@ -232,7 +236,70 @@ export function isPendingApprovalStage(stage?: string) {
   return stage === DEFAULT_APPROVAL_ROUTE.firstPendingStage ||
     stage === DEFAULT_APPROVAL_ROUTE.secondPendingStage ||
     stage === TRAVEL_ORDER_APPROVAL_ROUTE.firstPendingStage ||
-    stage === TRAVEL_ORDER_APPROVAL_ROUTE.secondPendingStage;
+    stage === TRAVEL_ORDER_APPROVAL_ROUTE.secondPendingStage ||
+    isTravelOrderPendingStage(stage);
+}
+
+// ── Travel Order role-based approval chain ──────────────────────────────────
+// The chain routes a Travel Order: Team Leader → Manager → HR Fleet Manager.
+// A requester who is already the Team Leader or Manager skips their own step.
+
+export const TRAVEL_ORDER_APPROVAL_ROLES = ["Team Leader", "Manager", "HR Fleet Manager"] as const;
+export type TravelOrderApprovalRole = (typeof TRAVEL_ORDER_APPROVAL_ROLES)[number];
+
+// approvalScopes tag marking a user as a designated HR Fleet Manager.
+export const TRAVEL_ORDER_FLEET_MANAGER_SCOPE = "travel_fleet_manager";
+
+export type TravelOrderApprovalStep = {
+  role: TravelOrderApprovalRole;
+  // For Team Leader / Manager this is the specific approver. The HR Fleet Manager
+  // step has no fixed person — any designated fleet manager may approve it.
+  approverUsername?: string;
+  status: string; // "Pending" | "Approved" | "For Revision"
+  decidedByName?: string;
+  decidedByUsername?: string;
+  decidedAt?: number;
+  reference?: string;
+  note?: string;
+};
+
+export function travelOrderPendingStage(role: TravelOrderApprovalRole) {
+  return `Pending ${role}`;
+}
+
+export function isTravelOrderPendingStage(stage?: string) {
+  return TRAVEL_ORDER_APPROVAL_ROLES.some((role) => travelOrderPendingStage(role) === stage);
+}
+
+// Build the ordered approval chain for a travel order, skipping any step the
+// requester themselves fills. The HR Fleet Manager step is always present.
+export function buildTravelOrderApprovalChain(args: {
+  requesterUsername?: string;
+  teamLeaderUsername?: string;
+  managerUsername?: string;
+}): TravelOrderApprovalStep[] {
+  const requester = args.requesterUsername?.trim() || undefined;
+  const teamLeader = args.teamLeaderUsername?.trim() || undefined;
+  const manager = args.managerUsername?.trim() || undefined;
+
+  const steps: TravelOrderApprovalStep[] = [];
+  if (teamLeader && teamLeader !== requester) {
+    steps.push({ role: "Team Leader", approverUsername: teamLeader, status: "Pending" });
+  }
+  if (manager && manager !== requester) {
+    steps.push({ role: "Manager", approverUsername: manager, status: "Pending" });
+  }
+  steps.push({ role: "HR Fleet Manager", status: "Pending" });
+  return steps;
+}
+
+// Resolve the human-readable approval stage from the current chain state.
+export function travelOrderStageForChain(chain?: TravelOrderApprovalStep[]): MonitoringApprovalStage {
+  if (!chain || chain.length === 0) return "Not Submitted";
+  if (chain.some((step) => step.status === "For Revision")) return "For Revision";
+  const nextPending = chain.find((step) => step.status === "Pending");
+  if (!nextPending) return "Approved";
+  return travelOrderPendingStage(nextPending.role) as MonitoringApprovalStage;
 }
 
 export function getMonitoringStatusOptions(workflowType: MonitoringWorkflowType) {

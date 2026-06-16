@@ -4860,6 +4860,13 @@ select.status-select optgroup {
   color: #b91c1c;
 }
 
+.dashboard-calendar-event-pill.is-travel,
+.dashboard-calendar-status-pill.is-travel {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.18);
+  color: #6d28d9;
+}
+
 .dashboard-calendar-head-actions {
   display: flex;
   align-items: center;
@@ -13159,8 +13166,12 @@ select.status-select optgroup {
 .monitoring-fleet-panel {
   display: grid;
   gap: 8px;
-  max-height: 236px;
-  overflow: hidden;
+  /* Height grows to fit content. The driver/vehicle lists scroll internally
+     (see .monitoring-driver-profile-row / .monitoring-vehicle-scroll-list), so
+     the panel must not be capped here or its rows overlap the availability checker.
+     align-content:start packs the rows from the top so they never stretch/overlap. */
+  grid-auto-rows: min-content;
+  align-content: start;
   padding: 10px 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
@@ -13220,6 +13231,7 @@ select.status-select optgroup {
   grid-template-columns: minmax(0, 1fr) minmax(320px, 1.05fr);
   gap: 10px;
   min-height: 0;
+  align-items: start;
 }
 
 .monitoring-fleet-column {
@@ -13227,6 +13239,7 @@ select.status-select optgroup {
   gap: 6px;
   min-width: 0;
   min-height: 0;
+  align-content: start;
 }
 
 .monitoring-fleet-column-head {
@@ -13253,8 +13266,11 @@ select.status-select optgroup {
 
 .monitoring-driver-profile-row {
   display: flex;
+  align-items: flex-start;
   gap: 8px;
-  min-height: 106px;
+  /* Tall enough for the status pill + avatar + a two-line name, so names never
+     spill into the availability checker below. */
+  min-height: 124px;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -13563,6 +13579,36 @@ select.status-select optgroup {
 .monitoring-icon-action-btn:disabled {
   cursor: not-allowed;
   opacity: 0.42;
+}
+
+/* Instant hover label for icon action buttons (text set via the data-tooltip attribute) */
+.monitoring-icon-action-btn[data-tooltip] {
+  position: relative;
+}
+
+.monitoring-icon-action-btn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--foreground, #111827);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  z-index: 50;
+}
+
+.monitoring-icon-action-btn[data-tooltip]:hover::after,
+.monitoring-icon-action-btn[data-tooltip]:focus-visible::after {
+  opacity: 1;
 }
 
 .monitoring-fleet-manage-card {

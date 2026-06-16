@@ -277,6 +277,25 @@ function formatMinutes(value?: number) {
   return `${value} min`;
 }
 
+// Compare an actual time against a scheduled time and describe how early/late it was.
+// Used for both departure (vs scheduled departure) and arrival (vs scheduled return).
+// Within 5 minutes either way counts as "on time".
+const SCHEDULE_ON_TIME_TOLERANCE_MS = 5 * 60 * 1000;
+
+function getScheduleComparison(actualMs: number, scheduledMs: number) {
+  const diff = actualMs - scheduledMs;
+  if (Math.abs(diff) <= SCHEDULE_ON_TIME_TOLERANCE_MS) {
+    return { label: "On time", tone: "ok" as const };
+  }
+  const totalMinutes = Math.round(Math.abs(diff) / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const amount = [hours ? `${hours}h` : "", minutes ? `${minutes}m` : ""].filter(Boolean).join(" ") || "0m";
+  return diff < 0
+    ? { label: `Early by ${amount}`, tone: "ok" as const }
+    : { label: `Late by ${amount}`, tone: "late" as const };
+}
+
 function formatDateTimeInput(value: string, options?: Intl.DateTimeFormatOptions) {
   const next = new Date(value);
   if (Number.isNaN(next.getTime())) return "-";
@@ -363,6 +382,287 @@ function getTravelOrderDisplayStatus(row: {
     return "Assigned";
   }
   return status;
+}
+
+// --- Travel Order archive export (CSV) ---
+// The columns the user can choose to include in the downloaded spreadsheet.
+const TRAVEL_ORDER_EXPORT_COLUMNS = [
+  { key: "ticketNumber", label: "Ticket #" },
+  { key: "title", label: "Title" },
+  { key: "requesterName", label: "Requester" },
+  { key: "requesterDepartment", label: "Team" },
+  { key: "purpose", label: "Purpose" },
+  { key: "departure", label: "Departure" },
+  { key: "returnAt", label: "Return" },
+  { key: "driver", label: "Driver" },
+  { key: "vehicle", label: "Vehicle" },
+  { key: "plate", label: "Plate" },
+  { key: "status", label: "Status" },
+  { key: "closed", label: "Closed Date" },
+] as const;
+
+type TravelOrderExportColumnKey = (typeof TRAVEL_ORDER_EXPORT_COLUMNS)[number]["key"];
+type ExportRangePreset = "week" | "month" | "year" | "custom";
+
+// Read the departure date out of the request details and turn it into a timestamp.
+// Returns null when there is no parseable departure (so the row can be reported as skipped).
+function getTravelDepartureTimestamp(requestDetails?: string): number | null {
+  const { departure } = getTravelScheduleFromDetails(requestDetails);
+  if (!departure || departure === "-") return null;
+  const ms = new Date(departure).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+// Work out the [start, end) window (end is exclusive) for the chosen period, relative to `now`.
+// Returns null when a custom range is missing or invalid.
+function getExportRange(
+  preset: ExportRangePreset,
+  now: Date,
+  customFrom: string,
+  customTo: string,
+): { start: number; end: number } | null {
+  if (preset === "custom") {
+    if (!customFrom || !customTo) return null;
+    const start = new Date(`${customFrom}T00:00:00`);
+    const end = new Date(`${customTo}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    // Include the whole "to" day by moving the exclusive end to the next midnight.
+    end.setDate(end.getDate() + 1);
+    return { start: start.getTime(), end: end.getTime() };
+  }
+  if (preset === "week") {
+    // Current week: from Sunday 00:00 to next Sunday 00:00.
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - start.getDay());
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { start: start.getTime(), end: end.getTime() };
+  }
+  if (preset === "month") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return { start: start.getTime(), end: end.getTime() };
+  }
+  // year
+  const start = new Date(now.getFullYear(), 0, 1);
+  const end = new Date(now.getFullYear() + 1, 0, 1);
+  return { start: start.getTime(), end: end.getTime() };
+}
+
+// Build the string value for every exportable column of a single travel order row.
+function getTravelOrderExportValues(row: {
+  ticketNumber?: string;
+  title?: string;
+  requesterName?: string;
+  requesterDepartment?: string;
+  requestDetails?: string;
+  fleetDriverName?: string;
+  fleetVehicleName?: string;
+  fleetVehiclePlateNumber?: string;
+  status: string;
+  category?: string;
+  updatedAt?: number;
+}): Record<TravelOrderExportColumnKey, string> {
+  const schedule = getTravelScheduleFromDetails(row.requestDetails);
+  const purpose = getTravelPurposeFromDetails(row.requestDetails);
+  return {
+    ticketNumber: row.ticketNumber ?? "",
+    title: row.title ?? "",
+    requesterName: row.requesterName ?? "",
+    requesterDepartment: row.requesterDepartment ?? "",
+    purpose: purpose === "-" ? "" : purpose,
+    departure: schedule.departure === "-" ? "" : schedule.departure,
+    returnAt: schedule.returnAt === "-" ? "" : schedule.returnAt,
+    driver: row.fleetDriverName ?? "",
+    vehicle: row.fleetVehicleName ?? "",
+    plate: row.fleetVehiclePlateNumber ?? "",
+    status: getTravelOrderDisplayStatus(row),
+    closed: row.updatedAt ? formatDateTime(row.updatedAt) : "",
+  };
+}
+
+// Wrap a value in quotes and escape any quotes inside, so commas/newlines/quotes stay safe in CSV.
+function escapeCsvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+// Join header + rows into a CSV string. The leading BOM tells Excel the file is UTF-8.
+function buildCsv(headerLabels: string[], rows: string[][]): string {
+  const BOM = String.fromCharCode(0xfeff);
+  const lines = [headerLabels, ...rows].map((cells) => cells.map(escapeCsvCell).join(","));
+  return BOM + lines.join("\r\n");
+}
+
+// Create the CSV file in the browser and trigger a download via a temporary link.
+function downloadCsvFile(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// --- Travel Order PDF export (browser print) ---
+// Escape text so it is safe to drop into the generated HTML document.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Pull a single "Label: value" line out of the stored request details text.
+function getRequestDetailField(requestDetails: string | undefined, label: string): string {
+  const re = new RegExp(`^${label}:\\s*`, "i");
+  const line = (requestDetails ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => re.test(l));
+  return line ? line.replace(re, "").trim() : "";
+}
+
+// Format a date-like string into a readable date/time, or return it unchanged if it isn't a date.
+function formatTravelDateText(value: string): string {
+  if (!value || value === "-") return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : formatDateTime(date.getTime());
+}
+
+// Build the ENVI-COMM Travel Order Form as a printable HTML document, matching the official template.
+// The user prints this (or saves it as PDF) from the browser print dialog.
+function buildTravelOrderPdfHtml(row: {
+  ticketNumber?: string;
+  requesterName?: string;
+  requesterDepartment?: string;
+  requestDetails?: string;
+  fleetDriverName?: string;
+  fleetVehicleName?: string;
+  fleetVehiclePlateNumber?: string;
+  travelReturnAt?: number;
+  cancellationReason?: string;
+  cancellationReasonDetail?: string;
+}): string {
+  // Passengers are stored as "Name | Position; Name | Position".
+  const passengerEntries = getRequestDetailField(row.requestDetails, "Passengers")
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [name = "", position = ""] = entry.split("|").map((part) => part.trim());
+      return { name, position };
+    });
+  const passengerNames = passengerEntries.map((p) => p.name).filter(Boolean).join(", ");
+  const passengerPositions = passengerEntries.map((p) => p.position).filter(Boolean).join(", ");
+
+  const departure = formatTravelDateText(getRequestDetailField(row.requestDetails, "Departure"));
+  const estimatedBack = row.travelReturnAt
+    ? formatDateTime(row.travelReturnAt)
+    : formatTravelDateText(getRequestDetailField(row.requestDetails, "Return"));
+  const destination = getRequestDetailField(row.requestDetails, "Destination");
+  const projectName = getRequestDetailField(row.requestDetails, "Project name");
+  const purpose = getRequestDetailField(row.requestDetails, "Purpose of travel");
+  const expectedOutput = getRequestDetailField(row.requestDetails, "Expected output");
+  const driverCar =
+    row.fleetDriverName || row.fleetVehicleName
+      ? [
+          row.fleetDriverName,
+          row.fleetVehicleName
+            ? `${row.fleetVehicleName}${row.fleetVehiclePlateNumber ? ` (${row.fleetVehiclePlateNumber})` : ""}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" / ")
+      : "";
+  const cancellation = [row.cancellationReason, row.cancellationReasonDetail].filter(Boolean).join(" — ");
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+  const dataRow = (label: string, value: string) =>
+    `<tr><td class="d-label">${escapeHtml(label)}</td><td class="d-value">${escapeHtml(value || "")}</td></tr>`;
+
+  const signatureBlock = (caption: string, name: string, position: string) =>
+    `<div class="sig">
+      <div class="sig-row"><span class="sig-caption">${escapeHtml(caption)}</span><span class="sig-line"></span></div>
+      <div class="sig-name">${escapeHtml(name)}</div>
+      <div class="sig-pos">${escapeHtml(position)}</div>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Travel Order ${escapeHtml(row.ticketNumber ?? "")}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; margin: 32px; font-size: 12px; padding-bottom: 130px; }
+  .lh-img { display: block; width: 100%; max-width: 620px; height: auto; margin: 0 auto; }
+  .lh-bar { height: 6px; background: linear-gradient(90deg, #6cb33f, #2f7d32); border-radius: 2px; margin: 10px 0 6px; }
+  .ticket { text-align: right; font-size: 12px; }
+  .title { text-align: center; font-size: 20px; font-weight: 800; letter-spacing: 1px; margin: 14px 0 18px; }
+  .top { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; margin-bottom: 16px; }
+  .top .lbl { font-weight: 700; }
+  .block { border-top: 2px solid #1f2937; border-bottom: 2px solid #1f2937; }
+  .block table { width: 100%; border-collapse: collapse; }
+  .block td { padding: 9px 4px; font-size: 12px; vertical-align: top; }
+  .d-label { font-weight: 700; width: 260px; }
+  .cancel { margin: 14px 0 28px; }
+  .cancel .lbl { font-weight: 700; }
+  .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 34px 48px; margin-top: 24px; }
+  .sig-row { display: flex; align-items: flex-end; gap: 10px; }
+  .sig-caption { white-space: nowrap; padding-bottom: 2px; }
+  .sig-line { flex: 1; border-bottom: 1px solid #1f2937; height: 30px; }
+  .sig-name { text-align: center; font-weight: 700; text-transform: uppercase; margin-top: 4px; }
+  .sig-pos { text-align: center; font-size: 11px; }
+  .footer-wrap { position: fixed; left: 0; right: 0; bottom: 16px; text-align: center; }
+  .footer-img { display: inline-block; width: 80%; max-width: 560px; height: auto; }
+  @media print { body { margin: 18px; } }
+</style>
+</head>
+<body>
+  <img class="lh-img" src="${origin}/to-header.png" alt="ENVI-COMM Corporation" />
+  <div class="lh-bar"></div>
+  <div class="ticket">${escapeHtml(row.ticketNumber ?? "")}</div>
+
+  <div class="title">TRAVEL ORDER FORM</div>
+
+  <div class="top">
+    <div><span class="lbl">Passengers:</span> ${escapeHtml(passengerNames)}</div>
+    <div><span class="lbl">Team:</span> ${escapeHtml(row.requesterDepartment ?? "")}</div>
+    <div><span class="lbl">Position/s:</span> ${escapeHtml(passengerPositions)}</div>
+    <div><span class="lbl">Team/s:</span> </div>
+  </div>
+
+  <div class="block">
+    <table><tbody>
+      ${dataRow("Departure Date/Time:", departure)}
+      ${dataRow("Estimated Back to Office Date/Time:", estimatedBack)}
+      ${dataRow("Destination/s:", destination)}
+      ${dataRow("Driver/Car:", driverCar)}
+      ${dataRow("Project Name:", projectName)}
+      ${dataRow("Purpose of Travel:", purpose)}
+      ${dataRow("Expected Output:", expectedOutput)}
+    </tbody></table>
+  </div>
+
+  <div class="cancel"><span class="lbl">Reason for Cancellation:</span> ${escapeHtml(cancellation)}</div>
+
+  <div class="sigs">
+    ${signatureBlock("Prepared By:", row.requesterName ?? "", "")}
+    ${signatureBlock("Reviewed By:", "", "")}
+    ${signatureBlock("Pre-Approved By:", "", "")}
+    ${signatureBlock("Approved By:", "Ivan Angelo Guillera", "Fleet & Admin Support")}
+  </div>
+
+  <div class="footer-wrap"><img class="footer-img" src="${origin}/to-footer.png" alt="Envi-comm: Environmental Compliance, Community and Commitment." /></div>
+
+  <script>window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 250); });</script>
+</body>
+</html>`;
 }
 
 function toTimestamp(value: string) {
@@ -677,7 +977,116 @@ function FleetAvailabilitySection(props: {
           </div>
         </div>
       </div>
+
+      <FleetAvailabilityChecker />
     </section>
+  );
+}
+
+// Lets managers/team leaders pick a date/time window and see which drivers and vehicles
+// are free (not booked on an overlapping travel order) so they know what to book.
+function FleetAvailabilityChecker() {
+  const [availFrom, setAvailFrom] = useState("");
+  const [availTo, setAvailTo] = useState("");
+  const fromMs = toTimestamp(availFrom);
+  const toMs = toTimestamp(availTo);
+  const rangeValid = fromMs !== undefined && toMs !== undefined && toMs > fromMs;
+  const availability = useQuery(
+    api.fleet.getFleetAvailability,
+    rangeValid ? { from: fromMs, to: toMs } : "skip",
+  );
+
+  const pill = (ok: boolean) => ({
+    fontSize: 11,
+    fontWeight: 700,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: ok ? "rgba(34,197,94,0.15)" : "rgba(148,163,184,0.18)",
+    color: ok ? "rgb(21,128,61)" : "#475569",
+    border: ok ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(148,163,184,0.3)",
+    whiteSpace: "nowrap" as const,
+  });
+
+  return (
+    <div style={{ marginTop: 4, borderTop: "1px solid var(--border-subtle)", paddingTop: 12, display: "grid", gap: 10 }}>
+      <strong style={{ fontSize: 13 }}>Check availability for a date/time</strong>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
+          <span style={{ color: "var(--muted)" }}>From</span>
+          <input className="input-base" type="datetime-local" value={availFrom} onChange={(e) => setAvailFrom(e.target.value)} />
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
+          <span style={{ color: "var(--muted)" }}>To</span>
+          <input className="input-base" type="datetime-local" value={availTo} onChange={(e) => setAvailTo(e.target.value)} />
+        </label>
+        {availFrom || availTo ? (
+          <button type="button" className="btn-secondary" onClick={() => { setAvailFrom(""); setAvailTo(""); }}>
+            Clear
+          </button>
+        ) : null}
+      </div>
+
+      {availFrom && availTo && !rangeValid ? (
+        <span style={{ fontSize: 12, color: "#991b1b" }}>The “To” time must be after the “From” time.</span>
+      ) : null}
+
+      {rangeValid ? (
+        availability === undefined ? (
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>Checking availability…</span>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                Drivers — {availability.drivers.filter((d) => d.available).length} of {availability.drivers.length} free
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {availability.drivers.map((d) => (
+                  <span
+                    key={String(d._id)}
+                    style={pill(d.available)}
+                    title={
+                      d.conflict
+                        ? `Booked: ${d.conflict.ticketNumber} — ${d.conflict.title}`
+                        : d.outOfService
+                          ? `Out of service (${d.status})`
+                          : "Available for this window"
+                    }
+                  >
+                    {d.name}
+                    {!d.available && d.conflict ? ` · ${d.conflict.ticketNumber}` : ""}
+                    {!d.available && d.outOfService ? ` · ${d.status}` : ""}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                Vehicles — {availability.vehicles.filter((v) => v.available).length} of {availability.vehicles.length} free
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {availability.vehicles.map((v) => (
+                  <span
+                    key={String(v._id)}
+                    style={pill(v.available)}
+                    title={
+                      v.conflict
+                        ? `Booked: ${v.conflict.ticketNumber} — ${v.conflict.title}`
+                        : v.outOfService
+                          ? `Out of service (${v.status})`
+                          : "Available for this window"
+                    }
+                  >
+                    {v.name}{v.plateNumber ? ` (${v.plateNumber})` : ""}
+                    {!v.available && v.conflict ? ` · ${v.conflict.ticketNumber}` : ""}
+                    {!v.available && v.outOfService ? ` · ${v.status}` : ""}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )
+      ) : null}
+    </div>
   );
 }
 
@@ -1191,6 +1600,16 @@ function TravelDoneIcon() {
   );
 }
 
+function DepartIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 12h13" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      <path d="M11 7l5 5-5 5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M19 4v16" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function ViewTicketIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1247,6 +1666,21 @@ function ReopenTicketIcon() {
   );
 }
 
+function ExportPdfIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M14 3v5h5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M9 15h6M9 12h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function SharedTripIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1274,6 +1708,16 @@ function ExtendTripIcon() {
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
       <path d="M12 7v5l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M18 3h4M20 1v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function UploadRecordingIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points="17 8 12 3 7 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -1571,6 +2015,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const cancelTravelOrderWithReason = useMutation(api.fleet.cancelTravelOrderWithReason);
   const assignSharedTripMutation = useMutation(api.fleet.assignSharedTrip);
   const markTravelOrderDone = useMutation(api.fleet.markTravelOrderDone);
+  const markTravelOrderDeparted = useMutation(api.fleet.markTravelOrderDeparted);
   const reopenTravelOrder = useMutation(api.fleet.reopenTravelOrder);
   const extendTravelOrderMutation = useMutation(api.fleet.extendTravelOrder);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
@@ -1589,6 +2034,15 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [meetingStatusFilters, setMeetingStatusFilters] = useState<ReadonlyArray<string>>([]);
   const [hrAdminDateFilter, setHrAdminDateFilter] = useState("");
   const [hrAdminArchiveView, setHrAdminArchiveView] = useState<HrAdminArchiveView>("active");
+  // Travel Order archive -> Export to Excel (CSV) panel state.
+  const [showExportPanel, setShowExportPanel] = useState(false);
+  const [exportRange, setExportRange] = useState<ExportRangePreset>("month");
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const [exportColumns, setExportColumns] = useState<TravelOrderExportColumnKey[]>(
+    () => TRAVEL_ORDER_EXPORT_COLUMNS.map((column) => column.key),
+  );
+  const [exportMessage, setExportMessage] = useState("");
   const [meetingArchiveView, setMeetingArchiveView] = useState<"active" | "archive">("active");
   const [borrowingArchiveView, setBorrowingArchiveView] = useState<"active" | "archive">("active");
   const [filterNeedsApproval, setFilterNeedsApproval] = useState(false);
@@ -1650,8 +2104,17 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [odometerEnd, setOdometerEnd] = useState("");
   const [odometerStartFile, setOdometerStartFile] = useState<File | null>(null);
   const [odometerEndFile, setOdometerEndFile] = useState<File | null>(null);
+  const [odometerArrival, setOdometerArrival] = useState("");
+  const [odometerScheduledReturn, setOdometerScheduledReturn] = useState<number | null>(null);
   const [odometerSaving, setOdometerSaving] = useState(false);
   const [odometerError, setOdometerError] = useState("");
+  // Mark as Departed modal state.
+  const [showDepartedModal, setShowDepartedModal] = useState(false);
+  const [departedTicketId, setDepartedTicketId] = useState<Id<"monitoringTickets"> | null>(null);
+  const [departedTime, setDepartedTime] = useState("");
+  const [departedScheduledDeparture, setDepartedScheduledDeparture] = useState<number | null>(null);
+  const [departedSaving, setDepartedSaving] = useState(false);
+  const [departedError, setDepartedError] = useState("");
   const [borrowingActionSavingId, setBorrowingActionSavingId] = useState("");
   const [borrowingConfirm, setBorrowingConfirm] = useState<{ message: string; label: string; onConfirm: () => void } | null>(null);
   const [showExtendModal, setShowExtendModal] = useState(false);
@@ -1672,6 +2135,9 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const [meetingDoneSaving, setMeetingDoneSaving] = useState(false);
   const [meetingDoneError, setMeetingDoneError] = useState("");
   const meetingDoneRecordingRef = useRef<HTMLInputElement | null>(null);
+  const [archiveRecordingUploadId, setArchiveRecordingUploadId] = useState<Id<"monitoringTickets"> | null>(null);
+  const [archiveRecordingUploading, setArchiveRecordingUploading] = useState(false);
+  const archiveRecordingInputRef = useRef<HTMLInputElement | null>(null);
   const issueAttachmentRef = useRef<HTMLInputElement | null>(null);
   const borrowingAttachmentRef = useRef<HTMLInputElement | null>(null);
   const deferredIssueSearch = useDeferredValue(issueSearch);
@@ -2134,6 +2600,32 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
       setMeetingDoneError(cleaned || raw);
     } finally {
       setMeetingDoneSaving(false);
+    }
+  }
+
+  async function handleArchiveRecordingUpload(ticketId: Id<"monitoringTickets">, file: File) {
+    setArchiveRecordingUploading(true);
+    setRequestTableError("");
+    try {
+      const storageId = await uploadFileToStorage(file, "Recording upload failed.");
+      if (!storageId) throw new Error("Recording upload failed.");
+      await updateTicket({
+        ticketId,
+        actorName,
+        attachments: [{
+          kind: "Meeting Recording" as const,
+          label: "Meeting recording",
+          fileName: file.name,
+          contentType: file.type || undefined,
+          storageId,
+          uploadedBy: actorName,
+        }],
+      });
+      setArchiveRecordingUploadId(null);
+    } catch (error) {
+      setRequestTableError(error instanceof Error ? error.message : "Recording upload failed.");
+    } finally {
+      setArchiveRecordingUploading(false);
     }
   }
 
@@ -2636,12 +3128,15 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     }
   }
 
-  function handleMarkTravelDone(ticketId: Id<"monitoringTickets">) {
+  function handleMarkTravelDone(ticketId: Id<"monitoringTickets">, scheduledReturnAt?: number) {
     setOdometerTicketId(ticketId);
     setOdometerStart("");
     setOdometerEnd("");
     setOdometerStartFile(null);
     setOdometerEndFile(null);
+    // Start the arrival time empty so the admin enters the real arrival, not the moment they clicked.
+    setOdometerArrival("");
+    setOdometerScheduledReturn(scheduledReturnAt ?? null);
     setOdometerError("");
     setShowOdometerModal(true);
   }
@@ -2650,6 +3145,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     if (!odometerTicketId) return;
     if (!odometerStart || !odometerStartFile || !odometerEnd || !odometerEndFile) {
       setOdometerError("Both odometer readings and photos are required before marking as done.");
+      return;
+    }
+    if (!odometerArrival) {
+      setOdometerError("Please enter the actual arrival time before marking as done.");
       return;
     }
     try {
@@ -2664,6 +3163,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
         odometerEnd: odometerEnd ? Number(odometerEnd) : undefined,
         odometerStartPhotoId: startPhotoId,
         odometerEndPhotoId: endPhotoId,
+        arrivalTime: odometerArrival ? new Date(odometerArrival).getTime() : undefined,
       });
       setShowOdometerModal(false);
       setOdometerTicketId(null);
@@ -2671,6 +3171,41 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
       setOdometerError(error instanceof Error ? error.message : "Unable to mark travel as done.");
     } finally {
       setOdometerSaving(false);
+    }
+  }
+
+  function handleMarkTravelDeparted(ticketId: Id<"monitoringTickets">, requestDetails?: string) {
+    setDepartedTicketId(ticketId);
+    // Start empty so the admin enters the real departure, not the moment they clicked.
+    setDepartedTime("");
+    // Scheduled departure is parsed from the request details text.
+    const scheduled = getTravelScheduleFromDetails(requestDetails).departure;
+    const scheduledMs = scheduled && scheduled !== "-" ? new Date(scheduled).getTime() : NaN;
+    setDepartedScheduledDeparture(Number.isNaN(scheduledMs) ? null : scheduledMs);
+    setDepartedError("");
+    setShowDepartedModal(true);
+  }
+
+  async function handleConfirmTravelDeparted() {
+    if (!departedTicketId) return;
+    if (!departedTime) {
+      setDepartedError("Please enter the actual departure time.");
+      return;
+    }
+    try {
+      setDepartedSaving(true);
+      setDepartedError("");
+      await markTravelOrderDeparted({
+        ticketId: departedTicketId,
+        actorName,
+        departureTime: new Date(departedTime).getTime(),
+      });
+      setShowDepartedModal(false);
+      setDepartedTicketId(null);
+    } catch (error) {
+      setDepartedError(error instanceof Error ? error.message : "Unable to mark travel as departed.");
+    } finally {
+      setDepartedSaving(false);
     }
   }
 
@@ -2691,6 +3226,81 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
       setRequestTableError(error instanceof Error ? error.message : "Unable to reopen travel order.");
     } finally {
       setTravelReopenSavingId("");
+    }
+  }
+
+  // Open a printable document for a single travel order so the user can save it as PDF.
+  function handleExportTravelOrderPdf(row: Parameters<typeof buildTravelOrderPdfHtml>[0]) {
+    try {
+      const printWindow = window.open("", "_blank", "width=900,height=700");
+      if (!printWindow) {
+        setRequestTableError("Please allow pop-ups for this site to export the travel order as PDF.");
+        return;
+      }
+      printWindow.document.write(buildTravelOrderPdfHtml(row));
+      printWindow.document.close();
+      printWindow.focus();
+    } catch (error) {
+      setRequestTableError(error instanceof Error ? error.message : "Unable to export travel order as PDF.");
+    }
+  }
+
+  // Tick / untick a column in the Export to Excel panel.
+  function toggleExportColumn(key: TravelOrderExportColumnKey) {
+    setExportColumns((prev) =>
+      prev.includes(key) ? prev.filter((existing) => existing !== key) : [...prev, key],
+    );
+  }
+
+  // Build and download a CSV of the archived travel orders that fall in the chosen period.
+  function handleExportTravelOrders() {
+    setExportMessage("");
+    try {
+      const range = getExportRange(exportRange, new Date(), exportFrom, exportTo);
+      if (!range) {
+        setExportMessage("Please choose a valid start and end date.");
+        return;
+      }
+      // Keep the columns in their defined order, regardless of tick order.
+      const selectedColumns = TRAVEL_ORDER_EXPORT_COLUMNS.filter((column) =>
+        exportColumns.includes(column.key),
+      );
+      if (selectedColumns.length === 0) {
+        setExportMessage("Please select at least one column to export.");
+        return;
+      }
+
+      let skipped = 0;
+      const matched = (requestRows ?? []).filter((row) => {
+        if (row.category !== MONITORING_TRAVEL_ORDER_CATEGORY) return false;
+        const departureMs = getTravelDepartureTimestamp(row.requestDetails);
+        if (departureMs === null) {
+          skipped += 1;
+          return false;
+        }
+        return departureMs >= range.start && departureMs < range.end;
+      });
+
+      if (matched.length === 0) {
+        setExportMessage(
+          `No travel orders found in the selected period.${skipped ? ` (${skipped} skipped: no valid departure date.)` : ""}`,
+        );
+        return;
+      }
+
+      const dataRows = matched.map((row) => {
+        const values = getTravelOrderExportValues(row);
+        return selectedColumns.map((column) => values[column.key]);
+      });
+      const csv = buildCsv(selectedColumns.map((column) => column.label), dataRows);
+      downloadCsvFile(`travel-orders-${exportRange}.csv`, csv);
+
+      setExportMessage(
+        `Exported ${matched.length} travel order(s).${skipped ? ` ${skipped} row(s) skipped: no valid departure date.` : ""}`,
+      );
+      setShowExportPanel(false);
+    } catch (error) {
+      setExportMessage(error instanceof Error ? error.message : "Export failed.");
     }
   }
 
@@ -2902,10 +3512,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   onChange={(event) => setIssueForm((prev) => ({ ...prev, requesterSection: event.target.value }))}
                 />
               </FieldGroup>
-              <FieldGroup label="Department">
+              <FieldGroup label="Team">
                 <input
                   className="input-base"
-                  placeholder="Department"
+                  placeholder="Team"
                   value={issueForm.requesterDepartment}
                   onChange={(event) => setIssueForm((prev) => ({ ...prev, requesterDepartment: event.target.value }))}
                 />
@@ -3052,10 +3662,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   onChange={(event) => setBorrowingForm((prev) => ({ ...prev, requesterSection: event.target.value }))}
                 />
               </FieldGroup>
-              <FieldGroup label="Department">
+              <FieldGroup label="Team">
                 <input
                   className="input-base"
-                  placeholder="Department"
+                  placeholder="Team"
                   value={borrowingForm.requesterDepartment}
                   onChange={(event) => setBorrowingForm((prev) => ({ ...prev, requesterDepartment: event.target.value }))}
                 />
@@ -3225,10 +3835,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   onChange={(event) => setMeetingForm((prev) => ({ ...prev, requesterSection: event.target.value }))}
                 />
               </FieldGroup>
-              <FieldGroup label="Department">
+              <FieldGroup label="Team">
                 <input
                   className="input-base"
-                  placeholder="Department"
+                  placeholder="Team"
                   value={meetingForm.requesterDepartment}
                   onChange={(event) => setMeetingForm((prev) => ({ ...prev, requesterDepartment: event.target.value }))}
                 />
@@ -3650,6 +4260,20 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           </div>
         ) : null}
 
+        <input
+          ref={archiveRecordingInputRef}
+          type="file"
+          accept="video/*,audio/*,.mp4,.mov,.avi,.mkv,.webm,.mp3,.m4a"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const file = e.target.files?.[0] ?? null;
+            if (file && archiveRecordingUploadId) {
+              void handleArchiveRecordingUpload(archiveRecordingUploadId, file);
+            }
+            e.target.value = "";
+          }}
+        />
+
         {showSharedTripModal ? (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 480, display: "grid", gap: 14 }}>
@@ -3852,11 +4476,114 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                 </label>
               </div>
 
+              {/* Arrival time */}
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>
+                  Arrival Time <span style={{ color: "#dc2626" }}>*</span>
+                </div>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                    Enter when the trip <strong>actually</strong> arrived — not the time you are clicking this button.
+                  </span>
+                  <input
+                    className="input-base"
+                    type="datetime-local"
+                    value={odometerArrival}
+                    onChange={(e) => setOdometerArrival(e.target.value)}
+                  />
+                </label>
+                {odometerScheduledReturn ? (
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                    Scheduled return: {formatDateTime(odometerScheduledReturn)}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                    No scheduled return on record — early/late cannot be calculated.
+                  </span>
+                )}
+                {odometerArrival && odometerScheduledReturn
+                  ? (() => {
+                      const comparison = getScheduleComparison(
+                        new Date(odometerArrival).getTime(),
+                        odometerScheduledReturn,
+                      );
+                      return (
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: comparison.tone === "late" ? "#991b1b" : "#166534",
+                          }}
+                        >
+                          {comparison.label}
+                        </span>
+                      );
+                    })()
+                  : null}
+              </div>
+
               {odometerError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{odometerError}</div> : null}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button type="button" className="btn-secondary" disabled={odometerSaving} onClick={() => { setShowOdometerModal(false); setOdometerError(""); }}>Cancel</button>
-                <button type="button" className="btn-primary" disabled={odometerSaving || !odometerStart || !odometerStartFile || !odometerEnd || !odometerEndFile} onClick={() => void handleConfirmTravelDone()}>
+                <button type="button" className="btn-primary" disabled={odometerSaving || !odometerStart || !odometerStartFile || !odometerEnd || !odometerEndFile || !odometerArrival} onClick={() => void handleConfirmTravelDone()}>
                   {odometerSaving ? "Saving..." : "Mark as Done"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showDepartedModal ? (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "var(--surface)", borderRadius: 12, padding: 24, width: "100%", maxWidth: 420, display: "grid", gap: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>Mark Travel Order as Departed</div>
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                Record when the trip <strong>actually</strong> departed — not the time you are clicking this button.
+              </p>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 600 }}>
+                  Actual Departure Time <span style={{ color: "#dc2626" }}>*</span>
+                </span>
+                <input
+                  className="input-base"
+                  type="datetime-local"
+                  value={departedTime}
+                  onChange={(e) => setDepartedTime(e.target.value)}
+                />
+              </label>
+              {departedScheduledDeparture ? (
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                  Scheduled departure: {formatDateTime(departedScheduledDeparture)}
+                </span>
+              ) : (
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                  No scheduled departure on record — early/late cannot be calculated.
+                </span>
+              )}
+              {departedTime && departedScheduledDeparture
+                ? (() => {
+                    const comparison = getScheduleComparison(
+                      new Date(departedTime).getTime(),
+                      departedScheduledDeparture,
+                    );
+                    return (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: comparison.tone === "late" ? "#991b1b" : "#166534",
+                        }}
+                      >
+                        {comparison.label}
+                      </span>
+                    );
+                  })()
+                : null}
+              {departedError ? <div style={{ color: "#991b1b", fontSize: 13 }}>{departedError}</div> : null}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button type="button" className="btn-secondary" disabled={departedSaving} onClick={() => { setShowDepartedModal(false); setDepartedError(""); }}>Cancel</button>
+                <button type="button" className="btn-primary" disabled={departedSaving || !departedTime} onClick={() => void handleConfirmTravelDeparted()}>
+                  {departedSaving ? "Saving..." : "Mark as Departed"}
                 </button>
               </div>
             </div>
@@ -4055,6 +4782,19 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                         Clear
                       </button>
                     ) : null}
+                    {hrAdminArchiveView === "archive" ? (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        aria-expanded={showExportPanel}
+                        onClick={() => {
+                          setShowExportPanel((open) => !open);
+                          setExportMessage("");
+                        }}
+                      >
+                        Export to Excel
+                      </button>
+                    ) : null}
                   </div>
                 ) : (
                   <ToolbarFilterDropdown
@@ -4133,6 +4873,115 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
               ) : null}
             </div>
 
+            {showExportPanel ? (
+              <div
+                style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+                onClick={() => { setShowExportPanel(false); setExportMessage(""); }}
+              >
+                <div
+                  onClick={(event) => event.stopPropagation()}
+                  style={{
+                    background: "var(--surface)",
+                    borderRadius: 12,
+                    padding: 24,
+                    width: "100%",
+                    maxWidth: 560,
+                    maxHeight: "85vh",
+                    overflowY: "auto",
+                    display: "grid",
+                    gap: 14,
+                  }}
+                >
+                <div style={{ display: "grid", gap: 6 }}>
+                  <strong style={{ fontSize: 14 }}>Export travel orders to Excel</strong>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                    Filtered by departure date. The file opens directly in Excel.
+                  </span>
+                </div>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Time period</span>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {([
+                      { value: "week", label: "This week" },
+                      { value: "month", label: "This month" },
+                      { value: "year", label: "This year" },
+                      { value: "custom", label: "Custom range" },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={exportRange === option.value}
+                        className={`asset-master-view-filter${exportRange === option.value ? " active" : ""}`}
+                        onClick={() => setExportRange(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  {exportRange === "custom" ? (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
+                      <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+                        From
+                        <input
+                          className="input-base"
+                          type="date"
+                          value={exportFrom}
+                          onChange={(event) => setExportFrom(event.target.value)}
+                        />
+                      </label>
+                      <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+                        To
+                        <input
+                          className="input-base"
+                          type="date"
+                          value={exportTo}
+                          onChange={(event) => setExportTo(event.target.value)}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Columns to include</span>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    {TRAVEL_ORDER_EXPORT_COLUMNS.map((column) => (
+                      <label key={column.key} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+                        <input
+                          type="checkbox"
+                          checked={exportColumns.includes(column.key)}
+                          onChange={() => toggleExportColumn(column.key)}
+                        />
+                        {column.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {exportMessage ? (
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>{exportMessage}</span>
+                ) : null}
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="btn-primary" onClick={handleExportTravelOrders}>
+                    Download CSV
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      setShowExportPanel(false);
+                      setExportMessage("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                </div>
+              </div>
+            ) : null}
+
             {activeTab === "hrAdmin" && hrAdminArchiveView === "archive" ? (
               <div className="saas-table-wrap monitoring-tab-table-wrap">
                 {requestTableError ? <FormErrorBanner message={requestTableError} /> : null}
@@ -4203,6 +5052,15 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                 onClick={() => router.push(`/monitoring/${row._id}`)}
                               >
                                 <ViewTicketIcon />
+                              </button>
+                              <button
+                                type="button"
+                                className="monitoring-icon-action-btn"
+                                data-tooltip="Export as PDF"
+                                aria-label={`Export ${row.ticketNumber} as PDF`}
+                                onClick={() => handleExportTravelOrderPdf(row)}
+                              >
+                                <ExportPdfIcon />
                               </button>
                               <button
                                 type="button"
@@ -4317,26 +5175,32 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                               value={row.priority ?? "P4"}
                               onChange={(e) => void handleTravelOrderPriorityChange(row._id, e.target.value)}
                               disabled={prioritySavingId === rowId}
+                              title="Priority"
                               aria-label={`Priority for ${row.ticketNumber}`}
                             >
                               {MONITORING_PRIORITY_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
                             </select>
-                            <button type="button" className="monitoring-icon-action-btn" title={row.fleetDriverId && row.fleetVehicleId ? "Edit fleet" : "Assign fleet"} onClick={() => openFleetAssignmentModal({ _id: row._id, ticketNumber: row.ticketNumber, title: row.title, fleetDriverId: row.fleetDriverId, fleetDriverName: row.fleetDriverName, fleetVehicleId: row.fleetVehicleId, fleetVehicleName: row.fleetVehicleName, fleetVehiclePlateNumber: row.fleetVehiclePlateNumber })}>
+                            <button type="button" className="monitoring-icon-action-btn" data-tooltip={row.fleetDriverId && row.fleetVehicleId ? "Edit fleet" : "Assign fleet"} aria-label={row.fleetDriverId && row.fleetVehicleId ? "Edit fleet" : "Assign fleet"} onClick={() => openFleetAssignmentModal({ _id: row._id, ticketNumber: row.ticketNumber, title: row.title, fleetDriverId: row.fleetDriverId, fleetDriverName: row.fleetDriverName, fleetVehicleId: row.fleetVehicleId, fleetVehicleName: row.fleetVehicleName, fleetVehiclePlateNumber: row.fleetVehiclePlateNumber })}>
                               <FleetAssignIcon />
                             </button>
                             {!isTODone ? (
-                              <button type="button" className="monitoring-icon-action-btn is-warning" title="Extend return time" onClick={() => { setExtendTicketId(row._id); setExtendNewReturnAt(""); setExtendReason(""); setExtendError(""); setShowExtendModal(true); }}>
+                              <button type="button" className="monitoring-icon-action-btn is-warning" data-tooltip="Extend return time" aria-label="Extend return time" onClick={() => { setExtendTicketId(row._id); setExtendNewReturnAt(""); setExtendReason(""); setExtendError(""); setShowExtendModal(true); }}>
                                 <ExtendTripIcon />
                               </button>
                             ) : null}
-                            <button type="button" className="monitoring-icon-action-btn is-success" title="Mark travel done" disabled={isTODone || travelDoneSavingId === rowId} onClick={() => void handleMarkTravelDone(row._id)}>
+                            {!isTODone && !row.actualDepartureTime ? (
+                              <button type="button" className="monitoring-icon-action-btn" data-tooltip="Mark as departed" aria-label="Mark as departed" onClick={() => handleMarkTravelDeparted(row._id, row.requestDetails)}>
+                                <DepartIcon />
+                              </button>
+                            ) : null}
+                            <button type="button" className="monitoring-icon-action-btn is-success" data-tooltip="Mark travel done" aria-label="Mark travel done" disabled={isTODone || travelDoneSavingId === rowId} onClick={() => void handleMarkTravelDone(row._id, row.travelReturnAt)}>
                               <TravelDoneIcon />
                             </button>
-                            <button type="button" className="monitoring-icon-action-btn is-destructive" title="Cancel travel order" disabled={isTODone || travelCancelSavingId === rowId} onClick={() => { setCancelReasonTicketId(row._id); setCancelReason("No longer needed"); setCancelReasonDetail(""); setCancelReasonError(""); setShowCancelReasonModal(true); }}>
+                            <button type="button" className="monitoring-icon-action-btn is-destructive" data-tooltip="Cancel travel order" aria-label="Cancel travel order" disabled={isTODone || travelCancelSavingId === rowId} onClick={() => { setCancelReasonTicketId(row._id); setCancelReason("No longer needed"); setCancelReasonDetail(""); setCancelReasonError(""); setShowCancelReasonModal(true); }}>
                               <CancelTravelOrderIcon />
                             </button>
                             {!row.sharedTripId && row.fleetDriverId && row.fleetVehicleId ? (
-                              <button type="button" className="monitoring-icon-action-btn" title="Combine as shared trip" disabled={isTODone} onClick={() => { setSharedTripPrimaryId(row._id); setSharedTripSecondaryId(""); setSharedTripError(""); setShowSharedTripModal(true); }}>
+                              <button type="button" className="monitoring-icon-action-btn" data-tooltip="Combine as shared trip" aria-label="Combine as shared trip" disabled={isTODone} onClick={() => { setSharedTripPrimaryId(row._id); setSharedTripSecondaryId(""); setSharedTripError(""); setShowSharedTripModal(true); }}>
                                 <SharedTripIcon />
                               </button>
                             ) : null}
@@ -4552,13 +5416,24 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                     >
                                       <FleetAssignIcon />
                                     </button>
+                                    {!isTravelOrderDone && !row.actualDepartureTime ? (
+                                      <button
+                                        type="button"
+                                        className="monitoring-icon-action-btn"
+                                        aria-label={`Mark ${row.ticketNumber} as departed`}
+                                        title="Mark as departed"
+                                        onClick={() => handleMarkTravelDeparted(row._id, row.requestDetails)}
+                                      >
+                                        <DepartIcon />
+                                      </button>
+                                    ) : null}
                                     <button
                                       type="button"
                                       className="monitoring-icon-action-btn is-success"
                                       aria-label={`Mark ${row.ticketNumber} travel done`}
                                       title="Mark travel done"
                                       disabled={isTravelOrderDone || travelDoneSavingId === rowId}
-                                      onClick={() => void handleMarkTravelDone(row._id)}
+                                      onClick={() => void handleMarkTravelDone(row._id, row.travelReturnAt)}
                                     >
                                       <TravelDoneIcon />
                                     </button>
@@ -4669,6 +5544,21 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                   </svg>
                                 </button>
                               )}
+                              {meetingArchiveView === "archive" && !(row.attachments ?? []).some((a) => a.kind === "Meeting Recording") ? (
+                                <button
+                                  type="button"
+                                  className="monitoring-icon-action-btn"
+                                  aria-label={`Upload recording for ${row.ticketNumber}`}
+                                  title={archiveRecordingUploading && String(archiveRecordingUploadId) === rowId ? "Uploading…" : "Upload recording"}
+                                  disabled={archiveRecordingUploading && String(archiveRecordingUploadId) === rowId}
+                                  onClick={() => {
+                                    setArchiveRecordingUploadId(row._id);
+                                    archiveRecordingInputRef.current?.click();
+                                  }}
+                                >
+                                  <UploadRecordingIcon />
+                                </button>
+                              ) : null}
                             </div>
                           </td>
                         ) : null}

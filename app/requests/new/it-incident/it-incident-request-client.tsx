@@ -119,7 +119,7 @@ export default function ItIncidentRequestClient() {
         throw new Error("Requester name is required.");
       }
       if (!trimmedDepartment) {
-        throw new Error("Department is required.");
+        throw new Error("Team is required.");
       }
       if (!trimmedTitle) {
         throw new Error("Issue title is required.");
@@ -141,7 +141,7 @@ export default function ItIncidentRequestClient() {
       const requestSnapshot = [
         "Request type: IT Support",
         `Requester: ${trimmedRequesterName}`,
-        `Department: ${trimmedDepartment}`,
+        `Team: ${trimmedDepartment}`,
         trimmedSection ? `Section: ${trimmedSection}` : "",
         `Category: ${category}`,
         `Impact: ${impact}`,
@@ -212,16 +212,16 @@ export default function ItIncidentRequestClient() {
           </label>
 
           <label className="request-form-field">
-            <span>Department</span>
+            <span>Team</span>
             <input
               className="input-base"
               value={department}
               readOnly
-              placeholder="Enter department"
+              placeholder="Enter team"
             />
             {missingDepartment ? (
               <small className="request-form-help is-warning">
-                Department is missing from your account. Please contact IT/admin.
+                Team is missing from your account. Please contact IT/admin.
               </small>
             ) : null}
           </label>

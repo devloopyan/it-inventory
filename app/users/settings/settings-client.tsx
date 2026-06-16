@@ -32,7 +32,7 @@ const ROLES = [
         <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
       </svg>
     ),
-    description: "Handles and processes incoming service requests assigned to their department or service group.",
+    description: "Handles and processes incoming service requests assigned to their team or service group.",
     permissions: ["View assigned requests", "Update request status", "Add comments & notes", "Close resolved tickets"],
   },
   {
@@ -92,12 +92,36 @@ const PILL_COLORS = [
 
 export default function UserSettingsClient() {
   const departments = useQuery(api.departments.list, {});
+  const detailedDepartments = useQuery(api.departments.listDetailed, {});
+  const users = useQuery(api.users.list, {});
   const addDepartment = useMutation(api.departments.add);
   const removeDepartment = useMutation(api.departments.remove);
+  const setDepartmentApprovers = useMutation(api.departments.setApprovers);
 
   const [newDeptName, setNewDeptName] = useState("");
   const [deptError, setDeptError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [approverError, setApproverError] = useState("");
+
+  const activeUsers = (users ?? []).filter((u) => u.active);
+
+  // Update one role (Team Leader or Manager) for a department, keeping the other as-is.
+  async function handleSetApprover(
+    dept: { name: string; teamLeaderUsername?: string; managerUsername?: string },
+    field: "teamLeaderUsername" | "managerUsername",
+    username: string,
+  ) {
+    setApproverError("");
+    try {
+      await setDepartmentApprovers({
+        name: dept.name,
+        teamLeaderUsername: field === "teamLeaderUsername" ? username : dept.teamLeaderUsername ?? "",
+        managerUsername: field === "managerUsername" ? username : dept.managerUsername ?? "",
+      });
+    } catch (err) {
+      setApproverError(err instanceof Error ? err.message : "Failed to save approver.");
+    }
+  }
 
   async function handleAdd() {
     const name = newDeptName.trim();
@@ -135,16 +159,16 @@ export default function UserSettingsClient() {
         </Link>
         <div>
           <h1 className="type-page-title">User Settings</h1>
-          <p className="type-page-subtitle">Manage departments and service groups used across user accounts.</p>
+          <p className="type-page-subtitle">Manage teams and service groups used across user accounts.</p>
         </div>
       </div>
 
       <div className="usettings-card">
         <div className="usettings-card-head">
           <div>
-            <h2 className="type-section-title">Departments & Service Groups</h2>
+            <h2 className="type-section-title">Teams & Service Groups</h2>
             <p className="type-section-copy">
-              These labels appear as department options when creating users and as service group assignments for staff.
+              These labels appear as team options when creating users and as service group assignments for staff.
             </p>
           </div>
         </div>
@@ -152,7 +176,7 @@ export default function UserSettingsClient() {
         <div className="usettings-add-row">
           <input
             className="input-base"
-            placeholder="New department name (e.g. Finance)"
+            placeholder="New team name (e.g. Finance)"
             value={newDeptName}
             onChange={(e) => setNewDeptName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleAdd(); } }}
@@ -164,7 +188,7 @@ export default function UserSettingsClient() {
             onClick={() => void handleAdd()}
             disabled={!newDeptName.trim()}
           >
-            Add Department
+            Add Team
           </button>
         </div>
 
@@ -176,7 +200,7 @@ export default function UserSettingsClient() {
         {departments === undefined ? (
           <p className="type-helper">Loading…</p>
         ) : departments.length === 0 ? (
-          <p className="type-helper">No departments yet. Add one above.</p>
+          <p className="type-helper">No teams yet. Add one above.</p>
         ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
             {departments.map((dept, i) => {
@@ -218,6 +242,80 @@ export default function UserSettingsClient() {
                 </span>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* Department leadership: Team Leader + Manager per department.
+          Shared across approval processes (Travel Orders today, more later). */}
+      <div className="usettings-card">
+        <div className="usettings-card-head">
+          <div>
+            <h2 className="type-section-title">Team Leadership</h2>
+            <p className="type-section-copy">
+              Set the Team Leader and Manager for each team. These are used to route
+              approvals across the system — for example, Travel Orders go Team Leader →
+              Manager → HR Fleet Manager, and a requester who is already the Team Leader or
+              Manager skips their own step.
+            </p>
+          </div>
+        </div>
+
+        {approverError ? <p className="usettings-error">{approverError}</p> : null}
+
+        {detailedDepartments === undefined || users === undefined ? (
+          <p className="type-helper">Loading…</p>
+        ) : detailedDepartments.length === 0 ? (
+          <p className="type-helper">No teams yet. Add one above first.</p>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {detailedDepartments.map((dept) => (
+              <div
+                key={dept.name}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(120px, 1fr) 2fr 2fr",
+                  gap: 12,
+                  alignItems: "center",
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: "1.5px solid #e5e7eb",
+                  background: "#fff",
+                }}
+              >
+                <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>{dept.name}</span>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280" }}>Team Leader</span>
+                  <select
+                    className="input-base"
+                    value={dept.teamLeaderUsername ?? ""}
+                    onChange={(e) => void handleSetApprover(dept, "teamLeaderUsername", e.target.value)}
+                  >
+                    <option value="">— None —</option>
+                    {activeUsers.map((u) => (
+                      <option key={u.username} value={u.username}>
+                        {u.displayName}{u.department ? ` (${u.department})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#6b7280" }}>Manager</span>
+                  <select
+                    className="input-base"
+                    value={dept.managerUsername ?? ""}
+                    onChange={(e) => void handleSetApprover(dept, "managerUsername", e.target.value)}
+                  >
+                    <option value="">— None —</option>
+                    {activeUsers.map((u) => (
+                      <option key={u.username} value={u.username}>
+                        {u.displayName}{u.department ? ` (${u.department})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ))}
           </div>
         )}
       </div>

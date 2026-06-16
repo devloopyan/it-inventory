@@ -30,6 +30,7 @@ import {
   isMonitoringApprovalReference,
   isMonitoringWorkflowType,
   normalizeMeetingRequestStatusValue,
+  TRAVEL_ORDER_FLEET_MANAGER_SCOPE,
   type MonitoringApprovalReference,
 } from "@/lib/monitoring";
 import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/requestDisplay";
@@ -72,6 +73,21 @@ function formatDateTime(value?: number) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// Describe how an actual time compares to a scheduled time (early / on-time / late).
+// Within 5 minutes either way counts as "on time". Returns null if either time is missing/invalid.
+function describeScheduleDelta(actualMs?: number, scheduledMs?: number) {
+  if (!actualMs || !scheduledMs || Number.isNaN(scheduledMs)) return null;
+  const diff = actualMs - scheduledMs;
+  if (Math.abs(diff) <= 5 * 60 * 1000) return { label: "On time", tone: "ok" as const };
+  const totalMinutes = Math.round(Math.abs(diff) / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const amount = [hours ? `${hours}h` : "", minutes ? `${minutes}m` : ""].filter(Boolean).join(" ") || "0m";
+  return diff < 0
+    ? { label: `Early by ${amount}`, tone: "ok" as const }
+    : { label: `Late by ${amount}`, tone: "late" as const };
 }
 
 function formatShortDate(value?: number) {
@@ -633,6 +649,8 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const removeTicketAttachment = useMutation(api.monitoring.removeTicketAttachment);
   const submitForApproval = useMutation(api.monitoring.submitForApproval);
   const recordApprovalDecision = useMutation(api.monitoring.recordApprovalDecision);
+  const submitTravelOrderForApproval = useMutation(api.monitoring.submitTravelOrderForApproval);
+  const recordTravelOrderApprovalDecision = useMutation(api.monitoring.recordTravelOrderApprovalDecision);
   const markTicketSeen = useMutation(api.monitoring.markTicketSeen);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const cancelTravelOrderWithReason = useMutation(api.fleet.cancelTravelOrderWithReason);
@@ -1245,6 +1263,40 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     }
   }
 
+  async function handleSubmitTravelOrder() {
+    setSaving(true);
+    setFeedback("");
+    try {
+      await submitTravelOrderForApproval({ ticketId, actorName });
+      setFeedback("Travel order submitted for approval.");
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Submission failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTravelApprovalDecision(decision: "Approved" | "For Revision") {
+    setSaving(true);
+    setFeedback("");
+    try {
+      await recordTravelOrderApprovalDecision({
+        ticketId,
+        decision,
+        actorName,
+        actorUsername: currentUser?.username ?? "",
+        reference: approvalReference,
+        note: approvalNote || revisionReason || "Recorded.",
+      });
+      setApprovalNote("");
+      setFeedback(`Decision recorded: ${decision}.`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Approval recording failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleApprovalDecision(decision: "Approved" | "For Revision") {
     if (!detail?.ticket) return;
     const approvalRoute = getApprovalRouteForCategory(detail.ticket.category);
@@ -1579,7 +1631,24 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     (ticket.approvalStage === "Not Submitted" || ticket.approvalStage === "For Revision");
   const canRecordApproval =
     !isMeetingRequest &&
+    !isTravelOrder &&
     isPendingApprovalStage(ticket.approvalStage);
+
+  // ── Travel Order approval chain (Team Leader → Manager → HR Fleet Manager) ──
+  const travelChain = ticket.travelApprovalChain ?? [];
+  const travelCurrentStep = travelChain.find((step) => step.status === "Pending");
+  const isFleetManager = (currentUser?.approvalScopes ?? []).includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE);
+  const canSubmitTravelOrder =
+    isTravelOrder &&
+    (ticket.approvalStage === "Not Submitted" || ticket.approvalStage === "For Revision") &&
+    (currentUser?.username === ticket.requesterUsername || isAdminRole(currentUser?.role));
+  const canRecordTravelStep =
+    isTravelOrder &&
+    Boolean(travelCurrentStep) &&
+    (travelCurrentStep?.role === "HR Fleet Manager"
+      ? isFleetManager
+      : travelCurrentStep?.approverUsername === currentUser?.username);
+
   const isDetailEditing = isMeetingRequest ? isMeetingEditing : isTicketEditing;
   const backHref = isMeetingRequest
     ? "/monitoring?tab=meetings"
@@ -1834,7 +1903,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                         onChange={(event) => setMeetingRequesterSection(event.target.value)}
                       />
                     </FieldBlock>
-                    <FieldBlock label="Department">
+                    <FieldBlock label="Team">
                       <input
                         className="input-base"
                         value={meetingRequesterDepartment}
@@ -2128,7 +2197,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 <div className="monitoring-detail-stack">
                   <DetailTextRow label="Requester" value={ticket.requesterName} />
                   {ticket.requesterSection ? <DetailTextRow label="Section" value={ticket.requesterSection} /> : null}
-                  {ticket.requesterDepartment ? <DetailTextRow label="Department" value={ticket.requesterDepartment} /> : null}
+                  {ticket.requesterDepartment ? <DetailTextRow label="Team" value={ticket.requesterDepartment} /> : null}
                   <DetailTextRow
                     label="Schedule"
                     value={
@@ -2247,6 +2316,43 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                   ) : null}
                   {ticket.fleetAssignedAt ? (
                     <DetailTextRow label="Fleet Assigned" value={formatDateTime(ticket.fleetAssignedAt)} />
+                  ) : null}
+                  {ticket.actualDepartureTime ? (
+                    <DetailTextRow
+                      label="Actual Departure"
+                      value={(() => {
+                        const scheduledMs = travelOrderDetails?.departure ? new Date(travelOrderDetails.departure).getTime() : NaN;
+                        const delta = describeScheduleDelta(ticket.actualDepartureTime, scheduledMs);
+                        return (
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {formatDateTime(ticket.actualDepartureTime)}
+                            {delta ? (
+                              <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: delta.tone === "late" ? "#fee2e2" : "#dcfce7", color: delta.tone === "late" ? "#991b1b" : "#166534" }}>
+                                {delta.label}
+                              </span>
+                            ) : null}
+                          </span>
+                        );
+                      })()}
+                    />
+                  ) : null}
+                  {ticket.actualArrivalTime ? (
+                    <DetailTextRow
+                      label="Actual Arrival"
+                      value={(() => {
+                        const delta = describeScheduleDelta(ticket.actualArrivalTime, ticket.travelReturnAt);
+                        return (
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {formatDateTime(ticket.actualArrivalTime)}
+                            {delta ? (
+                              <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: delta.tone === "late" ? "#fee2e2" : "#dcfce7", color: delta.tone === "late" ? "#991b1b" : "#166534" }}>
+                                {delta.label}
+                              </span>
+                            ) : null}
+                          </span>
+                        );
+                      })()}
+                    />
                   ) : null}
 
                   {/* Shared trip info */}
@@ -2881,7 +2987,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 <div className="monitoring-detail-stack">
                   <DetailTextRow label="Requester" value={ticket.requesterName} />
                   <DetailTextRow label="Section" value={ticket.requesterSection} />
-                  <DetailTextRow label="Department" value={ticket.requesterDepartment} />
+                  <DetailTextRow label="Team" value={ticket.requesterDepartment} />
                   <DetailTextRow label="Request Source" value={ticket.requestSource} />
                   <DetailTextRow label="Approval Stage" value={<Chip label={ticket.approvalStage} />} />
                   <DetailTextRow label="Created" value={formatDateTime(ticket.createdAt)} />
@@ -2892,7 +2998,101 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
           {!isMeetingRequest && !isBorrowingRequest ? (
             <section className="monitoring-detail-section monitoring-detail-section-compact">
               <div className="type-section-title">Approvals</div>
-              {canRecordApproval ? (
+              {isTravelOrder ? (
+                <div className="monitoring-detail-stack">
+                  {travelChain.length ? (
+                    <div className="monitoring-detail-list">
+                      {travelChain.map((step, index) => (
+                        <div key={`${step.role}-${index}`} className="monitoring-detail-list-card">
+                          <div className="monitoring-detail-row">
+                            <strong>{step.role}</strong>
+                            <Chip label={step.status} />
+                          </div>
+                          <div className="monitoring-detail-list-meta">
+                            {step.approverUsername ? `Assigned: @${step.approverUsername}` : "Any HR Fleet Manager"}
+                          </div>
+                          {step.decidedByName ? (
+                            <div className="monitoring-detail-card-value">
+                              {step.status} by {step.decidedByName}{step.note ? ` — ${step.note}` : ""}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="monitoring-detail-empty">
+                      Not yet submitted. Routing: Team Leader → Manager → HR Fleet Manager.
+                    </div>
+                  )}
+
+                  {canSubmitTravelOrder ? (
+                    <div className="monitoring-detail-actions">
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        disabled={saving}
+                        onClick={() => void handleSubmitTravelOrder()}
+                      >
+                        {ticket.approvalStage === "For Revision" ? "Resubmit for Approval" : "Submit for Approval"}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {canRecordTravelStep ? (
+                    <>
+                      <FieldBlock label="Reference">
+                        <select
+                          className="input-base"
+                          value={approvalReference}
+                          onChange={(event) => {
+                            const nextReference = event.target.value;
+                            if (isMonitoringApprovalReference(nextReference)) {
+                              setApprovalReference(nextReference);
+                            }
+                          }}
+                        >
+                          {MONITORING_APPROVAL_REFERENCES.map((reference) => (
+                            <option key={reference} value={reference}>
+                              {reference}
+                            </option>
+                          ))}
+                        </select>
+                      </FieldBlock>
+                      <FieldBlock label="Approval Note">
+                        <textarea
+                          className="input-base"
+                          style={textareaStyle}
+                          placeholder="Add note or revision reason"
+                          value={approvalNote}
+                          onChange={(event) => setApprovalNote(event.target.value)}
+                        />
+                      </FieldBlock>
+                      <div className="monitoring-detail-actions">
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={saving}
+                          onClick={() => void handleTravelApprovalDecision("Approved")}
+                        >
+                          Approve as {travelCurrentStep?.role}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger"
+                          disabled={saving}
+                          onClick={() => void handleTravelApprovalDecision("For Revision")}
+                        >
+                          Return for Revision
+                        </button>
+                      </div>
+                    </>
+                  ) : ticket.approvalStage === "Approved" ? (
+                    <div className="monitoring-detail-empty">Fully approved.</div>
+                  ) : travelCurrentStep ? (
+                    <div className="monitoring-detail-empty">Waiting for {travelCurrentStep.role} to record a decision.</div>
+                  ) : null}
+                </div>
+              ) : canRecordApproval ? (
                 <div className="monitoring-detail-stack">
                   <FieldBlock label="Reference">
                     <select

@@ -25,6 +25,10 @@ import {
   isMonitoringPendingReason,
   isMonitoringWorkflowType,
   isPendingApprovalStage,
+  buildTravelOrderApprovalChain,
+  travelOrderStageForChain,
+  TRAVEL_ORDER_FLEET_MANAGER_SCOPE,
+  type TravelOrderApprovalStep,
   isMonitoringUrgency,
   isOpenMonitoringStatus,
   MONITORING_MEETING_REQUEST_CATEGORY,
@@ -621,13 +625,13 @@ function resolveWorkflowStatus(args: {
 
 function normalizeTicketForRead(ticket: MonitoringTicketDoc): MonitoringTicketDoc {
   if (ticket.category === MONITORING_TRAVEL_ORDER_CATEGORY) {
+    // Travel Orders don't use the service-request "requires purchase/replacement"
+    // flags, but they DO use their own approval chain — keep approvalStage as stored.
     return {
       ...ticket,
       requiresPurchase: false,
       requiresReplacement: false,
       requiresSensitiveAccess: false,
-      approvalRequired: false,
-      approvalStage: "Not Required",
     };
   }
 
@@ -784,30 +788,82 @@ export const getOverview = query({
   },
 });
 
+// Parse the scheduled departure timestamp from a travel order's request details ("Departure: <date>").
+// Returns undefined for multi-stop ("See stops") or unparseable values.
+function getTravelDepartureMs(requestDetails?: string): number | undefined {
+  const line = (requestDetails ?? "")
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => /^Departure:/i.test(entry));
+  if (!line) return undefined;
+  const value = line.replace(/^Departure:\s*/i, "").trim();
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? undefined : ms;
+}
+
 export const getMeetingCalendar = query({
   args: {
     rangeStart: v.number(),
     rangeEnd: v.number(),
+    viewerUsername: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const rows = (await ctx.db.query("monitoringTickets").collect()).map(normalizeTicketForRead);
+
+    // Travel Order calendar visibility: Admins, HR Fleet Managers, and any Team
+    // Leader/Manager oversee all travel orders. Everyone else only sees their own
+    // travel orders or those from their own team. (Other event kinds are unaffected.)
+    const viewerUsername = args.viewerUsername?.trim() || undefined;
+    let canSeeAllTravelOrders = true;
+    let viewerDepartment: string | undefined;
+    if (viewerUsername) {
+      const viewer = await ctx.db
+        .query("users")
+        .withIndex("by_username", (q) => q.eq("username", viewerUsername))
+        .unique();
+      if (viewer) {
+        viewerDepartment = viewer.department?.trim() || undefined;
+        const isAdmin = viewer.role === "admin";
+        const isFleetManager = (viewer.approvalScopes ?? []).includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE);
+        let isLeaderOrManager = false;
+        if (!isAdmin && !isFleetManager) {
+          const teams = await ctx.db.query("departments").collect();
+          isLeaderOrManager = teams.some(
+            (team) => team.teamLeaderUsername === viewerUsername || team.managerUsername === viewerUsername,
+          );
+        }
+        canSeeAllTravelOrders = isAdmin || isFleetManager || isLeaderOrManager;
+      }
+    }
 
     return rows
       .filter((row) => {
         const isMeetingRequest =
           row.category === MONITORING_MEETING_REQUEST_CATEGORY || Boolean(row.meetingStartAt || row.meetingLocation);
+        const isTravelOrder = row.category === MONITORING_TRAVEL_ORDER_CATEGORY;
+        if (isTravelOrder && !canSeeAllTravelOrders) {
+          const ownTravelOrder = Boolean(row.requesterUsername && row.requesterUsername === viewerUsername);
+          const sameTeam = Boolean(
+            row.requesterDepartment && viewerDepartment && row.requesterDepartment === viewerDepartment,
+          );
+          if (!ownTravelOrder && !sameTeam) return false;
+        }
         const eventStart = isMeetingRequest
           ? row.meetingStartAt
-          : row.workflowType === "internetOutage"
-            ? row.timeDetected
-            : row.requestReceivedAt ?? row.createdAt;
+          : isTravelOrder
+            ? getTravelDepartureMs(row.requestDetails) ?? row.requestReceivedAt ?? row.createdAt
+            : row.workflowType === "internetOutage"
+              ? row.timeDetected
+              : row.requestReceivedAt ?? row.createdAt;
         if (!eventStart) return false;
 
         const eventEnd = isMeetingRequest
           ? row.meetingEndAt ?? row.meetingStartAt
-          : row.workflowType === "internetOutage"
-            ? row.timeRestored ?? row.timeDetected
-            : eventStart;
+          : isTravelOrder
+            ? row.travelReturnAt ?? eventStart
+            : row.workflowType === "internetOutage"
+              ? row.timeRestored ?? row.timeDetected
+              : eventStart;
         if (!eventEnd) return false;
         return eventStart <= args.rangeEnd && eventEnd >= args.rangeStart;
       })
@@ -816,23 +872,30 @@ export const getMeetingCalendar = query({
           row.category === MONITORING_MEETING_REQUEST_CATEGORY || Boolean(row.meetingStartAt || row.meetingLocation);
         const isBorrowingRequest =
           row.category === MONITORING_BORROWING_REQUEST_CATEGORY || Boolean(row.borrowingItems?.length);
+        const isTravelOrder = row.category === MONITORING_TRAVEL_ORDER_CATEGORY;
         const eventKind = isMeetingRequest
           ? "meeting"
-          : row.workflowType === "internetOutage"
-            ? "internet"
-            : isBorrowingRequest
-              ? "borrowing"
-              : "ticket";
+          : isTravelOrder
+            ? "travel"
+            : row.workflowType === "internetOutage"
+              ? "internet"
+              : isBorrowingRequest
+                ? "borrowing"
+                : "ticket";
         const eventStartAt = isMeetingRequest
           ? row.meetingStartAt!
-          : row.workflowType === "internetOutage"
-            ? row.timeDetected!
-            : row.requestReceivedAt ?? row.createdAt;
+          : isTravelOrder
+            ? getTravelDepartureMs(row.requestDetails) ?? row.requestReceivedAt ?? row.createdAt
+            : row.workflowType === "internetOutage"
+              ? row.timeDetected!
+              : row.requestReceivedAt ?? row.createdAt;
         const eventEndAt = isMeetingRequest
           ? row.meetingEndAt ?? row.meetingStartAt
-          : row.workflowType === "internetOutage"
-            ? row.timeRestored ?? row.timeDetected
-            : undefined;
+          : isTravelOrder
+            ? row.travelReturnAt
+            : row.workflowType === "internetOutage"
+              ? row.timeRestored ?? row.timeDetected
+              : undefined;
         const relatedAssetsCount = isMeetingRequest
           ? row.meetingAssetItems?.length ?? 0
           : isBorrowingRequest
@@ -842,7 +905,9 @@ export const getMeetingCalendar = query({
               : 0;
         const contextLine = isMeetingRequest
           ? [row.meetingMode, row.meetingLocation].filter(Boolean).join(" / ") || "No location or platform set"
-          : row.workflowType === "internetOutage"
+          : isTravelOrder
+            ? [row.fleetDriverName, row.fleetVehicleName].filter(Boolean).join(" · ") || "No fleet assigned"
+            : row.workflowType === "internetOutage"
             ? [row.isp, row.outageArea].filter(Boolean).join(" / ") || "Internet outage"
             : isBorrowingRequest
               ? row.borrowingItems?.length
@@ -1112,6 +1177,7 @@ export const createTicket = mutation({
     requesterName: v.string(),
     requesterSection: v.optional(v.string()),
     requesterDepartment: v.optional(v.string()),
+    requesterUsername: v.optional(v.string()),
     requestReceivedAt: v.optional(v.number()),
     assetId: v.optional(v.id("hardwareInventory")),
     impact: v.optional(v.string()),
@@ -1149,6 +1215,7 @@ export const createTicket = mutation({
     requestedItemsText: v.optional(v.string()),
     requestedBorrowDate: v.optional(v.number()),
     expectedReturnAt: v.optional(v.number()),
+    travelDepartAt: v.optional(v.number()),
     travelReturnAt: v.optional(v.number()),
     borrowingItems: v.optional(
       v.array(
@@ -1184,6 +1251,7 @@ export const createTicket = mutation({
     const requesterName = normalizeRequired(args.requesterName, "Requester name");
     const requesterSection = normalizeOptional(args.requesterSection);
     const requesterDepartment = normalizeOptional(args.requesterDepartment);
+    const requesterUsername = normalizeOptional(args.requesterUsername);
     const createdBy = normalizeRequired(args.createdBy, "Created by");
 
     ensureCategory(args.category);
@@ -1196,8 +1264,9 @@ export const createTicket = mutation({
     const approvalRequired =
       workflowType === "serviceRequest" &&
       !isMeetingRequest &&
-      !isTravelOrderRequest &&
-      (isItExemptionRequest ||
+      // Travel Orders always require approval (Team Leader → Manager → HR Fleet Manager).
+      (isTravelOrderRequest ||
+        isItExemptionRequest ||
         isApprovalRequired({
           requiresPurchase,
           requiresReplacement,
@@ -1416,6 +1485,7 @@ export const createTicket = mutation({
       requesterName,
       requesterSection,
       requesterDepartment,
+      requesterUsername,
       requestReceivedAt,
       assetId,
       assetTag,
@@ -1465,6 +1535,7 @@ export const createTicket = mutation({
       requestedItemsText,
       requestedBorrowDate,
       expectedReturnAt,
+      travelDepartAt: args.travelDepartAt,
       travelReturnAt: args.travelReturnAt,
       borrowingItems: borrowingItems.length ? borrowingItems : undefined,
       createdAt: now,
@@ -2342,6 +2413,170 @@ export const recordApprovalDecision = mutation({
     });
 
     return { success: true };
+  },
+});
+
+// ── Travel Order approval (role-based chain) ────────────────────────────────
+
+// Submit a travel order into its approval chain (Team Leader → Manager → HR
+// Fleet Manager), snapshotting the chain from the requester's team config.
+export const submitTravelOrderForApproval = mutation({
+  args: {
+    ticketId: v.id("monitoringTickets"),
+    actorName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const ticket = await ctx.db.get(args.ticketId);
+    if (!ticket) {
+      throw new Error("Ticket could not be found.");
+    }
+    if (ticket.category !== MONITORING_TRAVEL_ORDER_CATEGORY) {
+      throw new Error("Only travel orders use this approval flow.");
+    }
+    if (ticket.approvalStage !== "Not Submitted" && ticket.approvalStage !== "For Revision") {
+      throw new Error("This travel order has already been submitted for approval.");
+    }
+
+    const actorName = normalizeRequired(args.actorName, "Actor name");
+
+    // Find the requester's team to resolve its Team Leader and Manager.
+    const teamName = ticket.requesterDepartment?.trim();
+    let teamLeaderUsername: string | undefined;
+    let managerUsername: string | undefined;
+    if (teamName) {
+      const team = await ctx.db
+        .query("departments")
+        .filter((q) => q.eq(q.field("name"), teamName))
+        .first();
+      teamLeaderUsername = team?.teamLeaderUsername;
+      managerUsername = team?.managerUsername;
+    }
+
+    const chain = buildTravelOrderApprovalChain({
+      requesterUsername: ticket.requesterUsername,
+      teamLeaderUsername,
+      managerUsername,
+    });
+    const approvalStage = travelOrderStageForChain(chain);
+    const now = Date.now();
+
+    await ctx.db.patch(ticket._id, {
+      travelApprovalChain: chain,
+      approvalRequired: true,
+      approvalStage,
+      status: "Pending Approval",
+      revisionReason: undefined,
+      updatedAt: now,
+      updatedBy: actorName,
+    });
+
+    await ctx.db.insert("monitoringApprovalHistory", {
+      ticketId: ticket._id,
+      approver: chain[0]?.role ?? "HR Fleet Manager",
+      decision: "Submitted",
+      reference: undefined,
+      note: "Travel order submitted for approval.",
+      recordedBy: actorName,
+      createdAt: now,
+    });
+
+    return { success: true, approvalStage };
+  },
+});
+
+// Record an Approved / For Revision decision for the current pending step of a
+// travel order's approval chain, then advance the stage or finalize it.
+export const recordTravelOrderApprovalDecision = mutation({
+  args: {
+    ticketId: v.id("monitoringTickets"),
+    decision: v.string(),
+    actorName: v.string(),
+    actorUsername: v.string(),
+    reference: v.optional(v.string()),
+    note: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const ticket = await ctx.db.get(args.ticketId);
+    if (!ticket) {
+      throw new Error("Ticket could not be found.");
+    }
+    if (ticket.category !== MONITORING_TRAVEL_ORDER_CATEGORY) {
+      throw new Error("Only travel orders use this approval flow.");
+    }
+    const chain = (ticket.travelApprovalChain ?? []) as TravelOrderApprovalStep[];
+    if (chain.length === 0) {
+      throw new Error("This travel order has not been submitted for approval.");
+    }
+    if (args.decision !== "Approved" && args.decision !== "For Revision") {
+      throw new Error("Decision must be Approved or For Revision.");
+    }
+
+    const actorName = normalizeRequired(args.actorName, "Actor name");
+    const actorUsername = normalizeRequired(args.actorUsername, "Actor username");
+    const note = normalizeRequired(args.note, "Approval note");
+    const reference = normalizeOptional(args.reference);
+
+    const currentIndex = chain.findIndex((step) => step.status === "Pending");
+    if (currentIndex === -1) {
+      throw new Error("This travel order is already fully approved.");
+    }
+    const currentStep = chain[currentIndex];
+
+    // Authorize the actor for the current step.
+    if (currentStep.role === "HR Fleet Manager") {
+      const actor = await ctx.db
+        .query("users")
+        .withIndex("by_username", (q) => q.eq("username", actorUsername))
+        .unique();
+      const isFleetManager = Boolean(
+        actor?.active && (actor.approvalScopes ?? []).includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE),
+      );
+      if (!isFleetManager) {
+        throw new Error("Only a designated HR Fleet Manager can record this approval.");
+      }
+    } else if (currentStep.approverUsername && currentStep.approverUsername !== actorUsername) {
+      throw new Error(`Only the assigned ${currentStep.role} can record this decision.`);
+    }
+
+    const now = Date.now();
+    const nextChain: TravelOrderApprovalStep[] = chain.map((step, index) =>
+      index === currentIndex
+        ? {
+            ...step,
+            status: args.decision,
+            decidedByName: actorName,
+            decidedByUsername: actorUsername,
+            decidedAt: now,
+            reference,
+            note,
+          }
+        : step,
+    );
+
+    const approvalStage = travelOrderStageForChain(nextChain);
+    const isRevision = args.decision === "For Revision";
+    const isApproved = approvalStage === "Approved";
+
+    await ctx.db.patch(ticket._id, {
+      travelApprovalChain: nextChain,
+      approvalStage,
+      status: isRevision ? "For Revision" : isApproved ? "In Progress" : "Pending Approval",
+      revisionReason: isRevision ? note : undefined,
+      updatedAt: now,
+      updatedBy: actorName,
+    });
+
+    await ctx.db.insert("monitoringApprovalHistory", {
+      ticketId: ticket._id,
+      approver: currentStep.role,
+      decision: args.decision,
+      reference,
+      note,
+      recordedBy: actorName,
+      createdAt: now,
+    });
+
+    return { success: true, approvalStage };
   },
 });
 

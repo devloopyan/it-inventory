@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { TRAVEL_ORDER_FLEET_MANAGER_SCOPE } from "../lib/monitoring";
 
 const USER_ROLES = ["admin", "service_staff", "it_staff", "approver", "requester"] as const;
 const DEFAULT_IT_GROUPS = ["IT"] as const;
@@ -315,6 +316,31 @@ export const updateRole = mutation({
       updatedAt: Date.now(),
     });
 
+    return { success: true };
+  },
+});
+
+// Mark / unmark a user as a designated HR Fleet Manager (final Travel Order approver).
+export const setTravelFleetManager = mutation({
+  args: {
+    userId: v.id("users"),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) {
+      throw new Error("User account could not be found.");
+    }
+    const scopes = new Set(user.approvalScopes ?? []);
+    if (args.enabled) {
+      scopes.add(TRAVEL_ORDER_FLEET_MANAGER_SCOPE);
+    } else {
+      scopes.delete(TRAVEL_ORDER_FLEET_MANAGER_SCOPE);
+    }
+    await ctx.db.patch(user._id, {
+      approvalScopes: Array.from(scopes),
+      updatedAt: Date.now(),
+    });
     return { success: true };
   },
 });

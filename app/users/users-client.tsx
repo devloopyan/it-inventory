@@ -13,6 +13,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { USER_ROLES, type UserRole } from "@/lib/roles";
+import { TRAVEL_ORDER_FLEET_MANAGER_SCOPE } from "@/lib/monitoring";
 
 type UserAccount = {
   _id: Id<"users">;
@@ -22,6 +23,7 @@ type UserAccount = {
   email?: string;
   role: string;
   serviceGroups: string[];
+  approvalScopes: string[];
   department?: string;
   section?: string;
   active: boolean;
@@ -40,7 +42,6 @@ type UserFormState = {
   role: UserRole;
   serviceGroups: string[];
   department: string;
-  section: string;
 };
 
 const roleOptions: Array<{ value: UserRole; label: string; description: string }> = [
@@ -59,7 +60,6 @@ const defaultFormState: UserFormState = {
   role: "requester",
   serviceGroups: [],
   department: "",
-  section: "",
 };
 
 function isUserRole(value: string): value is UserRole {
@@ -108,6 +108,7 @@ export default function UsersClient() {
   const updateRole = useMutation(api.users.updateRole);
   const setActive = useMutation(api.users.setActive);
   const setPassword = useMutation(api.users.setPassword);
+  const setTravelFleetManager = useMutation(api.users.setTravelFleetManager);
 
   const [form, setForm] = useState<UserFormState>(defaultFormState);
   const [errorMessage, setErrorMessage] = useState("");
@@ -170,7 +171,6 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
         role: form.role,
         serviceGroups: form.serviceGroups,
         department: form.department || undefined,
-        section: form.section || undefined,
         createdBy: "IT Operations",
       });
       setForm(defaultFormState);
@@ -232,6 +232,24 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
     }
   }
 
+  async function handleFleetManagerToggle(user: UserAccount, enabled: boolean) {
+    try {
+      setBusyUserId(user._id);
+      setErrorMessage("");
+      setSuccessMessage("");
+      await setTravelFleetManager({ userId: user._id, enabled });
+      setSuccessMessage(
+        enabled
+          ? "Marked as HR Fleet Manager. They must sign in again for it to take effect."
+          : "Removed HR Fleet Manager role.",
+      );
+    } catch (error) {
+      setErrorMessage(parseError(error, "Unable to update Fleet Manager role."));
+    } finally {
+      setBusyUserId("");
+    }
+  }
+
   async function handleActiveChange(user: UserAccount) {
     try {
       setBusyUserId(user._id);
@@ -258,7 +276,7 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
             Create account records and assign roles for request workflows.
           </p>
         </div>
-        <Link href="/users/settings" className="users-settings-btn" title="Manage departments & service groups">
+        <Link href="/users/settings" className="users-settings-btn" title="Manage teams & service groups">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
             <path d="M1,4.75H3.736a3.728,3.728,0,0,0,7.195,0H23a1,1,0,0,0,0-2H10.931a3.728,3.728,0,0,0-7.195,0H1a1,1,0,0,0,0,2ZM7.333,2a1.75,1.75,0,1,1-1.75,1.75A1.752,1.752,0,0,1,7.333,2Z"/>
             <path d="M23,11H20.264a3.727,3.727,0,0,0-7.194,0H1a1,1,0,0,0,0,2H13.07a3.727,3.727,0,0,0,7.194,0H23a1,1,0,0,0,0-2Zm-6.333,2.75A1.75,1.75,0,1,1,18.417,12,1.752,1.752,0,0,1,16.667,13.75Z"/>
@@ -338,26 +356,15 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
               </label>
 
               <label className="users-field">
-                <span>Department</span>
+                <span>Team</span>
                 <select className="input-base" name="department" value={form.department} onChange={handleFieldChange}>
-                  <option value="">— Select department —</option>
+                  <option value="">— Select team —</option>
                   {(departments ?? []).map((dept) => (
                     <option key={dept} value={dept}>{dept}</option>
                   ))}
                 </select>
               </label>
             </div>
-
-            <label className="users-field">
-              <span>Section</span>
-              <input
-                className="input-base"
-                name="section"
-                value={form.section}
-                onChange={handleFieldChange}
-                placeholder="Section"
-              />
-            </label>
 
             <div className="users-scope-panel">
               <div>
@@ -419,7 +426,7 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                   <tr>
                     <th>Name</th>
                     <th>Role</th>
-                    <th>Department</th>
+                    <th>Team</th>
                     <th>Status</th>
                     <th>Joined</th>
                   </tr>
@@ -546,6 +553,22 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                 </div>
               </div>
             ) : null}
+
+            <div className="member-panel-section">
+              <div className="member-panel-section-title">Travel Order Approvals</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={selectedUser.approvalScopes.includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE)}
+                  onChange={(e) => void handleFleetManagerToggle(selectedUser, e.target.checked)}
+                  disabled={busyUserId === selectedUser._id}
+                />
+                HR Fleet Manager (final travel-order approver)
+              </label>
+              <p style={{ fontSize: 11, color: "var(--muted)", margin: "5px 0 0", lineHeight: 1.5 }}>
+                Any designated Fleet Manager can record the final approval on a travel order.
+              </p>
+            </div>
 
             <div className="member-panel-section">
               <div className="member-panel-section-title">
