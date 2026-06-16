@@ -97,6 +97,31 @@ After any change is made, always do all of these:
 
 ---
 
+## Deployment & Staging Workflow
+
+**`main` = production.** Do NOT commit straight to `main`. Every change goes through this loop:
+
+1. **Branch** off main — `git checkout -b feat/<short-name>`.
+2. **Build & test on the Convex DEV deployment** — run `npx convex dev` (a separate sandbox database, safe to break) and `npm run dev`. Try the change with throwaway data first.
+3. **Open a Pull Request** into `main` on GitHub. Vercel auto-builds a **Preview URL** for the branch — open it to see the change on a staging site before merging.
+4. **Merge to `main` only when it works.** That triggers the production deploy.
+
+### ⚠️ Convex must deploy together with the frontend
+
+Vercel's default build (`next build`) does NOT push the Convex backend (schema + functions) to production. If only the frontend deploys, prod breaks — new code calls functions/fields that aren't on the prod backend yet.
+
+**Fix once:** set the Vercel **Build Command** to:
+
+```
+npx convex deploy --cmd 'npm run build'
+```
+
+and add the production **`CONVEX_DEPLOY_KEY`** env var in Vercel. Then every prod deploy pushes backend + frontend together (and preview branches can use Convex preview deployments).
+
+Until that's configured, run `npx convex deploy` manually after merging any schema or function change.
+
+---
+
 ## Learning Notes
 
 > This section is for me to write down things I learn as I go.
