@@ -781,6 +781,26 @@ function FleetAvailabilitySection(props: {
   onManage: () => void;
 }) {
   const availableDriverCount = props.drivers.filter((driver) => driver.status === "Available").length;
+  const [availFrom, setAvailFrom] = useState("");
+  const [availTo, setAvailTo] = useState("");
+  const fromMs = toTimestamp(availFrom);
+  const toMs = toTimestamp(availTo);
+  const rangeValid = fromMs !== undefined && toMs !== undefined && toMs > fromMs;
+  const availability = useQuery(
+    api.fleet.getFleetAvailability,
+    rangeValid ? { from: fromMs, to: toMs } : "skip",
+  );
+  const pill = (ok: boolean) => ({
+    fontSize: 11,
+    fontWeight: 700,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: ok ? "rgba(34,197,94,0.15)" : "rgba(148,163,184,0.18)",
+    color: ok ? "rgb(21,128,61)" : "#475569",
+    border: ok ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(148,163,184,0.3)",
+    whiteSpace: "nowrap" as const,
+  });
+  const [checkerOpen, setCheckerOpen] = useState(false);
   return (
     <section className="monitoring-fleet-panel" aria-label="Fleet availability">
       <div className="monitoring-fleet-head">
@@ -799,6 +819,107 @@ function FleetAvailabilitySection(props: {
           ) : null}
         </div>
       </div>
+
+      {/* Collapsible availability checker — hidden until needed to keep the card calm */}
+      <button
+        type="button"
+        onClick={() => setCheckerOpen((open) => !open)}
+        aria-expanded={checkerOpen}
+        style={{
+          border: 0,
+          background: "none",
+          padding: "2px 0",
+          font: "inherit",
+          fontSize: 13,
+          fontWeight: 700,
+          color: "rgb(var(--brand-900-rgb))",
+          cursor: "pointer",
+          textAlign: "left",
+          width: "fit-content",
+        }}
+      >
+        {checkerOpen ? "▾" : "▸"} Check availability for a date/time
+      </button>
+      {checkerOpen ? (
+        <div style={{ display: "grid", gap: 10, borderTop: "1px solid var(--border-subtle)", paddingTop: 12 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
+              <span style={{ color: "var(--muted)" }}>From</span>
+              <input className="input-base" type="datetime-local" value={availFrom} onChange={(e) => setAvailFrom(e.target.value)} />
+            </label>
+            <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
+              <span style={{ color: "var(--muted)" }}>To</span>
+              <input className="input-base" type="datetime-local" value={availTo} onChange={(e) => setAvailTo(e.target.value)} />
+            </label>
+            {availFrom || availTo ? (
+              <button type="button" className="btn-secondary" onClick={() => { setAvailFrom(""); setAvailTo(""); }}>
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          {availFrom && availTo && !rangeValid ? (
+            <span style={{ fontSize: 12, color: "#991b1b" }}>The “To” time must be after the “From” time.</span>
+          ) : null}
+
+          {rangeValid ? (
+            availability === undefined ? (
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Checking availability…</span>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                    Drivers — {availability.drivers.filter((d) => d.available).length} of {availability.drivers.length} free
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {availability.drivers.map((d) => (
+                      <span
+                        key={String(d._id)}
+                        style={pill(d.available)}
+                        title={
+                          d.conflict
+                            ? `Booked: ${d.conflict.ticketNumber} — ${d.conflict.title}`
+                            : d.outOfService
+                              ? `Out of service (${d.status})`
+                              : "Available for this window"
+                        }
+                      >
+                        {d.name}
+                        {!d.available && d.conflict ? ` · ${d.conflict.ticketNumber}` : ""}
+                        {!d.available && d.outOfService ? ` · ${d.status}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                    Vehicles — {availability.vehicles.filter((v) => v.available).length} of {availability.vehicles.length} free
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {availability.vehicles.map((v) => (
+                      <span
+                        key={String(v._id)}
+                        style={pill(v.available)}
+                        title={
+                          v.conflict
+                            ? `Booked: ${v.conflict.ticketNumber} — ${v.conflict.title}`
+                            : v.outOfService
+                              ? `Out of service (${v.status})`
+                              : "Available for this window"
+                        }
+                      >
+                        {v.name}{v.plateNumber ? ` (${v.plateNumber})` : ""}
+                        {!v.available && v.conflict ? ` · ${v.conflict.ticketNumber}` : ""}
+                        {!v.available && v.outOfService ? ` · ${v.status}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="monitoring-fleet-grid">
         <div className="monitoring-fleet-column">
@@ -977,116 +1098,7 @@ function FleetAvailabilitySection(props: {
           </div>
         </div>
       </div>
-
-      <FleetAvailabilityChecker />
     </section>
-  );
-}
-
-// Lets managers/team leaders pick a date/time window and see which drivers and vehicles
-// are free (not booked on an overlapping travel order) so they know what to book.
-function FleetAvailabilityChecker() {
-  const [availFrom, setAvailFrom] = useState("");
-  const [availTo, setAvailTo] = useState("");
-  const fromMs = toTimestamp(availFrom);
-  const toMs = toTimestamp(availTo);
-  const rangeValid = fromMs !== undefined && toMs !== undefined && toMs > fromMs;
-  const availability = useQuery(
-    api.fleet.getFleetAvailability,
-    rangeValid ? { from: fromMs, to: toMs } : "skip",
-  );
-
-  const pill = (ok: boolean) => ({
-    fontSize: 11,
-    fontWeight: 700,
-    padding: "3px 8px",
-    borderRadius: 999,
-    background: ok ? "rgba(34,197,94,0.15)" : "rgba(148,163,184,0.18)",
-    color: ok ? "rgb(21,128,61)" : "#475569",
-    border: ok ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(148,163,184,0.3)",
-    whiteSpace: "nowrap" as const,
-  });
-
-  return (
-    <div style={{ marginTop: 4, borderTop: "1px solid var(--border-subtle)", paddingTop: 12, display: "grid", gap: 10 }}>
-      <strong style={{ fontSize: 13 }}>Check availability for a date/time</strong>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
-          <span style={{ color: "var(--muted)" }}>From</span>
-          <input className="input-base" type="datetime-local" value={availFrom} onChange={(e) => setAvailFrom(e.target.value)} />
-        </label>
-        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
-          <span style={{ color: "var(--muted)" }}>To</span>
-          <input className="input-base" type="datetime-local" value={availTo} onChange={(e) => setAvailTo(e.target.value)} />
-        </label>
-        {availFrom || availTo ? (
-          <button type="button" className="btn-secondary" onClick={() => { setAvailFrom(""); setAvailTo(""); }}>
-            Clear
-          </button>
-        ) : null}
-      </div>
-
-      {availFrom && availTo && !rangeValid ? (
-        <span style={{ fontSize: 12, color: "#991b1b" }}>The “To” time must be after the “From” time.</span>
-      ) : null}
-
-      {rangeValid ? (
-        availability === undefined ? (
-          <span style={{ fontSize: 12, color: "var(--muted)" }}>Checking availability…</span>
-        ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-                Drivers — {availability.drivers.filter((d) => d.available).length} of {availability.drivers.length} free
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {availability.drivers.map((d) => (
-                  <span
-                    key={String(d._id)}
-                    style={pill(d.available)}
-                    title={
-                      d.conflict
-                        ? `Booked: ${d.conflict.ticketNumber} — ${d.conflict.title}`
-                        : d.outOfService
-                          ? `Out of service (${d.status})`
-                          : "Available for this window"
-                    }
-                  >
-                    {d.name}
-                    {!d.available && d.conflict ? ` · ${d.conflict.ticketNumber}` : ""}
-                    {!d.available && d.outOfService ? ` · ${d.status}` : ""}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-                Vehicles — {availability.vehicles.filter((v) => v.available).length} of {availability.vehicles.length} free
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {availability.vehicles.map((v) => (
-                  <span
-                    key={String(v._id)}
-                    style={pill(v.available)}
-                    title={
-                      v.conflict
-                        ? `Booked: ${v.conflict.ticketNumber} — ${v.conflict.title}`
-                        : v.outOfService
-                          ? `Out of service (${v.status})`
-                          : "Available for this window"
-                    }
-                  >
-                    {v.name}{v.plateNumber ? ` (${v.plateNumber})` : ""}
-                    {!v.available && v.conflict ? ` · ${v.conflict.ticketNumber}` : ""}
-                    {!v.available && v.outOfService ? ` · ${v.status}` : ""}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        )
-      ) : null}
-    </div>
   );
 }
 
