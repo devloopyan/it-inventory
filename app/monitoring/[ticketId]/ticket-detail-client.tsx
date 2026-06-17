@@ -1735,7 +1735,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 onClick={() => void handleTravelApprovalDecision("Approved")}
                 title={`Approve as ${travelCurrentStep?.role}`}
               >
-                {saving ? "Saving…" : `Approve as ${travelCurrentStep?.role}`}
+                {saving ? "Saving…" : "Approve"}
               </button>
             ) : null}
             {!isDetailEditing && (!isTravelOrder || canEditTravelOrder) ? (
