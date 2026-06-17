@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useEffect, type ChangeEvent, type FormEvent } from "react";
+import { Fragment, useMemo, useState, useEffect, type ChangeEvent, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 
 function parseError(error: unknown, fallback: string): string {
@@ -132,6 +132,22 @@ export default function UsersClient() {
         (u.department ?? "").toLowerCase().includes(q),
     );
   }, [users, userSearch]);
+
+  // Group the user list by team (department) for the "by team" view.
+  const usersByTeam = useMemo(() => {
+    const groups = new Map<string, UserAccount[]>();
+    for (const user of filteredUsers) {
+      const team = user.department?.trim() || "Unassigned";
+      const bucket = groups.get(team);
+      if (bucket) bucket.push(user);
+      else groups.set(team, [user]);
+    }
+    return Array.from(groups.entries()).sort((a, b) => {
+      if (a[0] === "Unassigned") return 1;
+      if (b[0] === "Unassigned") return -1;
+      return a[0].localeCompare(b[0]);
+    });
+  }, [filteredUsers]);
 
 function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.target;
@@ -368,8 +384,8 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
 
             <div className="users-scope-panel">
               <div>
-                <strong>Service Groups</strong>
-                <span>Requests this user can help process.</span>
+                <strong>Handles requests for</strong>
+                <span>Request queues this user can process. Leave empty for requesters who only submit.</span>
               </div>
               <div className="users-scope-options">
                 {(departments ?? []).map((sg) => (
@@ -426,7 +442,6 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                   <tr>
                     <th>Name</th>
                     <th>Role</th>
-                    <th>Team</th>
                     <th>Status</th>
                     <th>Joined</th>
                   </tr>
@@ -434,42 +449,61 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                 <tbody>
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="ulist-empty">
+                      <td colSpan={4} className="ulist-empty">
                         {userSearch ? "No users match your search." : "No user accounts yet."}
                       </td>
                     </tr>
-                  ) : filteredUsers.map((user) => {
-                    const initials = getInitials(user.displayName);
-                    const avatarStyle = getAvatarStyle();
-                    const roleLabel = roleOptions.find((r) => r.value === normalizeRoleForSelect(user.role))?.label ?? user.role;
-                    return (
-                      <tr
-                        key={user._id}
-                        className="ulist-row"
-                        onClick={() => { setSelectedUserId(user._id); setTemporaryPassword(""); setErrorMessage(""); setSuccessMessage(""); }}
-                      >
-                        <td>
-                          <div className="ulist-name-cell">
-                            <div className="ulist-avatar" style={avatarStyle}>{initials}</div>
-                            <div>
-                              <div className="ulist-display-name">{user.displayName}</div>
-                              <div className="ulist-username">@{user.username}</div>
-                            </div>
-                          </div>
+                  ) : usersByTeam.map(([team, members]) => (
+                    <Fragment key={team}>
+                      <tr>
+                        <td
+                          colSpan={4}
+                          style={{
+                            background: "var(--surface-subtle, #f9fafb)",
+                            fontWeight: 800,
+                            fontSize: 11,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                            color: "var(--muted)",
+                            padding: "8px 16px",
+                          }}
+                        >
+                          {team} <span style={{ opacity: 0.7 }}>({members.length})</span>
                         </td>
-                        <td>
-                          <span className="ulist-role-chip">{roleLabel}</span>
-                        </td>
-                        <td className="ulist-muted">{user.department ?? "—"}</td>
-                        <td>
-                          <span className={`member-badge${user.active ? " is-active" : " is-inactive"}`}>
-                            {user.active ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                        <td className="ulist-muted">{formatDate(user.createdAt)}</td>
                       </tr>
-                    );
-                  })}
+                      {members.map((user) => {
+                        const initials = getInitials(user.displayName);
+                        const avatarStyle = getAvatarStyle();
+                        const roleLabel = roleOptions.find((r) => r.value === normalizeRoleForSelect(user.role))?.label ?? user.role;
+                        return (
+                          <tr
+                            key={user._id}
+                            className="ulist-row"
+                            onClick={() => { setSelectedUserId(user._id); setTemporaryPassword(""); setErrorMessage(""); setSuccessMessage(""); }}
+                          >
+                            <td>
+                              <div className="ulist-name-cell">
+                                <div className="ulist-avatar" style={avatarStyle}>{initials}</div>
+                                <div>
+                                  <div className="ulist-display-name">{user.displayName}</div>
+                                  <div className="ulist-username">@{user.username}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <span className="ulist-role-chip">{roleLabel}</span>
+                            </td>
+                            <td>
+                              <span className={`member-badge${user.active ? " is-active" : " is-inactive"}`}>
+                                {user.active ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td className="ulist-muted">{formatDate(user.createdAt)}</td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  ))}
                 </tbody>
               </table>
             )}
@@ -537,7 +571,7 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
 
             {(departments ?? []).length > 0 ? (
               <div className="member-panel-section">
-                <div className="member-panel-section-title">Service Groups</div>
+                <div className="member-panel-section-title">Handles requests for</div>
                 <div style={{ display: "grid", gap: 9 }}>
                   {(departments ?? []).map((sg) => (
                     <label key={sg} style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", fontSize: 13 }}>

@@ -166,9 +166,10 @@ export default function UserSettingsClient() {
       <div className="usettings-card">
         <div className="usettings-card-head">
           <div>
-            <h2 className="type-section-title">Teams & Service Groups</h2>
+            <h2 className="type-section-title">Teams</h2>
             <p className="type-section-copy">
-              These labels appear as team options when creating users and as service group assignments for staff.
+              The teams a user can belong to. The same list also defines the request queues staff
+              can handle (the &ldquo;Handles requests for&rdquo; options on a user).
             </p>
           </div>
         </div>
