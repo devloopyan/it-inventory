@@ -62,7 +62,6 @@ export default function TravelOrderRequestClient() {
 
   const [requesterName, setRequesterName] = useState(currentUser?.displayName ?? "");
   const department = currentUser?.department ?? "";
-  const [section, setSection] = useState(currentUser?.section ?? "");
   const [useMultiStop, setUseMultiStop] = useState(false);
 
   // Single-stop (legacy) fields
@@ -95,12 +94,6 @@ export default function TravelOrderRequestClient() {
       setRequesterName(currentUser.displayName);
     }
   }, [currentUser?.displayName, requesterName]);
-
-  useEffect(() => {
-    if (!section.trim() && currentUser?.section) {
-      setSection(currentUser.section);
-    }
-  }, [currentUser?.section, section]);
 
   useEffect(() => {
     setPassengers((currentPassengers) => {
@@ -190,7 +183,6 @@ export default function TravelOrderRequestClient() {
     try {
       const trimmedRequesterName = requesterName.trim();
       const trimmedDepartment = department.trim();
-      const trimmedSection = section.trim();
       const trimmedTravelPurpose = travelPurpose.trim();
       const trimmedProjectName = projectName.trim();
       const trimmedExpectedOutput = expectedOutput.trim();
@@ -287,7 +279,6 @@ export default function TravelOrderRequestClient() {
         `Departure: ${departureText}`,
         `Return: ${returnText}`,
         trimmedNotes ? `Additional / transportation notes: ${trimmedNotes}` : null,
-        trimmedSection ? `Section: ${trimmedSection}` : null,
       ]
         .filter(Boolean)
         .join("\n");
@@ -296,7 +287,6 @@ export default function TravelOrderRequestClient() {
         "Request type: Travel Order",
         `Requester: ${trimmedRequesterName}`,
         `Team: ${trimmedDepartment}`,
-        trimmedSection ? `Section: ${trimmedSection}` : null,
         `Destination: ${destinationText}`,
         `Passengers: ${passengersText}`,
         `Project name: ${trimmedProjectName}`,
@@ -317,7 +307,6 @@ export default function TravelOrderRequestClient() {
         requestSource: REQUEST_SOURCE,
         requesterName: trimmedRequesterName,
         requesterDepartment: trimmedDepartment,
-        requesterSection: trimmedSection || undefined,
         requesterUsername: currentUser?.username || undefined,
         impact: "Single User",
         urgency: "Can Wait",
@@ -383,16 +372,6 @@ export default function TravelOrderRequestClient() {
                 Team is missing from your account. Please contact HR/Admin.
               </small>
             ) : null}
-          </label>
-
-          <label className="request-form-field">
-            <span>Section</span>
-            <input
-              className="input-base"
-              value={section}
-              onChange={(event) => setSection(event.target.value)}
-              placeholder="Enter section"
-            />
           </label>
 
           {/* ── Multi-stop toggle ── */}
