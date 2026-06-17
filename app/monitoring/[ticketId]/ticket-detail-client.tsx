@@ -1726,6 +1726,18 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                 />
               </svg>
             </Link>
+            {canRecordTravelStep ? (
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ fontSize: 13, padding: "0 14px", minHeight: 36, whiteSpace: "nowrap" }}
+                disabled={saving}
+                onClick={() => void handleTravelApprovalDecision("Approved")}
+                title={`Approve as ${travelCurrentStep?.role}`}
+              >
+                {saving ? "Saving…" : `Approve as ${travelCurrentStep?.role}`}
+              </button>
+            ) : null}
             {!isDetailEditing && (!isTravelOrder || canEditTravelOrder) ? (
               <button
                 className="asset-action-btn asset-action-btn-primary"
