@@ -2577,14 +2577,6 @@ export const listTravelApprovalsForUser = query({
     const username = args.username?.trim();
     if (!username) return [];
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_username", (q) => q.eq("username", username))
-      .unique();
-    const isFleetManager = Boolean(
-      user?.active && (user.approvalScopes ?? []).includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE),
-    );
-
     const tickets = await ctx.db.query("monitoringTickets").collect();
     const pending = [];
     for (const ticket of tickets) {
@@ -2593,9 +2585,7 @@ export const listTravelApprovalsForUser = query({
       if (!chain || chain.length === 0) continue;
       const current = chain.find((step) => step.status === "Pending");
       if (!current) continue;
-      const isMine =
-        current.role === "HR Fleet Manager" ? isFleetManager : current.approverUsername === username;
-      if (!isMine) continue;
+      if (current.approverUsername !== username) continue;
       pending.push({
         _id: ticket._id,
         ticketNumber: ticket.ticketNumber,
