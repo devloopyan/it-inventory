@@ -2570,6 +2570,48 @@ export const recordTravelOrderApprovalDecision = mutation({
   },
 });
 
+// Travel Orders currently awaiting THIS user's approval step (for the dashboard card).
+export const listTravelApprovalsForUser = query({
+  args: { username: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const username = args.username?.trim();
+    if (!username) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_username", (q) => q.eq("username", username))
+      .unique();
+    const isFleetManager = Boolean(
+      user?.active && (user.approvalScopes ?? []).includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE),
+    );
+
+    const tickets = await ctx.db.query("monitoringTickets").collect();
+    const pending = [];
+    for (const ticket of tickets) {
+      if (ticket.category !== MONITORING_TRAVEL_ORDER_CATEGORY) continue;
+      const chain = ticket.travelApprovalChain;
+      if (!chain || chain.length === 0) continue;
+      const current = chain.find((step) => step.status === "Pending");
+      if (!current) continue;
+      const isMine =
+        current.role === "HR Fleet Manager" ? isFleetManager : current.approverUsername === username;
+      if (!isMine) continue;
+      pending.push({
+        _id: ticket._id,
+        ticketNumber: ticket.ticketNumber,
+        title: ticket.title,
+        requesterName: ticket.requesterName,
+        requesterDepartment: ticket.requesterDepartment,
+        stepRole: current.role,
+        travelDepartAt: ticket.travelDepartAt,
+        createdAt: ticket.createdAt,
+      });
+    }
+    pending.sort((a, b) => (a.travelDepartAt ?? a.createdAt) - (b.travelDepartAt ?? b.createdAt));
+    return pending;
+  },
+});
+
 export const syncAutoClose = mutation({
   args: {},
   handler: async (ctx) => {

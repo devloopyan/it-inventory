@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCurrentUser } from "@/app/current-user-context";
+import TravelApprovalsCard from "./travel-approvals-card";
 
 type RequesterDashboardAsset = {
   _id: string;
@@ -117,6 +119,7 @@ export default function RequesterDashboard({
   onAddBorrowingItem,
   onRemoveBorrowingItem,
 }: RequesterDashboardProps) {
+  const currentUser = useCurrentUser();
   return (
     <div className="dashboard-page requester-dashboard">
       <section className="panel requester-dashboard-hero">
@@ -130,6 +133,8 @@ export default function RequesterDashboard({
           New Request
         </Link>
       </section>
+
+      <TravelApprovalsCard username={currentUser?.username} />
 
       <div className="requester-dashboard-grid">
         <section className="panel requester-dashboard-section">

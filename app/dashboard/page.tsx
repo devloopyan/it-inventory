@@ -12,6 +12,7 @@ import { MONITORING_BORROWING_REQUEST_CATEGORY } from "@/lib/monitoring";
 import { normalizeServiceGroups, normalizeUserRole } from "@/lib/roles";
 import { getServiceGroupForCategory } from "@/lib/serviceGroups";
 import RequesterDashboard from "./requester-dashboard";
+import TravelApprovalsCard from "./travel-approvals-card";
 import DashboardStaffDropdown from "./staff-dropdown";
 
 type TabKey = "workstation" | "master" | "storage" | "borrowed" | "reserved" | "requested" | "available";
@@ -1421,6 +1422,7 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-page">
+      <TravelApprovalsCard username={currentUser?.username} />
       {!isHrAdminCalendarOnlyDashboard ? (
       <section className="panel dashboard-top-card">
         <div className="dashboard-top-card-head">
