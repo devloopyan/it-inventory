@@ -30,7 +30,6 @@ import {
   isMonitoringApprovalReference,
   isMonitoringWorkflowType,
   normalizeMeetingRequestStatusValue,
-  TRAVEL_ORDER_FLEET_MANAGER_SCOPE,
   type MonitoringApprovalReference,
 } from "@/lib/monitoring";
 import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/requestDisplay";
@@ -1634,10 +1633,9 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
     !isTravelOrder &&
     isPendingApprovalStage(ticket.approvalStage);
 
-  // ── Travel Order approval chain (Team Leader → Manager → HR Fleet Manager) ──
+  // ── Travel Order approval chain (Team Leader → Manager → Fleet Admin) ──
   const travelChain = ticket.travelApprovalChain ?? [];
   const travelCurrentStep = travelChain.find((step) => step.status === "Pending");
-  const isFleetManager = (currentUser?.approvalScopes ?? []).includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE);
   const canSubmitTravelOrder =
     isTravelOrder &&
     (ticket.approvalStage === "Not Submitted" || ticket.approvalStage === "For Revision") &&
@@ -1645,9 +1643,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
   const canRecordTravelStep =
     isTravelOrder &&
     Boolean(travelCurrentStep) &&
-    (travelCurrentStep?.role === "HR Fleet Manager"
-      ? isFleetManager
-      : travelCurrentStep?.approverUsername === currentUser?.username);
+    travelCurrentStep?.approverUsername === currentUser?.username;
 
   const isDetailEditing = isMeetingRequest ? isMeetingEditing : isTicketEditing;
   const backHref = isMeetingRequest
@@ -3009,7 +3005,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                             <Chip label={step.status} />
                           </div>
                           <div className="monitoring-detail-list-meta">
-                            {step.approverUsername ? `Assigned: @${step.approverUsername}` : "Any HR Fleet Manager"}
+                            {step.approverUsername ? `Assigned: @${step.approverUsername}` : "Not assigned"}
                           </div>
                           {step.decidedByName ? (
                             <div className="monitoring-detail-card-value">
@@ -3021,7 +3017,7 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
                     </div>
                   ) : (
                     <div className="monitoring-detail-empty">
-                      Not yet submitted. Routing: Team Leader → Manager → HR Fleet Manager.
+                      Not yet submitted. Routing: Team Leader → Manager → Fleet Admin.
                     </div>
                   )}
 

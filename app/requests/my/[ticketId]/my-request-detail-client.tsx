@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentUser } from "@/app/current-user-context";
@@ -9,6 +10,7 @@ import { formatRequesterAssetLabel, formatRequesterRequestType } from "@/lib/req
 import {
   MONITORING_BORROWING_REQUEST_CATEGORY,
   MONITORING_MEETING_REQUEST_CATEGORY,
+  MONITORING_TRAVEL_ORDER_CATEGORY,
   normalizeMeetingRequestStatusValue,
 } from "@/lib/monitoring";
 
@@ -40,6 +42,12 @@ function getStatusBadgeStyle(status: string) {
   if (s.includes("cancel") || s.includes("reject"))
     return { background: "#fee2e2", color: "#991b1b" };
   return { background: "#e5e7eb", color: "#374151" };
+}
+
+function approvalPillStyle(status: string) {
+  if (status === "Approved") return { background: "#dcfce7", color: "#166534" };
+  if (status === "For Revision") return { background: "#fee2e2", color: "#991b1b" };
+  return { background: "#fef3c7", color: "#92400e" }; // Pending
 }
 
 type ParsedDetails = {
@@ -215,6 +223,9 @@ function DetailsBlock({ text }: { text?: string }) {
 export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"monitoringTickets"> }) {
   const currentUser = useCurrentUser();
   const detail = useQuery(api.monitoring.getById, { ticketId });
+  const submitTravelOrder = useMutation(api.monitoring.submitTravelOrderForApproval);
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState("");
   const ticket = detail?.ticket;
   const isOwnRequest =
     ticket &&
@@ -261,6 +272,22 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
   });
   const progressIndex = resolveProgressIndex(progressSteps, ticket.status);
   const isBorrowing = ticket.category === MONITORING_BORROWING_REQUEST_CATEGORY;
+  const isTravelOrder = ticket.category === MONITORING_TRAVEL_ORDER_CATEGORY;
+  const canSubmitTravelOrder =
+    isTravelOrder && (ticket.approvalStage === "Not Submitted" || ticket.approvalStage === "For Revision");
+
+  async function handleSubmitTravelOrder() {
+    setSubmitting(true);
+    setFeedback("");
+    try {
+      await submitTravelOrder({ ticketId, actorName: currentUser?.displayName ?? ticket?.requesterName ?? "Requester" });
+      setFeedback("Submitted for approval.");
+    } catch (error) {
+      setFeedback(`Error: ${error instanceof Error ? error.message : "Submission failed."}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="request-page">
@@ -301,6 +328,57 @@ export default function MyRequestDetailClient({ ticketId }: { ticketId: Id<"moni
             <div style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>{formatDateTime(ticket.createdAt)}</div>
           </div>
         </div>
+
+        {isTravelOrder ? (
+          <section className="my-request-detail-block">
+            <h2>Approval</h2>
+            <div style={{ padding: "14px 16px", display: "grid", gap: 12 }}>
+              <div style={{ fontSize: 13 }}>
+                Current stage: <strong>{ticket.approvalStage}</strong>
+              </div>
+
+              {ticket.travelApprovalChain?.length ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {ticket.travelApprovalChain.map((step, index) => (
+                    <div
+                      key={`${step.role}-${index}`}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "9px 12px", border: "1px solid var(--border-subtle)", borderRadius: 10 }}
+                    >
+                      <div style={{ display: "grid", gap: 2 }}>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>{step.role}</span>
+                        {step.decidedByName ? (
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>{step.status} by {step.decidedByName}</span>
+                        ) : null}
+                      </div>
+                      <span style={{ ...approvalPillStyle(step.status), fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>
+                        {step.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                  Not yet submitted. Once submitted it routes Team Leader → Manager → Fleet Admin.
+                </p>
+              )}
+
+              {canSubmitTravelOrder ? (
+                <div>
+                  {ticket.approvalStage === "For Revision" && ticket.revisionReason ? (
+                    <p style={{ fontSize: 12, color: "#991b1b", margin: "0 0 8px" }}>Revision note: {ticket.revisionReason}</p>
+                  ) : null}
+                  <button type="button" className="btn-primary" disabled={submitting} onClick={() => void handleSubmitTravelOrder()}>
+                    {submitting ? "Submitting…" : ticket.approvalStage === "For Revision" ? "Resubmit for Approval" : "Submit for Approval"}
+                  </button>
+                </div>
+              ) : null}
+
+              {feedback ? (
+                <div style={{ fontSize: 12, color: feedback.startsWith("Error") ? "#991b1b" : "#166534" }}>{feedback}</div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
 
         <section className="my-request-detail-block">
           <h2>Progress</h2>

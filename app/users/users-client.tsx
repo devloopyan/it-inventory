@@ -13,7 +13,6 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { USER_ROLES, type UserRole } from "@/lib/roles";
-import { TRAVEL_ORDER_FLEET_MANAGER_SCOPE } from "@/lib/monitoring";
 
 type UserAccount = {
   _id: Id<"users">;
@@ -108,7 +107,6 @@ export default function UsersClient() {
   const updateRole = useMutation(api.users.updateRole);
   const setActive = useMutation(api.users.setActive);
   const setPassword = useMutation(api.users.setPassword);
-  const setTravelFleetManager = useMutation(api.users.setTravelFleetManager);
 
   const [form, setForm] = useState<UserFormState>(defaultFormState);
   const [errorMessage, setErrorMessage] = useState("");
@@ -243,24 +241,6 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
       setSuccessMessage("Workflow access updated.");
     } catch (error) {
       setErrorMessage(parseError(error, "Unable to update workflow access."));
-    } finally {
-      setBusyUserId("");
-    }
-  }
-
-  async function handleFleetManagerToggle(user: UserAccount, enabled: boolean) {
-    try {
-      setBusyUserId(user._id);
-      setErrorMessage("");
-      setSuccessMessage("");
-      await setTravelFleetManager({ userId: user._id, enabled });
-      setSuccessMessage(
-        enabled
-          ? "Marked as HR Fleet Manager. They must sign in again for it to take effect."
-          : "Removed HR Fleet Manager role.",
-      );
-    } catch (error) {
-      setErrorMessage(parseError(error, "Unable to update Fleet Manager role."));
     } finally {
       setBusyUserId("");
     }
@@ -587,22 +567,6 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                 </div>
               </div>
             ) : null}
-
-            <div className="member-panel-section">
-              <div className="member-panel-section-title">Travel Order Approvals</div>
-              <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", fontSize: 13 }}>
-                <input
-                  type="checkbox"
-                  checked={selectedUser.approvalScopes.includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE)}
-                  onChange={(e) => void handleFleetManagerToggle(selectedUser, e.target.checked)}
-                  disabled={busyUserId === selectedUser._id}
-                />
-                HR Fleet Manager (final travel-order approver)
-              </label>
-              <p style={{ fontSize: 11, color: "var(--muted)", margin: "5px 0 0", lineHeight: 1.5 }}>
-                Any designated Fleet Manager can record the final approval on a travel order.
-              </p>
-            </div>
 
             <div className="member-panel-section">
               <div className="member-panel-section-title">

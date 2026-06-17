@@ -27,7 +27,7 @@ import {
   isPendingApprovalStage,
   buildTravelOrderApprovalChain,
   travelOrderStageForChain,
-  TRAVEL_ORDER_FLEET_MANAGER_SCOPE,
+  TRAVEL_ORDER_HR_TEAM,
   type TravelOrderApprovalStep,
   isMonitoringUrgency,
   isOpenMonitoringStatus,
@@ -810,9 +810,9 @@ export const getMeetingCalendar = query({
   handler: async (ctx, args) => {
     const rows = (await ctx.db.query("monitoringTickets").collect()).map(normalizeTicketForRead);
 
-    // Travel Order calendar visibility: Admins, HR Fleet Managers, and any Team
-    // Leader/Manager oversee all travel orders. Everyone else only sees their own
-    // travel orders or those from their own team. (Other event kinds are unaffected.)
+    // Travel Order calendar visibility: Admins and any Team Leader/Manager (of any
+    // team — this includes the HR team's TL / Fleet Admin) oversee all travel orders.
+    // Everyone else only sees their own or their own team's. (Other event kinds unaffected.)
     const viewerUsername = args.viewerUsername?.trim() || undefined;
     let canSeeAllTravelOrders = true;
     let viewerDepartment: string | undefined;
@@ -824,15 +824,14 @@ export const getMeetingCalendar = query({
       if (viewer) {
         viewerDepartment = viewer.department?.trim() || undefined;
         const isAdmin = viewer.role === "admin";
-        const isFleetManager = (viewer.approvalScopes ?? []).includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE);
         let isLeaderOrManager = false;
-        if (!isAdmin && !isFleetManager) {
+        if (!isAdmin) {
           const teams = await ctx.db.query("departments").collect();
           isLeaderOrManager = teams.some(
             (team) => team.teamLeaderUsername === viewerUsername || team.managerUsername === viewerUsername,
           );
         }
-        canSeeAllTravelOrders = isAdmin || isFleetManager || isLeaderOrManager;
+        canSeeAllTravelOrders = isAdmin || isLeaderOrManager;
       }
     }
 
@@ -1264,7 +1263,7 @@ export const createTicket = mutation({
     const approvalRequired =
       workflowType === "serviceRequest" &&
       !isMeetingRequest &&
-      // Travel Orders always require approval (Team Leader → Manager → HR Fleet Manager).
+      // Travel Orders always require approval (Team Leader → Manager → Fleet Admin).
       (isTravelOrderRequest ||
         isItExemptionRequest ||
         isApprovalRequired({
@@ -2418,8 +2417,8 @@ export const recordApprovalDecision = mutation({
 
 // ── Travel Order approval (role-based chain) ────────────────────────────────
 
-// Submit a travel order into its approval chain (Team Leader → Manager → HR
-// Fleet Manager), snapshotting the chain from the requester's team config.
+// Submit a travel order into its approval chain (Team Leader → Manager → Fleet
+// Admin), snapshotting the chain from the requester's team + HR-team config.
 export const submitTravelOrderForApproval = mutation({
   args: {
     ticketId: v.id("monitoringTickets"),
@@ -2439,24 +2438,26 @@ export const submitTravelOrderForApproval = mutation({
 
     const actorName = normalizeRequired(args.actorName, "Actor name");
 
-    // Find the requester's team to resolve its Team Leader and Manager.
+    // Resolve the requester's team (TL + Manager) and the HR team (its TL = Fleet Admin).
     const teamName = ticket.requesterDepartment?.trim();
-    let teamLeaderUsername: string | undefined;
-    let managerUsername: string | undefined;
-    if (teamName) {
-      const team = await ctx.db
-        .query("departments")
-        .filter((q) => q.eq(q.field("name"), teamName))
-        .first();
-      teamLeaderUsername = team?.teamLeaderUsername;
-      managerUsername = team?.managerUsername;
-    }
+    const [team, hrTeam] = await Promise.all([
+      teamName
+        ? ctx.db.query("departments").filter((q) => q.eq(q.field("name"), teamName)).first()
+        : Promise.resolve(null),
+      ctx.db.query("departments").filter((q) => q.eq(q.field("name"), TRAVEL_ORDER_HR_TEAM)).first(),
+    ]);
 
     const chain = buildTravelOrderApprovalChain({
       requesterUsername: ticket.requesterUsername,
-      teamLeaderUsername,
-      managerUsername,
+      teamLeaderUsername: team?.teamLeaderUsername,
+      managerUsername: team?.managerUsername,
+      hrTeamLeaderUsername: hrTeam?.teamLeaderUsername,
     });
+    if (chain.length === 0) {
+      throw new Error(
+        "No approvers are set up for this travel order. Assign a Team Leader/Manager for the requester's team and a Team Leader for the HR/Admin team.",
+      );
+    }
     const approvalStage = travelOrderStageForChain(chain);
     const now = Date.now();
 
@@ -2472,7 +2473,7 @@ export const submitTravelOrderForApproval = mutation({
 
     await ctx.db.insert("monitoringApprovalHistory", {
       ticketId: ticket._id,
-      approver: chain[0]?.role ?? "HR Fleet Manager",
+      approver: chain[0].role,
       decision: "Submitted",
       reference: undefined,
       note: "Travel order submitted for approval.",
@@ -2522,19 +2523,8 @@ export const recordTravelOrderApprovalDecision = mutation({
     }
     const currentStep = chain[currentIndex];
 
-    // Authorize the actor for the current step.
-    if (currentStep.role === "HR Fleet Manager") {
-      const actor = await ctx.db
-        .query("users")
-        .withIndex("by_username", (q) => q.eq("username", actorUsername))
-        .unique();
-      const isFleetManager = Boolean(
-        actor?.active && (actor.approvalScopes ?? []).includes(TRAVEL_ORDER_FLEET_MANAGER_SCOPE),
-      );
-      if (!isFleetManager) {
-        throw new Error("Only a designated HR Fleet Manager can record this approval.");
-      }
-    } else if (currentStep.approverUsername && currentStep.approverUsername !== actorUsername) {
+    // Authorize the actor: only the assigned approver for the current step may act.
+    if (currentStep.approverUsername && currentStep.approverUsername !== actorUsername) {
       throw new Error(`Only the assigned ${currentStep.role} can record this decision.`);
     }
 

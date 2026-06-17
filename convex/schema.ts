@@ -250,7 +250,7 @@ export default defineSchema({
     // Travel Order: extended trip status (separate from generic system status)
     travelOrderStatus: v.optional(v.string()),
     // Travel Order approval chain (snapshot taken at submit time): the ordered
-    // steps Team Leader → Manager → HR Fleet Manager, minus steps the requester fills.
+    // steps Team Leader → Manager → Fleet Admin, minus steps the requester fills.
     travelApprovalChain: v.optional(
       v.array(
         v.object({

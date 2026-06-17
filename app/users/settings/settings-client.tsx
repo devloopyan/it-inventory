@@ -256,8 +256,8 @@ export default function UserSettingsClient() {
             <p className="type-section-copy">
               Set the Team Leader and Manager for each team. These are used to route
               approvals across the system — for example, Travel Orders go Team Leader →
-              Manager → HR Fleet Manager, and a requester who is already the Team Leader or
-              Manager skips their own step.
+              Manager → HR team&rsquo;s Team Leader (Fleet Admin), and a requester who already
+              fills a step skips it.
             </p>
           </div>
         </div>

@@ -110,7 +110,7 @@ export const MONITORING_APPROVAL_STAGES = [
   // Travel Order role-based chain stages
   "Pending Team Leader",
   "Pending Manager",
-  "Pending HR Fleet Manager",
+  "Pending Fleet Admin",
   "Approved",
   "For Revision",
 ] as const;
@@ -241,19 +241,23 @@ export function isPendingApprovalStage(stage?: string) {
 }
 
 // ── Travel Order role-based approval chain ──────────────────────────────────
-// The chain routes a Travel Order: Team Leader → Manager → HR Fleet Manager.
-// A requester who is already the Team Leader or Manager skips their own step.
+// The chain routes a Travel Order: requester-team Team Leader → requester-team
+// Manager → HR-team Team Leader (the "Fleet Admin", final approver).
+// A requester who already fills a step is skipped; duplicates are collapsed.
 
-export const TRAVEL_ORDER_APPROVAL_ROLES = ["Team Leader", "Manager", "HR Fleet Manager"] as const;
+export const TRAVEL_ORDER_APPROVAL_ROLES = ["Team Leader", "Manager", "Fleet Admin"] as const;
 export type TravelOrderApprovalRole = (typeof TRAVEL_ORDER_APPROVAL_ROLES)[number];
 
-// approvalScopes tag marking a user as a designated HR Fleet Manager.
+// The team whose Team Leader acts as the final Travel Order approver (Fleet Admin).
+export const TRAVEL_ORDER_HR_TEAM = "HR/Admin";
+
+// Deprecated: superseded by routing the final step to the HR team's Team Leader.
+// Kept only so the legacy users.setTravelFleetManager mutation still compiles.
 export const TRAVEL_ORDER_FLEET_MANAGER_SCOPE = "travel_fleet_manager";
 
 export type TravelOrderApprovalStep = {
   role: TravelOrderApprovalRole;
-  // For Team Leader / Manager this is the specific approver. The HR Fleet Manager
-  // step has no fixed person — any designated fleet manager may approve it.
+  // The specific approver for this step (Team Leader / Manager / Fleet Admin).
   approverUsername?: string;
   status: string; // "Pending" | "Approved" | "For Revision"
   decidedByName?: string;
@@ -271,25 +275,29 @@ export function isTravelOrderPendingStage(stage?: string) {
   return TRAVEL_ORDER_APPROVAL_ROLES.some((role) => travelOrderPendingStage(role) === stage);
 }
 
-// Build the ordered approval chain for a travel order, skipping any step the
-// requester themselves fills. The HR Fleet Manager step is always present.
+// Build the ordered approval chain for a travel order:
+// requester-team TL → requester-team Manager → HR-team TL (Fleet Admin).
+// Skips any step the requester fills and collapses duplicate approvers.
 export function buildTravelOrderApprovalChain(args: {
   requesterUsername?: string;
   teamLeaderUsername?: string;
   managerUsername?: string;
+  hrTeamLeaderUsername?: string;
 }): TravelOrderApprovalStep[] {
   const requester = args.requesterUsername?.trim() || undefined;
-  const teamLeader = args.teamLeaderUsername?.trim() || undefined;
-  const manager = args.managerUsername?.trim() || undefined;
-
   const steps: TravelOrderApprovalStep[] = [];
-  if (teamLeader && teamLeader !== requester) {
-    steps.push({ role: "Team Leader", approverUsername: teamLeader, status: "Pending" });
-  }
-  if (manager && manager !== requester) {
-    steps.push({ role: "Manager", approverUsername: manager, status: "Pending" });
-  }
-  steps.push({ role: "HR Fleet Manager", status: "Pending" });
+
+  const addStep = (role: TravelOrderApprovalRole, username?: string) => {
+    const approver = username?.trim() || undefined;
+    if (!approver) return; // not configured
+    if (approver === requester) return; // skip own step
+    if (steps.some((step) => step.approverUsername === approver)) return; // dedupe
+    steps.push({ role, approverUsername: approver, status: "Pending" });
+  };
+
+  addStep("Team Leader", args.teamLeaderUsername);
+  addStep("Manager", args.managerUsername);
+  addStep("Fleet Admin", args.hrTeamLeaderUsername);
   return steps;
 }
 
