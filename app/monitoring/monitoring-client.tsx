@@ -2030,6 +2030,8 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const markTravelOrderDone = useMutation(api.fleet.markTravelOrderDone);
   const markTravelOrderDeparted = useMutation(api.fleet.markTravelOrderDeparted);
   const reopenTravelOrder = useMutation(api.fleet.reopenTravelOrder);
+  const recordTravelApproval = useMutation(api.monitoring.recordTravelOrderApprovalDecision);
+  const [travelApprovalSavingId, setTravelApprovalSavingId] = useState("");
   const extendTravelOrderMutation = useMutation(api.fleet.extendTravelOrder);
   const generateUploadUrl = useMutation(api.monitoring.generateUploadUrl);
   const [activeTab, setActiveTab] = useState<MonitoringTab>(() => {
@@ -2323,7 +2325,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     currentServiceGroups.includes("OSMD");
   const showRequestTypeColumn = activeTab !== "meetings" && activeTab !== "hrAdmin";
   const showPriorityColumn = activeTab !== "meetings";
-  const showFleetActionColumn = activeTab === "hrAdmin" && isHrAdminStaff;
+  const showFleetActionColumn = activeTab === "hrAdmin";
   const showMeetingActionColumn = activeTab === "meetings";
   const showBorrowingActionColumn = activeTab === "borrowing";
   const showScheduleColumn = activeTab !== "hrAdmin";
@@ -3241,6 +3243,28 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
       setRequestTableError(error instanceof Error ? error.message : "Unable to reopen travel order.");
     } finally {
       setTravelReopenSavingId("");
+    }
+  }
+
+  // Inline approve / return-for-revision for the row's current approver (non-HR approvers).
+  async function handleRowTravelApproval(
+    ticketId: Id<"monitoringTickets">,
+    decision: "Approved" | "For Revision",
+  ) {
+    try {
+      setTravelApprovalSavingId(String(ticketId));
+      setRequestTableError("");
+      await recordTravelApproval({
+        ticketId,
+        decision,
+        actorName,
+        actorUsername: currentUser?.username ?? "",
+        note: decision === "Approved" ? "Approved." : "Returned for revision.",
+      });
+    } catch (error) {
+      setRequestTableError(error instanceof Error ? error.message : "Unable to record decision.");
+    } finally {
+      setTravelApprovalSavingId("");
     }
   }
 
@@ -5254,6 +5278,15 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                     const isTravelOrderDone =
                       row.category === MONITORING_TRAVEL_ORDER_CATEGORY &&
                       (displayStatus === "Fulfilled" || displayStatus === "Closed");
+                    // The row's current pending approver (for inline approve/decline by non-HR approvers).
+                    const rowPendingApprover = row.travelApprovalChain?.find(
+                      (step) => step.status === "Pending",
+                    )?.approverUsername;
+                    const isMyApprovalRow =
+                      row.category === MONITORING_TRAVEL_ORDER_CATEGORY &&
+                      !isHrAdminStaff &&
+                      Boolean(rowPendingApprover) &&
+                      rowPendingApprover === currentUser?.username;
                     const isUnopenedRequest =
                       displayStatus === "New" && !(row.notificationSeenByGroups ?? []).includes(rowServiceGroup);
                     const requestListTitle =
@@ -5382,6 +5415,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                         {showFleetActionColumn ? (
                           <td onClick={(event) => event.stopPropagation()}>
                             {row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
+                              isHrAdminStaff ? (
                               <div className="monitoring-table-actions">
                                 {hrAdminArchiveView === "archive" ? (
                                   <>
@@ -5477,6 +5511,36 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                                   </>
                                 )}
                               </div>
+                              ) : isMyApprovalRow ? (
+                                <div className="monitoring-table-actions">
+                                  <button
+                                    type="button"
+                                    className="monitoring-icon-action-btn is-success"
+                                    aria-label={`Approve ${row.ticketNumber}`}
+                                    title="Approve"
+                                    disabled={travelApprovalSavingId === rowId}
+                                    onClick={() => void handleRowTravelApproval(row._id, "Approved")}
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                                      <path d="M2.5 7.5L6 11L12.5 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="monitoring-icon-action-btn is-destructive"
+                                    aria-label={`Return ${row.ticketNumber} for revision`}
+                                    title="Decline (return for revision)"
+                                    disabled={travelApprovalSavingId === rowId}
+                                    onClick={() => void handleRowTravelApproval(row._id, "For Revision")}
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              ) : (
+                                "-"
+                              )
                             ) : (
                               "-"
                             )}
