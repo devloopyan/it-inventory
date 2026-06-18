@@ -531,20 +531,22 @@ export default function DashboardPage() {
   const currentServiceGroups = normalizeServiceGroups(currentRole, currentUser?.serviceGroups);
   const hasItDashboardAccess = currentRole === "admin" || currentServiceGroups.includes("IT");
   const isHrAdminCalendarOnlyDashboard =
-    currentRole !== "requester" && !hasItDashboardAccess && currentServiceGroups.includes("HR/Admin");
+    currentRole !== "member" && !hasItDashboardAccess && currentServiceGroups.includes("HR/Admin");
   const isOsmdApproverDashboard =
     !hasItDashboardAccess &&
-    currentRole !== "requester" &&
+    currentRole !== "member" &&
     !isHrAdminCalendarOnlyDashboard &&
-    (currentRole === "approver" || currentServiceGroups.includes("OSMD"));
-  const shouldLoadHardwareDashboardData = currentRole === "requester" || hasItDashboardAccess;
+    currentServiceGroups.includes("OSMD");
+  const shouldLoadHardwareDashboardData = currentRole === "member" || hasItDashboardAccess;
   const shouldLoadSupportCalendar = !isHrAdminCalendarOnlyDashboard;
   // Travel order calendar visibility:
   //  - admins and approvers (team leaders/managers): see ALL travel orders
   //  - everyone else: see only travel orders filed within their own SECTION (their own + teammates')
   const viewerSection = currentUser?.section ?? "";
   const travelTeamScope: "all" | "section" =
-    currentRole === "admin" || currentRole === "approver" ? "all" : "section";
+    currentRole === "admin" || currentRole === "owner" || currentRole === "reviewer" || currentRole === "team_lead"
+      ? "all"
+      : "section";
   const [calendarMonth, setCalendarMonth] = useState(() => getCalendarMonthStart(new Date()));
   const [selectedMeetingDay, setSelectedMeetingDay] = useState(() => getCalendarDateKey(new Date()));
   const [scheduleWeekOffset, setScheduleWeekOffset] = useState(0);
@@ -1401,7 +1403,7 @@ export default function DashboardPage() {
     setRequesterBorrowingListIds((current) => current.filter((id) => id !== inventoryId));
   }
 
-  if (currentRole === "requester") {
+  if (currentRole === "member") {
     return (
       <RequesterDashboard
         equipmentLoading={allRows === undefined || openBorrowingRequests === undefined}

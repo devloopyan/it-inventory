@@ -86,7 +86,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/monitoring",
         label: "Monitoring",
-        allowedRoles: ["admin", "service_staff", "it_staff", "approver"],
+        allowedRoles: ["owner", "admin"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M23,22H3a1,1,0,0,1-1-1V1A1,1,0,0,0,0,1V21a3,3,0,0,0,3,3H23a1,1,0,0,0,0-2Z"/>
@@ -111,7 +111,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
         href: "/inventory",
         label: "Inventory",
         matchPrefixes: ["/inventory", "/assets", "/hardware-inventory", "/digital-inventory"],
-        allowedRoles: ["admin", "service_staff", "it_staff"],
+        allowedRoles: ["owner", "admin"],
         requiredServiceGroups: ["IT"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -122,7 +122,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/operations",
         label: "Operations",
-        allowedRoles: ["admin", "service_staff", "it_staff"],
+        allowedRoles: ["owner", "admin"],
         requiredServiceGroups: ["IT"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -139,7 +139,7 @@ const navSections: ReadonlyArray<{ label: string; items: readonly NavItem[] }> =
       {
         href: "/users",
         label: "Users",
-        allowedRoles: ["admin"],
+        allowedRoles: ["owner", "admin"],
         icon: (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M23,11H21V9a1,1,0,0,0-2,0v2H17a1,1,0,0,0,0,2h2v2a1,1,0,0,0,2,0V13h2a1,1,0,0,0,0-2Z"/>
@@ -204,7 +204,8 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
     currentRole === "admin" || currentServiceGroups.includes("IT");
   const canSeeHrAdminMonitoring =
     currentRole === "admin" || currentServiceGroups.includes("HR/Admin");
-  const canSeeMonitoringNotifications = showAppChrome && currentRole !== "requester";
+  const canSeeMonitoringNotifications =
+    showAppChrome && (currentRole !== "member" || currentServiceGroups.length > 0);
   const monitoringNotificationRows = useQuery(
     api.monitoring.list,
     canSeeMonitoringNotifications ? { view: "issues", showClosed: true } : "skip",
@@ -243,7 +244,7 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
       items: section.items.filter(
         (item) =>
           canShowNavItem(currentRole, currentUser?.serviceGroups, item) ||
-          (item.href === "/monitoring" && isTravelApprover),
+          (item.href === "/monitoring" && (isTravelApprover || currentServiceGroups.length > 0)),
       ),
     }))
     .filter((section) => section.items.length > 0);

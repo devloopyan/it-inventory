@@ -2439,24 +2439,20 @@ export const submitTravelOrderForApproval = mutation({
     const actorName = normalizeRequired(args.actorName, "Actor name");
 
     // Approvers are derived from member roles (centralized on the Users roster):
-    //  - requester team's Team Lead (role "team_lead") and Manager (role "manager")
+    //  - requester team's Team Lead (role "team_lead") and Reviewer (role "reviewer")
     //  - HR team's Team Lead = Fleet Admin (final step)
     const teamName = ticket.requesterDepartment?.trim();
     const allUsers = await ctx.db.query("users").collect();
-    const leadOf = (dept?: string) =>
+    const memberWithRole = (dept: string | undefined, role: string) =>
       dept
-        ? allUsers.find((u) => u.active && u.department === dept && u.role === "team_lead")?.username
-        : undefined;
-    const managerOf = (dept?: string) =>
-      dept
-        ? allUsers.find((u) => u.active && u.department === dept && u.role === "manager")?.username
+        ? allUsers.find((u) => u.active && u.department === dept && u.role === role)?.username
         : undefined;
 
     const chain = buildTravelOrderApprovalChain({
       requesterUsername: ticket.requesterUsername,
-      teamLeaderUsername: leadOf(teamName),
-      managerUsername: managerOf(teamName),
-      hrTeamLeaderUsername: leadOf(TRAVEL_ORDER_HR_TEAM),
+      teamLeaderUsername: memberWithRole(teamName, "team_lead"),
+      reviewerUsername: memberWithRole(teamName, "reviewer"),
+      hrTeamLeaderUsername: memberWithRole(TRAVEL_ORDER_HR_TEAM, "team_lead"),
     });
     if (chain.length === 0) {
       throw new Error(
@@ -2586,7 +2582,7 @@ export const isTravelApprover = query({
       .query("users")
       .withIndex("by_username", (q) => q.eq("username", username))
       .unique();
-    return Boolean(user?.active && (user.role === "team_lead" || user.role === "manager"));
+    return Boolean(user?.active && (user.role === "team_lead" || user.role === "reviewer"));
   },
 });
 

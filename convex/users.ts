@@ -2,9 +2,16 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { TRAVEL_ORDER_FLEET_MANAGER_SCOPE } from "../lib/monitoring";
 
-const USER_ROLES = ["admin", "manager", "team_lead", "service_staff", "it_staff", "approver", "requester"] as const;
-const DEFAULT_IT_GROUPS = ["IT"] as const;
+const USER_ROLES = ["owner", "admin", "reviewer", "team_lead", "member"] as const;
 const ALL_DEFAULT_GROUPS = ["IT", "HR/Admin", "OSMD"] as const;
+// Legacy stored roles → new APO-style set (so existing accounts keep working).
+const LEGACY_ROLE_MAP: Record<string, (typeof USER_ROLES)[number]> = {
+  requester: "member",
+  approver: "member",
+  manager: "reviewer",
+  service_staff: "admin",
+  it_staff: "admin",
+};
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HASH_ITERATIONS = 120_000;
 const PASSWORD_HASH_ALGORITHM = "pbkdf2-sha256";
@@ -49,13 +56,18 @@ function ensureRole(value: string): UserRole {
   throw new Error("Invalid user role.");
 }
 
+// Tolerant read of a stored role (maps legacy roles); never throws.
+function normalizeStoredRole(value?: string): UserRole {
+  if ((USER_ROLES as readonly string[]).includes(value ?? "")) return value as UserRole;
+  return (value ? LEGACY_ROLE_MAP[value] : undefined) ?? "member";
+}
+
 function normalizeServiceGroups(role: UserRole, values?: string[]): string[] | undefined {
-  if (role === "admin") return [...ALL_DEFAULT_GROUPS];
+  if (role === "admin" || role === "owner") return [...ALL_DEFAULT_GROUPS];
 
   const serviceGroups = Array.from(new Set((values ?? []).map((v) => v.trim()).filter(Boolean)));
   if (serviceGroups.length) return serviceGroups;
 
-  if (role === "service_staff" || role === "it_staff") return [...DEFAULT_IT_GROUPS];
   return undefined;
 }
 
@@ -168,8 +180,8 @@ export const list = query({
         displayName: row.displayName,
         username: row.username,
         email: row.email,
-        role: row.role,
-        serviceGroups: row.serviceGroups ?? normalizeServiceGroups(ensureRole(row.role), undefined) ?? [],
+        role: normalizeStoredRole(row.role),
+        serviceGroups: row.serviceGroups ?? normalizeServiceGroups(normalizeStoredRole(row.role), undefined) ?? [],
         approvalScopes: row.approvalScopes ?? [],
         department: row.department,
         section: row.section,
@@ -213,8 +225,8 @@ export const authenticate = mutation({
       displayName: user.displayName,
       username: user.username,
       email: user.email,
-      role: user.role,
-      serviceGroups: user.serviceGroups ?? normalizeServiceGroups(ensureRole(user.role), undefined) ?? [],
+      role: normalizeStoredRole(user.role),
+      serviceGroups: user.serviceGroups ?? normalizeServiceGroups(normalizeStoredRole(user.role), undefined) ?? [],
       approvalScopes: user.approvalScopes ?? [],
       department: user.department,
       section: user.section,

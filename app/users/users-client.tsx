@@ -44,13 +44,11 @@ type UserFormState = {
 };
 
 const roleOptions: Array<{ value: UserRole; label: string; description: string }> = [
+  { value: "owner", label: "Owner", description: "Super-admin. Full system access; typically the org owner." },
   { value: "admin", label: "Admin", description: "Full system access across users, assets, and workflows." },
-  { value: "manager", label: "Manager", description: "Approves travel orders for their team (2nd step)." },
+  { value: "reviewer", label: "Reviewer", description: "Approves travel orders for their team (2nd step)." },
   { value: "team_lead", label: "Team Lead", description: "Approves travel orders for their team (1st step). HR team's Team Lead = Fleet Admin." },
-  { value: "service_staff", label: "Service Staff", description: "Handles requests for assigned service groups." },
-  { value: "it_staff", label: "IT Staff (legacy)", description: "Old IT staff role. Keep existing users working while we migrate." },
-  { value: "approver", label: "Approver", description: "Reviews and approves meeting requests." },
-  { value: "requester", label: "Requester", description: "Submits and tracks their own requests." },
+  { value: "member", label: "Member", description: "Submits and tracks their own requests." },
 ];
 
 const defaultFormState: UserFormState = {
@@ -58,7 +56,7 @@ const defaultFormState: UserFormState = {
   username: "",
   email: "",
   temporaryPassword: "",
-  role: "requester",
+  role: "member",
   serviceGroups: [],
   department: "",
 };
@@ -72,7 +70,7 @@ function toggleListValue<T extends string>(values: T[], value: T) {
 }
 
 function normalizeRoleForSelect(role: string): UserRole {
-  return isUserRole(role) ? role : "requester";
+  return isUserRole(role) ? role : "member";
 }
 
 function getInitials(name: string): string {
