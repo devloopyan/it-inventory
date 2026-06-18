@@ -73,14 +73,6 @@ function normalizeRoleForSelect(role: string): UserRole {
   return isUserRole(role) ? role : "requester";
 }
 
-function formatDate(value: number) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(value));
-}
-
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -107,6 +99,7 @@ export default function UsersClient() {
   const updateRole = useMutation(api.users.updateRole);
   const setActive = useMutation(api.users.setActive);
   const setPassword = useMutation(api.users.setPassword);
+  const setTeam = useMutation(api.users.setTeam);
 
   const [form, setForm] = useState<UserFormState>(defaultFormState);
   const [errorMessage, setErrorMessage] = useState("");
@@ -260,7 +253,23 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
     }
   }
 
+  async function handleTeamChange(user: UserAccount, department: string) {
+    try {
+      setBusyUserId(user._id);
+      setErrorMessage("");
+      setSuccessMessage("");
+      await setTeam({ userId: user._id, department });
+      setSuccessMessage("Team updated.");
+    } catch (error) {
+      setErrorMessage(parseError(error, "Unable to update team."));
+    } finally {
+      setBusyUserId("");
+    }
+  }
+
   const selectedUser = users?.find((user) => user._id === selectedUserId);
+  const totalMembers = (users ?? []).length;
+  const adminCount = (users ?? []).filter((u) => normalizeRoleForSelect(u.role) === "admin").length;
 
   return (
     <>
@@ -280,6 +289,46 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
           </svg>
         </Link>
       </div>
+
+      {/* Organization summary card (APO-style) */}
+      <section
+        style={{
+          background: "var(--surface-card, #fff)",
+          border: "1px solid var(--border)",
+          borderRadius: 14,
+          padding: "16px 20px",
+          marginBottom: 16,
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          boxShadow: "0 1px 2px rgba(16,24,40,.04)",
+        }}
+      >
+        <span
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 12,
+            background: "rgb(var(--brand-900-rgb))",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <div style={{ display: "grid", gap: 3 }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--foreground)" }}>Organization Members</span>
+          <span style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 16 }}>
+            <span>{totalMembers} members</span>
+            <span>{adminCount} administrator{adminCount === 1 ? "" : "s"}</span>
+          </span>
+        </div>
+      </section>
 
       <div className="users-layout">
 
@@ -420,10 +469,10 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
               <table className="ulist-table">
                 <thead>
                   <tr>
-                    <th>Name</th>
+                    <th>Member</th>
                     <th>Role</th>
+                    <th>Team</th>
                     <th>Status</th>
-                    <th>Joined</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -454,7 +503,6 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                       {members.map((user) => {
                         const initials = getInitials(user.displayName);
                         const avatarStyle = getAvatarStyle();
-                        const roleLabel = roleOptions.find((r) => r.value === normalizeRoleForSelect(user.role))?.label ?? user.role;
                         return (
                           <tr
                             key={user._id}
@@ -470,15 +518,36 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                                 </div>
                               </div>
                             </td>
-                            <td>
-                              <span className="ulist-role-chip">{roleLabel}</span>
+                            <td onClick={(e) => e.stopPropagation()}>
+                              <select
+                                className="input-base"
+                                style={{ fontSize: 12, padding: "4px 8px", height: 30, minWidth: 120 }}
+                                value={normalizeRoleForSelect(user.role)}
+                                disabled={busyUserId === user._id}
+                                onChange={(e) => void handleRoleChange(user, normalizeRoleForSelect(e.target.value))}
+                                aria-label={`Role for ${user.displayName}`}
+                              >
+                                {roleOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                              </select>
+                            </td>
+                            <td onClick={(e) => e.stopPropagation()}>
+                              <select
+                                className="input-base"
+                                style={{ fontSize: 12, padding: "4px 8px", height: 30, minWidth: 120 }}
+                                value={user.department ?? ""}
+                                disabled={busyUserId === user._id}
+                                onChange={(e) => void handleTeamChange(user, e.target.value)}
+                                aria-label={`Team for ${user.displayName}`}
+                              >
+                                <option value="">Unassigned</option>
+                                {(departments ?? []).map((d) => <option key={d} value={d}>{d}</option>)}
+                              </select>
                             </td>
                             <td>
                               <span className={`member-badge${user.active ? " is-active" : " is-inactive"}`}>
                                 {user.active ? "Active" : "Inactive"}
                               </span>
                             </td>
-                            <td className="ulist-muted">{formatDate(user.createdAt)}</td>
                           </tr>
                         );
                       })}

@@ -345,6 +345,25 @@ export const setTravelFleetManager = mutation({
   },
 });
 
+// Assign / reassign a user's team (department). Pass empty string to unassign.
+export const setTeam = mutation({
+  args: {
+    userId: v.id("users"),
+    department: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) {
+      throw new Error("User account could not be found.");
+    }
+    await ctx.db.patch(user._id, {
+      department: normalizeOptional(args.department),
+      updatedAt: Date.now(),
+    });
+    return { success: true };
+  },
+});
+
 export const setActive = mutation({
   args: {
     userId: v.id("users"),
