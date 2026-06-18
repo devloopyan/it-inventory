@@ -1736,7 +1736,7 @@ function UploadRecordingIcon() {
 
 const MONITORING_TABS: ReadonlyArray<{ key: MonitoringTab; label: string; description: string }> = [
   { key: "issues", label: "IT Queue", description: "IT issues, approvals, and service requests." },
-  { key: "hrAdmin", label: "HR/Admin Queue", description: "Travel orders and HR/Admin service requests." },
+  { key: "hrAdmin", label: "Travel Orders", description: "Travel orders and HR/Admin service requests." },
   { key: "meetings", label: "Meeting Requests", description: "Teams support, room setup, and reserved assets." },
   { key: "borrowing", label: "Borrowing Requests", description: "Asset releases, return dates, and borrower records." },
   { key: "internet", label: "Internet Monitoring", description: "ISP outages, affected areas, and downtime logs." },
