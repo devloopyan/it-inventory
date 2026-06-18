@@ -481,8 +481,8 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
               <h2 className="type-section-title">User Accounts</h2>
               <p className="type-section-copy">Manage roles and active status for request workflows.</p>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <div className="search-field" style={{ maxWidth: 240, width: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <div className="search-field" style={{ width: 200, flexShrink: 0 }}>
                 <span className="search-icon" aria-hidden="true">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                     <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
