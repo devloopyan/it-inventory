@@ -498,19 +498,19 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
               </div>
               <button
                 type="button"
-                className="btn-secondary"
-                style={{ whiteSpace: "nowrap" }}
-                onClick={() => { setTeamError(""); setNewTeamName(""); setShowAddTeamModal(true); }}
-              >
-                + Add Team
-              </button>
-              <button
-                type="button"
                 className="btn-primary"
                 style={{ whiteSpace: "nowrap" }}
                 onClick={() => { setErrorMessage(""); setShowAddUserModal(true); }}
               >
                 + Add User
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ whiteSpace: "nowrap" }}
+                onClick={() => { setTeamError(""); setNewTeamName(""); setShowAddTeamModal(true); }}
+              >
+                + Add Team
               </button>
             </div>
           </div>
