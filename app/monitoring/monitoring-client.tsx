@@ -1987,32 +1987,26 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const currentUser = useCurrentUser();
   const currentServiceGroups = normalizeServiceGroups(currentUser?.role, currentUser?.serviceGroups);
   const hasAdminAccess = isAdminRole(currentUser?.role);
-  const isTravelApprover = Boolean(
-    useQuery(
-      api.monitoring.isTravelApprover,
-      currentUser?.username ? { username: currentUser.username } : "skip",
-    ),
-  );
-  const canSeeItQueue =
-    hasAdminAccess || currentServiceGroups.includes("IT");
-  // Full HR/Admin staff manage the whole queue; travel approvers get read+approve access.
+  // Monitoring tab access:
+  //  - Admin: all tabs
+  //  - OSMD team: IT Queue + Meeting Requests + Travel Orders
+  //  - Everyone else: Travel Orders only
+  const isOsmd = currentServiceGroups.includes("OSMD");
+  const canSeeItQueue = hasAdminAccess || isOsmd;
+  // Travel Orders tab is visible to everyone who can reach Monitoring.
+  const canSeeHrAdminQueue = true;
+  // Full HR/Admin staff manage the queue (fleet, HR service requests); other
+  // approvers get read + approve on travel orders only.
   const isHrAdminStaff = hasAdminAccess || currentServiceGroups.includes("HR/Admin");
-  const canSeeHrAdminQueue = isHrAdminStaff || isTravelApprover;
-  const canSeeMeetingsQueue =
-    hasAdminAccess ||
-    currentUser?.role === "approver" ||
-    currentServiceGroups.includes("OSMD") ||
-    currentServiceGroups.includes("IT");
   const visibleMonitoringTabs = useMemo(
     () =>
       MONITORING_TABS.filter((tab) => {
         if (hasAdminAccess) return true;
-        if (tab.key === "hrAdmin") return canSeeHrAdminQueue;
-        if (tab.key === "meetings") return canSeeMeetingsQueue;
-        if (tab.key === "issues") return canSeeItQueue || canSeeMeetingsQueue;
-        return canSeeItQueue;
+        if (tab.key === "hrAdmin") return true; // Travel Orders — everyone
+        if (tab.key === "issues" || tab.key === "meetings") return isOsmd; // IT + Meetings — OSMD
+        return false; // borrowing, internet — admin only
       }),
-    [canSeeHrAdminQueue, canSeeItQueue, canSeeMeetingsQueue, hasAdminAccess],
+    [hasAdminAccess, isOsmd],
   );
   const router = useRouter();
   const searchParams = useSearchParams();
