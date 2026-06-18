@@ -2,34 +2,34 @@
 
 :root {
   /* Calm Operations brand system */
-  --font-family-sans: var(--font-nunito), "Segoe UI", Arial, sans-serif;
-  --font-family-mono: var(--font-family-sans);
+  --font-family-sans: var(--font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-family-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
-  /* Foundation palette */
-  --color-primary-700: #4f6cf7;
-  --color-primary-600: #6480ff;
-  --color-primary-100: #dbe4ff;
-  --color-text-primary: #18181b;
-  --color-text-strong: #334155;
-  --color-text-secondary: #64748b;
-  --color-text-muted: #94a3b8;
-  --color-canvas: #ffffff;
-  --color-surface-base: #ffffff;
-  --color-surface-subtle: #f8fafc;
-  --color-surface-elevated: #f1f5f9;
-  --color-border-strong: #e2e8f0;
-  --color-border-soft: #e5e7eb;
-  --color-border-ui: #d1d5db;
-  --color-focus-ring: #c7d2fe;
-  --color-hover-soft: #f3f4f6;
-  --color-success-strong: #1f9a51;
-  --color-success-soft: #e4f8e9;
-  --color-warning-strong: #d97706;
-  --color-warning-soft: #fef3c7;
-  --color-danger-strong: #dc2626;
-  --color-danger-soft: #fee2e2;
-  --color-info-strong: #2563eb;
-  --color-info-soft: #dbeafe;
+  /* APO foundation palette — Linear-style: neutral-on-light, single violet accent */
+  --color-primary-700: #5e5ce6;        /* primary violet — the only saturated accent */
+  --color-primary-600: #4b49c2;        /* accent-ink (hover/active) */
+  --color-primary-100: #ebeafd;        /* soft violet tint */
+  --color-text-primary: #1c1c22;       /* ink-800 — default body */
+  --color-text-strong: #0b0b0f;        /* ink-900 — headings */
+  --color-text-secondary: #6b6b74;     /* ink-500 — secondary/meta */
+  --color-text-muted: #8a8a93;         /* ink-400 — placeholder */
+  --color-canvas: #fafafa;             /* app background */
+  --color-surface-base: #ffffff;       /* card / popover */
+  --color-surface-subtle: #f4f4f5;     /* secondary / muted */
+  --color-surface-elevated: #ececef;   /* accent */
+  --color-border-strong: rgba(11, 11, 15, 0.08);  /* hairline border */
+  --color-border-soft: rgba(11, 11, 15, 0.04);
+  --color-border-ui: #dcdce0;          /* ink-200 */
+  --color-focus-ring: #5e5ce6;         /* violet ring */
+  --color-hover-soft: #f1f1f2;         /* bg-hover */
+  --color-success-strong: #1f9d55;
+  --color-success-soft: rgba(31, 157, 85, 0.12);
+  --color-warning-strong: #b8860b;
+  --color-warning-soft: rgba(184, 134, 11, 0.12);
+  --color-danger-strong: #c23d3d;
+  --color-danger-soft: rgba(194, 61, 61, 0.12);
+  --color-info-strong: #225c86;
+  --color-info-soft: #e8f1f8;
 
   /* Semantic application colors */
   --background: var(--color-canvas);
@@ -37,9 +37,9 @@
   --muted: var(--color-text-secondary);
   --muted-strong: var(--color-text-strong);
   --brand-900: var(--color-primary-700);
-  --brand-900-rgb: 79, 108, 247;
+  --brand-900-rgb: 94, 92, 230;
   --brand-700: var(--color-primary-600);
-  --brand-700-rgb: 100, 128, 255;
+  --brand-700-rgb: 75, 73, 194;
   --brand-500: var(--color-primary-100);
   --surface: var(--color-surface-base);
   --surface-subtle: var(--color-surface-subtle);
@@ -74,7 +74,7 @@
   --dropdown-outline-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
   --dropdown-outline-shadow-strong: 0 0 0 3px rgba(0, 0, 0, 0.08);
   --dropdown-card-outline: inset 0 0 0 1px rgba(255, 255, 255, 0.72), 0 0 0 1px rgba(0, 0, 0, 0.12);
-  --dropdown-card-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+  --dropdown-card-shadow: 0 10px 32px rgba(11, 11, 15, 0.24), 0 2px 8px rgba(11, 11, 15, 0.12);
   --dropdown-trigger-bg: var(--surface);
   --dropdown-trigger-hover-bg: var(--surface);
   --dropdown-trigger-border-hover: rgba(0, 0, 0, 0.16);
@@ -118,22 +118,48 @@
   --space-6: 24px;
   --space-7: 32px;
   --space-8: 40px;
-  --radius-control: 8px;
+  --radius-control: 7px;
   --radius-interactive: 6px;
-  --radius-pill: 12px;
-  --radius-card: 14px;
-  --radius-panel: 16px;
+  --radius-pill: 999px;
+  --radius-card: 10px;
+  --radius-panel: 12px;
   --radius-ui: var(--radius-control);
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.03);
-  --shadow-sm: var(--shadow-xs);
-  --shadow-md: 0 10px 24px rgba(15, 23, 42, 0.05);
-  --shadow-lg: 0 14px 32px rgba(15, 23, 42, 0.08);
-  --card-soft-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  /* APO: content is flat — shadows live only on floating overlays (menus, popovers). */
+  --shadow-floating: 0 10px 32px rgba(11, 11, 15, 0.24), 0 2px 8px rgba(11, 11, 15, 0.12);
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --card-soft-shadow: none;
   --interaction-duration: 140ms;
-  --interaction-ease: ease-out;
+  --interaction-ease: cubic-bezier(0.3, 0.8, 0.4, 1);
   --sidebar-width: 256px;
   --sidebar-collapsed-width: 58px;
   --topbar-height: 54px;
+
+  /* APO ink ramp — use for text/icon hierarchy instead of opacity */
+  --ink-900: #0b0b0f;
+  --ink-800: #1c1c22;
+  --ink-700: #2e2e36;
+  --ink-500: #6b6b74;
+  --ink-400: #8a8a93;
+  --ink-300: #b5b5bc;
+  --ink-200: #dcdce0;
+  --ink-100: #ebebee;
+  /* APO surface states */
+  --bg-hover: #f1f1f2;
+  --bg-active: #ececef;
+  --bg-selected: #f4f2ff;
+  /* APO soft accent tints */
+  --accent-soft: rgba(94, 92, 230, 0.12);
+  --accent-ink: #4b49c2;
+  --ok-soft: rgba(31, 157, 85, 0.12);
+  --warn-soft: rgba(184, 134, 11, 0.12);
+  --danger-soft: rgba(194, 61, 61, 0.12);
+  /* APO motion */
+  --motion-instant: 100ms;
+  --motion-fast: 150ms;
+  --ease: cubic-bezier(0.3, 0.8, 0.4, 1);
 }
 
 :root[data-theme="dark"] {
@@ -241,7 +267,20 @@ body {
   font-size: var(--type-body);
   line-height: var(--leading-body);
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
   transition: background-color 200ms ease-in-out, color 200ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 :root[data-theme="dark"] body {
