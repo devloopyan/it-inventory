@@ -83,12 +83,13 @@ function getAvatarStyle(): { background: string; color: string } {
   return { background: "#e5e7eb", color: "#374151" };
 }
 
-function buildUsernameSuggestion(displayName: string) {
-  return displayName
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.+|\.+$/g, "")
+// Username is derived from the email's local part (the bit before "@"),
+// sanitized to the allowed username format. Email is the single identity field.
+function buildUsernameFromEmail(email: string) {
+  const local = (email.trim().toLowerCase().split("@")[0] ?? "");
+  return local
+    .replace(/[^a-z0-9._-]+/g, ".")
+    .replace(/^[.]+|[.]+$/g, "")
     .slice(0, 40);
 }
 
@@ -148,12 +149,8 @@ export default function UsersClient() {
 function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.target;
     setForm((current) => {
-      if (name === "displayName" && !current.username.trim()) {
-        return {
-          ...current,
-          displayName: value,
-          username: buildUsernameSuggestion(value),
-        };
+      if (name === "email") {
+        return { ...current, email: value, username: buildUsernameFromEmail(value) };
       }
       return {
         ...current,
@@ -383,18 +380,6 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
             </label>
 
             <label className="users-field">
-              <span>Username</span>
-              <input
-                className="input-base"
-                name="username"
-                value={form.username}
-                onChange={handleFieldChange}
-                placeholder="leanne.ondong"
-                required
-              />
-            </label>
-
-            <label className="users-field">
               <span>Email</span>
               <input
                 className="input-base"
@@ -403,7 +388,11 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                 value={form.email}
                 onChange={handleFieldChange}
                 placeholder="name@company.com"
+                required
               />
+              {form.username ? (
+                <small style={{ fontSize: 11, color: "var(--muted)" }}>Username: @{form.username}</small>
+              ) : null}
             </label>
 
             <label className="users-field">
@@ -567,7 +556,7 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                                 <div className="ulist-avatar" style={avatarStyle}>{initials}</div>
                                 <div>
                                   <div className="ulist-display-name">{user.displayName}</div>
-                                  <div className="ulist-username">@{user.username}</div>
+                                  <div className="ulist-username">{user.email ?? `@${user.username}`}</div>
                                 </div>
                               </div>
                             </td>
