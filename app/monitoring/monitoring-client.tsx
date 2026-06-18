@@ -1997,7 +1997,10 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const canSeeHrAdminQueue = true;
   // Full HR/Admin staff manage the queue (fleet, HR service requests); other
   // approvers get read + approve on travel orders only.
-  const isHrAdminStaff = hasAdminAccess || currentServiceGroups.includes("HR/Admin");
+  const isHrAdminStaff =
+    hasAdminAccess ||
+    currentUser?.department === "HR/Admin" ||
+    currentServiceGroups.includes("HR/Admin");
   const visibleMonitoringTabs = useMemo(
     () =>
       MONITORING_TABS.filter((tab) => {
