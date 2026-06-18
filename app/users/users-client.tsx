@@ -100,6 +100,7 @@ export default function UsersClient() {
   const setActive = useMutation(api.users.setActive);
   const setPassword = useMutation(api.users.setPassword);
   const setTeam = useMutation(api.users.setTeam);
+  const addDepartment = useMutation(api.departments.add);
 
   const [form, setForm] = useState<UserFormState>(defaultFormState);
   const [errorMessage, setErrorMessage] = useState("");
@@ -109,6 +110,10 @@ export default function UsersClient() {
   const [selectedUserId, setSelectedUserId] = useState<Id<"users"> | null>(null);
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [userSearch, setUserSearch] = useState("");
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [showAddTeamModal, setShowAddTeamModal] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [teamError, setTeamError] = useState("");
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
@@ -181,12 +186,29 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
         createdBy: "IT Operations",
       });
       setForm(defaultFormState);
+      setShowAddUserModal(false);
       setSuccessMessage("User account created.");
       setTimeout(() => setSuccessMessage(""), 3000);
     } catch (error) {
       setErrorMessage(parseError(error, "Unable to create user."));
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleCreateTeam(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newTeamName.trim();
+    if (!name) return;
+    setTeamError("");
+    try {
+      await addDepartment({ name });
+      setNewTeamName("");
+      setShowAddTeamModal(false);
+      setSuccessMessage(`Team "${name}" added.`);
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (error) {
+      setTeamError(parseError(error, "Unable to add team."));
     }
   }
 
@@ -330,10 +352,18 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
         </div>
       </section>
 
-      <div className="users-layout">
-
-        {/* ── Left: Add User form ── */}
-        <div className="users-form">
+      {/* ── Add User modal ── */}
+      {showAddUserModal ? (
+        <div
+          className="users-modal-backdrop"
+          onClick={() => { setShowAddUserModal(false); setErrorMessage(""); }}
+          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}
+        >
+        <div
+          className="users-form"
+          onClick={(event) => event.stopPropagation()}
+          style={{ background: "var(--surface-card, #fff)", borderRadius: 14, padding: 20, width: "100%", maxWidth: 460, boxShadow: "0 12px 40px rgba(16,24,40,.22)" }}
+        >
           <div>
             <h2 className="type-section-title" style={{ marginBottom: 4 }}>Add User</h2>
             <p className="type-section-copy">This creates the profile and role only. Password login will be added in a later phase.</p>
@@ -438,27 +468,50 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
             </button>
           </form>
         </div>
+        </div>
+      ) : null}
 
-        {/* ── Right: User Accounts ── */}
-        <div className="users-table-panel">
+      {successMessage ? <div className="users-success" style={{ marginBottom: 12 }}>{successMessage}</div> : null}
+      {errorMessage ? <div className="reservation-error" style={{ marginBottom: 12 }}>{errorMessage}</div> : null}
+
+      {/* ── User Accounts roster ── */}
+      <div className="users-table-panel">
           <div className="users-table-head">
             <div>
               <h2 className="type-section-title">User Accounts</h2>
               <p className="type-section-copy">Manage roles and active status for request workflows.</p>
             </div>
-            <div className="search-field" style={{ maxWidth: 260, width: "100%" }}>
-              <span className="search-icon" aria-hidden="true">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-                  <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              </span>
-              <input
-                className="input-base"
-                placeholder="Search members"
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-              />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div className="search-field" style={{ maxWidth: 240, width: "100%" }}>
+                <span className="search-icon" aria-hidden="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                    <path d="M20 20L16.5 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <input
+                  className="input-base"
+                  placeholder="Search members"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ whiteSpace: "nowrap" }}
+                onClick={() => { setTeamError(""); setNewTeamName(""); setShowAddTeamModal(true); }}
+              >
+                + Add Team
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ whiteSpace: "nowrap" }}
+                onClick={() => { setErrorMessage(""); setShowAddUserModal(true); }}
+              >
+                + Add User
+              </button>
             </div>
           </div>
 
@@ -559,8 +612,43 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
           </div>
         </div>
 
-      </div>
     </div>
+
+    {/* ── Add Team modal ── */}
+    {showAddTeamModal ? (
+      <div
+        className="users-modal-backdrop"
+        onClick={() => setShowAddTeamModal(false)}
+        style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}
+      >
+        <form
+          onSubmit={handleCreateTeam}
+          onClick={(event) => event.stopPropagation()}
+          style={{ background: "var(--surface-card, #fff)", borderRadius: 14, padding: 20, width: "100%", maxWidth: 400, boxShadow: "0 12px 40px rgba(16,24,40,.22)", display: "grid", gap: 14 }}
+        >
+          <div>
+            <h2 className="type-section-title" style={{ marginBottom: 4 }}>Add Team</h2>
+            <p className="type-section-copy">Teams group members and route approvals. Also editable in Settings.</p>
+          </div>
+          <label className="users-field">
+            <span>Team name</span>
+            <input
+              className="input-base"
+              value={newTeamName}
+              onChange={(event) => setNewTeamName(event.target.value)}
+              placeholder="e.g. Finance"
+              autoFocus
+              required
+            />
+          </label>
+          {teamError ? <div className="reservation-error">{teamError}</div> : null}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button type="button" className="btn-secondary" onClick={() => setShowAddTeamModal(false)}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={!newTeamName.trim()}>Create Team</button>
+          </div>
+        </form>
+      </div>
+    ) : null}
 
     {/* Edit User Panel — portalled to body so backdrop-filter works outside overflow:clip ancestors */}
     {mounted && selectedUser ? createPortal(
