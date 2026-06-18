@@ -1555,8 +1555,9 @@ export default function TicketDetailClient({ ticketId, actorName }: TicketDetail
           : "Work Ticket";
   const displayTitle = isMeetingRequest ? getEditableMeetingTitle(ticket.title, ticket.meetingStartAt) : ticket.title;
   const travelOrderDetails = isTravelOrder ? getTravelOrderDetails(ticket.requestDetails) : null;
-  const canEditTravelOrder = isAdminRole(currentUser?.role);
   const currentServiceGroups = normalizeServiceGroups(currentUser?.role, currentUser?.serviceGroups);
+  // Only HR/Admin staff (and admins) can edit travel orders; other approvers view + approve only.
+  const canEditTravelOrder = isAdminRole(currentUser?.role) || currentServiceGroups.includes("HR/Admin");
   const isItStaff = isAdminRole(currentUser?.role) || currentServiceGroups.includes("IT");
   const meetingRecordingAttachment = attachments.find((attachment) => attachment.kind === "Meeting Recording");
   const supportingAttachments = attachments.filter((attachment) => attachment.kind !== "Meeting Recording");

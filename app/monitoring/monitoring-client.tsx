@@ -2323,7 +2323,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     currentServiceGroups.includes("OSMD");
   const showRequestTypeColumn = activeTab !== "meetings" && activeTab !== "hrAdmin";
   const showPriorityColumn = activeTab !== "meetings";
-  const showFleetActionColumn = activeTab === "hrAdmin";
+  const showFleetActionColumn = activeTab === "hrAdmin" && isHrAdminStaff;
   const showMeetingActionColumn = activeTab === "meetings";
   const showBorrowingActionColumn = activeTab === "borrowing";
   const showScheduleColumn = activeTab !== "hrAdmin";
@@ -3446,7 +3446,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
         className="panel monitoring-tab-panel"
         style={{ padding: 16, display: "grid", gap: 14, border: "none", boxShadow: "none", borderRadius: 0, background: "transparent" }}
       >
-        {visibleMonitoringTabs.length > 1 ? (
+        {visibleMonitoringTabs.length > 0 ? (
           <div className="monitoring-tab-strip" role="tablist" aria-label="Monitoring sections">
             {visibleMonitoringTabs.map((tab) => (
               <button
@@ -4737,7 +4737,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
           </div>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
-            {activeTab === "hrAdmin" ? (
+            {activeTab === "hrAdmin" && isHrAdminStaff ? (
               <FleetAvailabilitySection
                 loading={fleetAvailability === undefined}
                 drivers={fleetDrivers}
@@ -4826,7 +4826,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   />
                 )}
               </div>
-              {activeTab === "hrAdmin" ? (
+              {activeTab === "hrAdmin" && isHrAdminStaff ? (
                 <div className="asset-master-view-filters monitoring-archive-tabs" aria-label="HR/Admin request view">
                   <button
                     type="button"
