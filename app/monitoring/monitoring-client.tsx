@@ -1987,10 +1987,17 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
   const currentUser = useCurrentUser();
   const currentServiceGroups = normalizeServiceGroups(currentUser?.role, currentUser?.serviceGroups);
   const hasAdminAccess = isAdminRole(currentUser?.role);
+  const isTravelApprover = Boolean(
+    useQuery(
+      api.monitoring.isTravelApprover,
+      currentUser?.username ? { username: currentUser.username } : "skip",
+    ),
+  );
   const canSeeItQueue =
     hasAdminAccess || currentServiceGroups.includes("IT");
-  const canSeeHrAdminQueue =
-    hasAdminAccess || currentServiceGroups.includes("HR/Admin");
+  // Full HR/Admin staff manage the whole queue; travel approvers get read+approve access.
+  const isHrAdminStaff = hasAdminAccess || currentServiceGroups.includes("HR/Admin");
+  const canSeeHrAdminQueue = isHrAdminStaff || isTravelApprover;
   const canSeeMeetingsQueue =
     hasAdminAccess ||
     currentUser?.role === "approver" ||
@@ -2205,6 +2212,8 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     .sort((left, right) => right.updatedAt - left.updatedAt);
   const hrAdminRequestRows = [...(issueRows ?? [])]
     .filter((row) => getServiceGroupForCategory(row.category) === "HR/Admin")
+    // Pure travel approvers (not HR/Admin staff) only see travel orders, not HR service requests.
+    .filter((row) => isHrAdminStaff || row.category === MONITORING_TRAVEL_ORDER_CATEGORY)
     .filter((row) => {
       const displayStatus = getTravelOrderDisplayStatus(row);
       const archived = displayStatus === "Fulfilled" || displayStatus === "Closed" || displayStatus === "Done";
@@ -4739,7 +4748,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                 loading={fleetAvailability === undefined}
                 drivers={fleetDrivers}
                 vehicles={availableFleetVehicles}
-                canManage={canSeeHrAdminQueue}
+                canManage={isHrAdminStaff}
                 onManage={() => {
                   setFleetError("");
                   setShowFleetManage(true);

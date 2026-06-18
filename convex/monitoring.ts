@@ -2571,6 +2571,20 @@ export const recordTravelOrderApprovalDecision = mutation({
 });
 
 // Travel Orders currently awaiting THIS user's approval step (for the dashboard card).
+// Whether a user is a Travel Order approver (any team's Team Leader/Manager,
+// which includes the HR team's TL / Fleet Admin). Used to grant HR/Admin queue access.
+export const isTravelApprover = query({
+  args: { username: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const username = args.username?.trim();
+    if (!username) return false;
+    const teams = await ctx.db.query("departments").collect();
+    return teams.some(
+      (team) => team.teamLeaderUsername === username || team.managerUsername === username,
+    );
+  },
+});
+
 export const listTravelApprovalsForUser = query({
   args: { username: v.optional(v.string()) },
   handler: async (ctx, args) => {

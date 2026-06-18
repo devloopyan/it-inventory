@@ -229,10 +229,22 @@ export default function AppShell({ children, currentUser }: AppShellProps) {
   const accountUsername = currentUser?.username ? `@${currentUser.username}` : "Hub Console";
   const accountRoleLabel = formatUserRoleLabel(currentRole);
   const accountInitials = getInitials(accountName);
+  // Travel approvers (team TL/Manager, even with the requester role) need the Monitoring nav
+  // to reach the HR/Admin queue where they approve travel orders.
+  const isTravelApprover = Boolean(
+    useQuery(
+      api.monitoring.isTravelApprover,
+      currentUser?.username ? { username: currentUser.username } : "skip",
+    ),
+  );
   const visibleNavSections = navSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => canShowNavItem(currentRole, currentUser?.serviceGroups, item)),
+      items: section.items.filter(
+        (item) =>
+          canShowNavItem(currentRole, currentUser?.serviceGroups, item) ||
+          (item.href === "/monitoring" && isTravelApprover),
+      ),
     }))
     .filter((section) => section.items.length > 0);
   const pathnameSegments = pathname?.split("/").filter(Boolean) ?? [];
