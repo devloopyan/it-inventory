@@ -2438,20 +2438,25 @@ export const submitTravelOrderForApproval = mutation({
 
     const actorName = normalizeRequired(args.actorName, "Actor name");
 
-    // Resolve the requester's team (TL + Manager) and the HR team (its TL = Fleet Admin).
+    // Approvers are derived from member roles (centralized on the Users roster):
+    //  - requester team's Team Lead (role "team_lead") and Manager (role "manager")
+    //  - HR team's Team Lead = Fleet Admin (final step)
     const teamName = ticket.requesterDepartment?.trim();
-    const [team, hrTeam] = await Promise.all([
-      teamName
-        ? ctx.db.query("departments").filter((q) => q.eq(q.field("name"), teamName)).first()
-        : Promise.resolve(null),
-      ctx.db.query("departments").filter((q) => q.eq(q.field("name"), TRAVEL_ORDER_HR_TEAM)).first(),
-    ]);
+    const allUsers = await ctx.db.query("users").collect();
+    const leadOf = (dept?: string) =>
+      dept
+        ? allUsers.find((u) => u.active && u.department === dept && u.role === "team_lead")?.username
+        : undefined;
+    const managerOf = (dept?: string) =>
+      dept
+        ? allUsers.find((u) => u.active && u.department === dept && u.role === "manager")?.username
+        : undefined;
 
     const chain = buildTravelOrderApprovalChain({
       requesterUsername: ticket.requesterUsername,
-      teamLeaderUsername: team?.teamLeaderUsername,
-      managerUsername: team?.managerUsername,
-      hrTeamLeaderUsername: hrTeam?.teamLeaderUsername,
+      teamLeaderUsername: leadOf(teamName),
+      managerUsername: managerOf(teamName),
+      hrTeamLeaderUsername: leadOf(TRAVEL_ORDER_HR_TEAM),
     });
     if (chain.length === 0) {
       throw new Error(
@@ -2570,18 +2575,18 @@ export const recordTravelOrderApprovalDecision = mutation({
   },
 });
 
-// Travel Orders currently awaiting THIS user's approval step (for the dashboard card).
-// Whether a user is a Travel Order approver (any team's Team Leader/Manager,
-// which includes the HR team's TL / Fleet Admin). Used to grant HR/Admin queue access.
+// Whether a user is a Travel Order approver — i.e. their role is Team Lead or
+// Manager (the HR team's Team Lead is the Fleet Admin). Grants HR/Admin queue + nav access.
 export const isTravelApprover = query({
   args: { username: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const username = args.username?.trim();
     if (!username) return false;
-    const teams = await ctx.db.query("departments").collect();
-    return teams.some(
-      (team) => team.teamLeaderUsername === username || team.managerUsername === username,
-    );
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_username", (q) => q.eq("username", username))
+      .unique();
+    return Boolean(user?.active && (user.role === "team_lead" || user.role === "manager"));
   },
 });
 

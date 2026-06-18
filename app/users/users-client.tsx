@@ -45,6 +45,8 @@ type UserFormState = {
 
 const roleOptions: Array<{ value: UserRole; label: string; description: string }> = [
   { value: "admin", label: "Admin", description: "Full system access across users, assets, and workflows." },
+  { value: "manager", label: "Manager", description: "Approves travel orders for their team (2nd step)." },
+  { value: "team_lead", label: "Team Lead", description: "Approves travel orders for their team (1st step). HR team's Team Lead = Fleet Admin." },
   { value: "service_staff", label: "Service Staff", description: "Handles requests for assigned service groups." },
   { value: "it_staff", label: "IT Staff (legacy)", description: "Old IT staff role. Keep existing users working while we migrate." },
   { value: "approver", label: "Approver", description: "Reviews and approves meeting requests." },

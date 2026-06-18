@@ -1,11 +1,13 @@
 import { SERVICE_GROUPS, type ServiceGroup } from "./serviceGroups";
 
-export const USER_ROLES = ["admin", "service_staff", "it_staff", "approver", "requester"] as const;
+export const USER_ROLES = ["admin", "manager", "team_lead", "service_staff", "it_staff", "approver", "requester"] as const;
 
 export type UserRole = (typeof USER_ROLES)[number];
 
 const ROLE_LABELS: Record<UserRole, string> = {
   admin: "Admin",
+  manager: "Manager",
+  team_lead: "Team Lead",
   service_staff: "Service Staff",
   it_staff: "IT Staff",
   approver: "Approver",

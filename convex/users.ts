@@ -2,7 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { TRAVEL_ORDER_FLEET_MANAGER_SCOPE } from "../lib/monitoring";
 
-const USER_ROLES = ["admin", "service_staff", "it_staff", "approver", "requester"] as const;
+const USER_ROLES = ["admin", "manager", "team_lead", "service_staff", "it_staff", "approver", "requester"] as const;
 const DEFAULT_IT_GROUPS = ["IT"] as const;
 const ALL_DEFAULT_GROUPS = ["IT", "HR/Admin", "OSMD"] as const;
 const PASSWORD_MIN_LENGTH = 8;
