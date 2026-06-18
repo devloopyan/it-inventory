@@ -1,5 +1,5 @@
 import "./globals.css";
-import { Nunito } from "next/font/google";
+import { Inter, Nunito } from "next/font/google";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
 import Providers from "./providers";
@@ -10,6 +10,14 @@ const nunito = Nunito({
   weight: ["400", "500", "600", "700", "800"],
   display: "swap",
   variable: "--font-nunito",
+});
+
+// APO design system uses Inter as the primary UI font.
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-inter",
 });
 
 async function getCurrentUser() {
@@ -37,7 +45,7 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${nunito.className} ${nunito.variable}`}>
+      <body className={`${inter.className} ${inter.variable} ${nunito.variable}`}>
         <Providers>
           <AppShell currentUser={currentUser}>{children}</AppShell>
         </Providers>
