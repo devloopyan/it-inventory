@@ -395,3 +395,19 @@ export const setActive = mutation({
     return { success: true };
   },
 });
+
+export const remove = mutation({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) {
+      throw new Error("User account could not be found.");
+    }
+
+    await ctx.db.delete(user._id);
+
+    return { success: true };
+  },
+});

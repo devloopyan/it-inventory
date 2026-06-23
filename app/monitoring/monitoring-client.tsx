@@ -2213,6 +2213,13 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
     .filter((row) => getServiceGroupForCategory(row.category) === "HR/Admin")
     // Pure travel approvers (not HR/Admin staff) only see travel orders, not HR service requests.
     .filter((row) => isHrAdminStaff || row.category === MONITORING_TRAVEL_ORDER_CATEGORY)
+    // Team leaders / reviewers (non-HR approvers) only see travel orders awaiting THEIR approval.
+    .filter((row) => {
+      if (isHrAdminStaff) return true;
+      if (row.category !== MONITORING_TRAVEL_ORDER_CATEGORY) return true;
+      const pendingApprover = row.travelApprovalChain?.find((step) => step.status === "Pending")?.approverUsername;
+      return pendingApprover === currentUser?.username;
+    })
     .filter((row) => {
       const displayStatus = getTravelOrderDisplayStatus(row);
       const archived = displayStatus === "Fulfilled" || displayStatus === "Closed" || displayStatus === "Done";
@@ -5138,6 +5145,12 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                   const avatarPalette = getFleetAvatarPalette();
                   const requesterInitials = getFleetInitials(row.requesterName ?? "?");
                   const hasFleet = Boolean(row.fleetDriverName || row.fleetVehicleName);
+                  const rowPendingApprover = row.travelApprovalChain?.find((step) => step.status === "Pending")?.approverUsername;
+                  const isMyApprovalRow =
+                    row.category === MONITORING_TRAVEL_ORDER_CATEGORY &&
+                    !isHrAdminStaff &&
+                    Boolean(rowPendingApprover) &&
+                    rowPendingApprover === currentUser?.username;
                   return (
                     <article
                       key={row._id}
@@ -5210,6 +5223,7 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
 
                       <div className="to-card-footer" onClick={(e) => e.stopPropagation()}>
                         {row.category === MONITORING_TRAVEL_ORDER_CATEGORY ? (
+                          isHrAdminStaff ? (
                           <>
                             <select
                               className="input-base"
@@ -5247,6 +5261,28 @@ export default function MonitoringClient({ actorName }: MonitoringClientProps) {
                               </button>
                             ) : null}
                           </>
+                          ) : isMyApprovalRow ? (
+                          <>
+                            <button
+                              type="button"
+                              className="btn-primary to-card-approve-btn"
+                              aria-label={`Approve ${row.ticketNumber}`}
+                              disabled={travelApprovalSavingId === rowId}
+                              onClick={() => void handleRowTravelApproval(row._id, "Approved")}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-secondary to-card-sendback-btn"
+                              aria-label={`Send ${row.ticketNumber} back to requester`}
+                              disabled={travelApprovalSavingId === rowId}
+                              onClick={() => void handleRowTravelApproval(row._id, "For Revision")}
+                            >
+                              Send back
+                            </button>
+                          </>
+                          ) : null
                         ) : null}
                       </div>
                     </article>

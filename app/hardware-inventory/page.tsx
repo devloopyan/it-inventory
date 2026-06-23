@@ -297,12 +297,6 @@ const locationFilterSelectOptions: ReadonlyArray<ChecklistSelectOption> = [
   ...locationSelectOptions,
 ];
 
-const categoryFilterSelectOptions: ReadonlyArray<ChecklistSelectOption> = [
-  { value: "master", label: "All" },
-  { value: "workstation", label: "Workstation" },
-  { value: "storage", label: "Storage" },
-];
-
 const DRONE_KIT_DEFAULT_DEPARTMENT = "IT OPERATIONS";
 const masterTableViews: Array<{ key: Exclude<MasterTableView, "master">; label: string }> = [
   { key: "workstation", label: "Workstation" },
@@ -341,6 +335,27 @@ function isAssetMasterWorkstationRecord(row: {
 
 function isMainStorageRecord(row: { location?: string; locationPersonAssigned?: string }) {
   return (row.locationPersonAssigned ?? row.location ?? "") === "MAIN STORAGE";
+}
+
+// ── Workstation card view helpers (group by owner / team, spec-line peek) ──
+function workstationOwnerName(row: { assignedTo?: string; turnoverTo?: string; locationPersonAssigned?: string }) {
+  const name = (row.assignedTo || row.turnoverTo || row.locationPersonAssigned || "").trim();
+  return name && name.toLowerCase() !== "unassigned" ? name : "Unassigned";
+}
+
+function workstationInitials(name: string) {
+  if (name === "Unassigned") return "?";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+
+function workstationStatusClass(status?: string) {
+  const s = (status || "").toLowerCase();
+  if (s.includes("repair")) return "is-repair";
+  if (s.includes("storage")) return "is-storage";
+  if (s.includes("borrow") || s.includes("reserve")) return "is-borrowed";
+  return "is-active";
 }
 
 function buildDesktopSpecificationsSummary(args: {
@@ -593,7 +608,10 @@ function buildDroneKitSpecificationsSummary(args: {
 export default function HardwareInventoryPage() {
   const router = useRouter();
   const [registerMode, setRegisterMode] = useState<RegisterMode>("general");
+  // Register form is now a modal: open = !isRegisterCollapsed; step "choose" shows
+  // the type picker, "form" shows the matching mode form.
   const [isRegisterCollapsed, setIsRegisterCollapsed] = useState(true);
+  const [registerStep, setRegisterStep] = useState<"choose" | "form">("choose");
   const [workstationType, setWorkstationType] = useState<WorkstationType>("Laptop");
   const [specTier, setSpecTier] = useState<SpecsTier | "">("");
   const [desktopForm, setDesktopForm] = useState(defaultDesktopForm);
@@ -638,6 +656,14 @@ export default function HardwareInventoryPage() {
     page: 1,
     pageSize: 5000,
   });
+  // Teams come from the Users page (api.departments.list) so the asset register
+  // stays in sync with the teams the admin maintains there. Fall back to the
+  // static list while the query loads or if no teams exist yet.
+  const teamList = useQuery(api.departments.list, {});
+  const teamSelectOptions: ReadonlyArray<ChecklistSelectOption> =
+    teamList && teamList.length
+      ? teamList.map((team) => ({ value: team, label: team }))
+      : departmentSelectOptions;
   const assetTagSeedResult = useQuery(api.hardwareInventory.list, {
     sortKey: "assetTag",
     sortDir: "asc",
@@ -678,15 +704,11 @@ export default function HardwareInventoryPage() {
   }
 
   function openRegisterForm() {
+    setRegisterStep("choose");
     setIsRegisterCollapsed(false);
-    scrollToSection(formSectionRef);
   }
 
-  function toggleRegisterAccordion() {
-    if (isRegisterCollapsed) {
-      openRegisterForm();
-      return;
-    }
+  function closeRegisterForm() {
     setIsRegisterCollapsed(true);
   }
 
@@ -750,6 +772,33 @@ export default function HardwareInventoryPage() {
     return true;
   });
   const tableRows = allTableRows.slice(0, visibleTableRows);
+  // Workstation view renders person-cards (one per workstation) sorted by owner,
+  // with a team-grouped owner sidebar — instead of the master table.
+  const workstationCardRows =
+    masterTableView === "workstation"
+      ? [...allTableRows].sort((a, b) => workstationOwnerName(a).localeCompare(workstationOwnerName(b)))
+      : [];
+  const workstationTeamNav =
+    masterTableView === "workstation"
+      ? (() => {
+          const teams = new Map<string, Map<string, number>>();
+          for (const row of allTableRows) {
+            const team = (row.department || "").trim() || "Unassigned";
+            const owner = workstationOwnerName(row);
+            if (!teams.has(team)) teams.set(team, new Map());
+            const owners = teams.get(team)!;
+            owners.set(owner, (owners.get(owner) ?? 0) + 1);
+          }
+          return [...teams.entries()]
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([team, owners]) => ({
+              team,
+              owners: [...owners.entries()]
+                .sort((a, b) => a[0].localeCompare(b[0]))
+                .map(([name, count]) => ({ name, count })),
+            }));
+        })()
+      : [];
   const knownAssetTags = collectReservedAssetTags(assetTagSeedResult?.items ?? []);
   const assetTypeForCreate =
     registerMode === "workstation" ? workstationType : isDroneKitMode ? "Drone" : form.assetType;
@@ -2120,51 +2169,49 @@ export default function HardwareInventoryPage() {
           {formSuccess.message}
         </div>
       ) : null}
-      <section
-        className={`panel hardware-register-panel operations-reference-shell${isRegisterCollapsed ? " is-collapsed" : ""}`}
-        ref={formSectionRef}
-      >
-        <div
-          className="operations-reference-topbar hardware-register-topbar"
-          onClick={toggleRegisterAccordion}
-          style={{ cursor: "pointer" }}
+      {!isRegisterCollapsed ? (
+      <div className="hw-reg-backdrop" onClick={closeRegisterForm} role="dialog" aria-modal="true">
+        <section
+          className="panel hardware-register-panel hw-reg-modal"
+          ref={formSectionRef}
+          onClick={(e) => e.stopPropagation()}
         >
-          <div className="operations-reference-title-group hardware-register-header">
-            <div className="hardware-register-header-row">
-              <div className="operations-reference-title-row">
-                <h1 className="operations-reference-title hardware-register-title">Hardware Asset Register</h1>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="hardware-register-accordion hardware-register-accordion-toggle"
-              onClick={(e) => { e.stopPropagation(); toggleRegisterAccordion(); }}
-              aria-expanded={!isRegisterCollapsed}
-              aria-controls="hardware-register-form-panel"
-            >
-              <span className="hardware-register-accordion-side">
-                <span className="hardware-register-accordion-state">
-                  {isRegisterCollapsed ? "Expand form" : "Collapse form"}
-                </span>
-                <span
-                  className={`hardware-register-accordion-icon${isRegisterCollapsed ? "" : " is-open"}`}
-                  aria-hidden="true"
-                >
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                    <path
-                      d="M5 7.5L10 12.5L15 7.5"
-                      stroke="currentColor"
-                      strokeWidth="1.75"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-              </span>
+          <div className="hw-reg-modal-head">
+            {registerStep === "form" ? (
+              <button type="button" className="hw-reg-back" onClick={() => setRegisterStep("choose")} aria-label="Back to type">
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M12 5L7 10L12 15" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </button>
+            ) : null}
+            <h1 className="hardware-register-title" style={{ margin: 0, fontSize: 17 }}>
+              {registerStep === "choose"
+                ? "Register Asset"
+                : registerMode === "droneKit"
+                  ? "Register Drone Kit"
+                  : registerMode === "workstation"
+                    ? "Register Workstation"
+                    : "Register Asset"}
+            </h1>
+            <button type="button" className="hw-reg-close" onClick={closeRegisterForm} aria-label="Close">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
             </button>
           </div>
-        </div>
-        {!isRegisterCollapsed ? (
+          {registerStep === "choose" ? (
+            <div className="hw-reg-choose">
+              <p className="hw-reg-choose-sub">What are you adding to the inventory?</p>
+              <button type="button" className="hw-reg-pick" onClick={() => { setRegisterMode("general"); setSpecTier(""); setRegisterStep("form"); }}>
+                <span className="hw-reg-pick-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" /><path d="M2 21h20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></span>
+                <span><span className="hw-reg-pick-title">General Asset</span><span className="hw-reg-pick-desc">Monitor, printer, router, single item…</span></span>
+              </button>
+              <button type="button" className="hw-reg-pick" onClick={() => { setRegisterMode("workstation"); setForm((prev) => ({ ...prev, assetType: workstationType })); setRegisterStep("form"); }}>
+                <span className="hw-reg-pick-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.8" /><path d="M2 20h20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></span>
+                <span><span className="hw-reg-pick-title">Workstation</span><span className="hw-reg-pick-desc">A user&apos;s laptop or desktop with full specs.</span></span>
+              </button>
+              <button type="button" className="hw-reg-pick" onClick={() => { setRegisterMode("droneKit"); setSpecTier(""); setForm((prev) => ({ ...prev, assetType: "Drone" })); setRegisterStep("form"); }}>
+                <span className="hw-reg-pick-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" /><path d="M5 5l3 3M19 5l-3 3M5 19l3-3M19 19l-3-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg></span>
+                <span><span className="hw-reg-pick-title">Drone Kit</span><span className="hw-reg-pick-desc">Drone unit, battery, propeller, controller.</span></span>
+              </button>
+            </div>
+          ) : (
           <div id="hardware-register-form-panel" className="hardware-register-body">
             <div className="register-tab-stack hardware-register-tab-stack">
               <div className="operations-reference-tabs">
@@ -2430,13 +2477,13 @@ export default function HardwareInventoryPage() {
           {!isDroneKitMode ? (
             <div style={{ display: "grid", gap: 4 }}>
               <label style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>
-                Department <span style={{ color: "#dc2626" }}>*</span>
+                Team <span style={{ color: "#dc2626" }}>*</span>
               </label>
               <ChecklistSelect
                 value={form.department}
-                options={departmentSelectOptions}
-                placeholder="Select department"
-                ariaLabel="Department"
+                options={teamSelectOptions}
+                placeholder="Select team"
+                ariaLabel="Team"
                 onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
               />
             </div>
@@ -2784,20 +2831,25 @@ export default function HardwareInventoryPage() {
               <p style={{ color: "#b91c1c", marginTop: 8, fontSize: "var(--type-body-sm)" }}>{formError}</p>
             ) : null}
           </div>
-        ) : null}
-      </section>
+          )}
+        </section>
+      </div>
+      ) : null}
 
       <section
         className="panel hardware-master-panel hardware-master-panel-layout"
         ref={masterPanelRef}
       >
-        <div className="hardware-section-head">
+        <div className="hardware-section-head" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
             <h1 className="operations-reference-title hardware-section-title">Asset Master Table</h1>
             <div className="type-section-copy">
               Search and filter all hardware assets.
             </div>
           </div>
+          <button type="button" className="btn-primary" style={{ whiteSpace: "nowrap" }} onClick={openRegisterForm}>
+            + Add Asset
+          </button>
         </div>
         <div className="hardware-master-toolbar hardware-master-toolbar-controls asset-master-toolbar-row">
           <div className="asset-master-toolbar-left">
@@ -2814,20 +2866,6 @@ export default function HardwareInventoryPage() {
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
-                  setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
-                }}
-              />
-            </div>
-            <div className="asset-master-toolbar-filter asset-master-toolbar-filter-category">
-              <ChecklistSelect
-                value={masterTableView}
-                options={categoryFilterSelectOptions}
-                placeholder="Category"
-                ariaLabel="Filter by category"
-                compact
-                minMenuWidth={148}
-                onChange={(value) => {
-                  setMasterTableView((value || "master") as MasterTableView);
                   setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
                 }}
               />
@@ -2887,8 +2925,95 @@ export default function HardwareInventoryPage() {
               <span>Clear filters</span>
             </button>
           </div>
+          <div className="asset-master-toolbar-right">
+            <div className="asset-master-view-filters" aria-label="Asset master quick filters">
+              {masterToolbarViews.map((view) => {
+                const active = masterTableView === view.key;
+                return (
+                  <button
+                    key={view.key}
+                    type="button"
+                    aria-pressed={active}
+                    className={`asset-master-view-filter${active ? " active" : ""}`}
+                    onClick={() => {
+                      setMasterTableView(view.key);
+                      setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+                    }}
+                  >
+                    {view.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
+        {masterTableView === "workstation" ? (
+          <div className="ws-card-layout">
+            <div className="ws-card-grid">
+              {workstationCardRows.map((row) => {
+                const owner = workstationOwnerName(row);
+                return (
+                  <article
+                    key={row._id}
+                    className="ws-pcard"
+                    onClick={() => handleEdit(row._id)}
+                  >
+                    <div className="ws-pcard-top">
+                      <span className="ws-pcard-avatar">{workstationInitials(owner)}</span>
+                      <div className="ws-pcard-ownerblock">
+                        <div className="ws-pcard-owner">{owner}</div>
+                        <div className="ws-pcard-team">{(row.department || "").trim() || "Unassigned"}</div>
+                      </div>
+                    </div>
+                    <div className="ws-pcard-device">
+                      <span className="ws-pcard-tag">{formatValue(row.assetTag)}</span>
+                      {row.assetType ? <span className="ws-pcard-type">{row.assetType}</span> : null}
+                      <span className={`ws-pcard-status ${workstationStatusClass(row.status)}`}>
+                        {row.status || "—"}
+                      </span>
+                    </div>
+                    <div className="ws-pcard-model">{formatValue(row.assetNameDescription ?? "")}</div>
+                    <div className="ws-pcard-peek">
+                      {row.specifications?.trim() || "No specifications recorded"}
+                    </div>
+                  </article>
+                );
+              })}
+              {!workstationCardRows.length ? (
+                <div className="ws-card-empty">No workstations match this search.</div>
+              ) : null}
+            </div>
+            <aside className="ws-card-rail" aria-label="Workstation owners by team">
+              {workstationTeamNav.map((group) => (
+                <div className="ws-rail-team" key={group.team}>
+                  <div className="ws-rail-team-head">
+                    {group.team}
+                    <span className="ws-rail-team-count">{group.owners.length}</span>
+                  </div>
+                  {group.owners.map((o) => (
+                    <button
+                      type="button"
+                      key={o.name}
+                      className={`ws-rail-owner${search.trim() === o.name ? " active" : ""}`}
+                      onClick={() => {
+                        setSearch(search.trim() === o.name ? "" : o.name);
+                        setVisibleTableRows(INITIAL_VISIBLE_TABLE_ROWS);
+                      }}
+                    >
+                      <span className="ws-rail-owner-avatar">{workstationInitials(o.name)}</span>
+                      <span className="ws-rail-owner-name">{o.name}</span>
+                      {o.count > 1 ? <span className="ws-rail-owner-count">{o.count}</span> : null}
+                    </button>
+                  ))}
+                </div>
+              ))}
+              {!workstationTeamNav.length ? (
+                <div className="ws-rail-empty">No owners yet.</div>
+              ) : null}
+            </aside>
+          </div>
+        ) : (
         <div
           ref={masterTableWrapRef}
           className="saas-table-wrap hardware-master-table-wrap"
@@ -3063,14 +3188,23 @@ export default function HardwareInventoryPage() {
             </tbody>
           </table>
         </div>
+        )}
 
         <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 13, color: "#4b5563" }}>
-            Showing {tableRows.length} of {allTableRows.length}
-          </div>
-          <div style={{ fontSize: 13, color: "#64748b" }}>
-            {hasMoreTableRows ? "Scroll to load more" : "All rows loaded"}
-          </div>
+          {masterTableView === "workstation" ? (
+            <div style={{ fontSize: 13, color: "#4b5563" }}>
+              {workstationCardRows.length} workstation{workstationCardRows.length === 1 ? "" : "s"}
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 13, color: "#4b5563" }}>
+                Showing {tableRows.length} of {allTableRows.length}
+              </div>
+              <div style={{ fontSize: 13, color: "#64748b" }}>
+                {hasMoreTableRows ? "Scroll to load more" : "All rows loaded"}
+              </div>
+            </>
+          )}
         </div>
 
       </section>

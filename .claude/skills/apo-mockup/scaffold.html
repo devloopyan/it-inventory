@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{FEATURE_NAME}} — Design Variants</title>
+<style>
+  /* ===========================================================
+     Tokens — replace this block with the live :root from
+     app/globals.css (the IT Inventory System light theme).
+     =========================================================== */
+  :root {
+    /* Surfaces */
+    --background: #fafafa;
+    --foreground: #1c1c22;
+    --card: #ffffff;
+    --card-foreground: #1c1c22;
+
+    /* Primary (Linear-style violet — the only saturated accent) */
+    --primary: #5e5ce6;
+    --primary-foreground: #ffffff;
+
+    /* Structure */
+    --border: rgba(11, 11, 15, 0.08);
+    --border-subtle: rgba(11, 11, 15, 0.04);
+    --muted: #f4f4f5;
+    --muted-foreground: #6b6b74;
+    --accent: #ececef;
+    --accent-soft: rgba(94, 92, 230, 0.12);
+    --accent-ink: #4b49c2;
+    --ring: #5e5ce6;
+    --radius: 7px;
+
+    /* Ink ramp */
+    --ink-900: #0b0b0f;
+    --ink-800: #1c1c22;
+    --ink-700: #2e2e36;
+    --ink-500: #6b6b74;
+    --ink-400: #8a8a93;
+    --ink-300: #b5b5bc;
+    --ink-200: #dcdce0;
+    --ink-100: #ebebee;
+
+    /* Feedback */
+    --ok: #1f9d55;        --ok-soft: rgba(31, 157, 85, 0.12);
+    --warn: #b8860b;      --warn-soft: rgba(184, 134, 11, 0.12);
+    --destructive: #c23d3d; --danger-soft: rgba(194, 61, 61, 0.12);
+    --info: #225c86;      --info-soft: #e8f1f8;
+
+    /* Typography */
+    --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  /* ===========================================================
+     Reset + base
+     =========================================================== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 14px; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--background);
+    color: var(--foreground);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+
+  /* ===========================================================
+     Top bar
+     =========================================================== */
+  .top-bar {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 32px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 24px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .top-bar .title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .top-bar .meta {
+    font-size: 12px;
+    color: var(--muted-foreground);
+    font-family: var(--font-mono);
+    display: flex;
+    gap: 16px;
+  }
+  .top-bar .meta span { white-space: nowrap; }
+
+  /* ===========================================================
+     Design tabs
+     =========================================================== */
+  .design-tabs {
+    display: flex;
+    gap: 0;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    position: sticky;
+    top: 49px;
+    z-index: 99;
+  }
+  .design-tab {
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    border-bottom: 2px solid transparent;
+    transition: color 150ms ease, border-color 150ms ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+  }
+  .design-tab:hover { color: var(--foreground); }
+  .design-tab[aria-selected="true"] {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    font-weight: 600;
+  }
+  .design-tab .tab-letter {
+    width: 18px; height: 18px;
+    border-radius: 999px;
+    background: var(--muted);
+    color: var(--muted-foreground);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+    font-family: var(--font-mono);
+  }
+  .design-tab[aria-selected="true"] .tab-letter {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+
+  /* ===========================================================
+     Panel container + rationale card
+     =========================================================== */
+  .design-panel {
+    display: none;
+    padding: 32px;
+  }
+  .design-panel[aria-hidden="false"] { display: block; }
+
+  .rationale {
+    max-width: 960px;
+    margin: 0 auto 32px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--primary);
+    border-radius: var(--radius);
+    padding: 18px 22px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 24px;
+    row-gap: 6px;
+    align-items: baseline;
+  }
+  .rationale .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted-foreground);
+    font-weight: 600;
+    font-family: var(--font-mono);
+  }
+  .rationale .value { font-size: 13px; color: var(--foreground); }
+  .rationale h2 {
+    grid-column: 1 / -1;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 6px;
+  }
+
+  /* ===========================================================
+     Per-variant work area — variant-specific styles go in
+     scoped blocks below or inline within each .design-panel.
+     =========================================================== */
+  .variant-canvas {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+</style>
+</head>
+<body>
+
+<!-- === Top bar === -->
+<header class="top-bar">
+  <div class="title">{{FEATURE_NAME}}</div>
+  <div class="meta">
+    <span>it-inventory-system</span>
+    <span>{{GENERATION_DATE}}</span>
+  </div>
+</header>
+
+<!-- === Tabs === -->
+<nav class="design-tabs" role="tablist" aria-label="Design variants">
+  <button class="design-tab" role="tab" aria-selected="true"  aria-controls="panel-a" id="tab-a" tabindex="0">
+    <span class="tab-letter">A</span>{{VARIANT_A_NAME}}
+  </button>
+  <button class="design-tab" role="tab" aria-selected="false" aria-controls="panel-b" id="tab-b" tabindex="-1">
+    <span class="tab-letter">B</span>{{VARIANT_B_NAME}}
+  </button>
+  <button class="design-tab" role="tab" aria-selected="false" aria-controls="panel-c" id="tab-c" tabindex="-1">
+    <span class="tab-letter">C</span>{{VARIANT_C_NAME}}
+  </button>
+</nav>
+
+<!-- === Panel A === -->
+<section class="design-panel" role="tabpanel" id="panel-a" aria-labelledby="tab-a" aria-hidden="false">
+  <div class="rationale">
+    <h2>{{VARIANT_A_NAME}}</h2>
+    <div class="label">Positioning</div><div class="value">{{VARIANT_A_POSITIONING}}</div>
+    <div class="label">Tradeoff</div>   <div class="value">{{VARIANT_A_TRADEOFF}}</div>
+    <div class="label">Optimizes for</div><div class="value">{{VARIANT_A_OPTIMIZES}}</div>
+  </div>
+  <div class="variant-canvas">
+    <!-- Variant A markup goes here -->
+  </div>
+</section>
+
+<!-- === Panel B === -->
+<section class="design-panel" role="tabpanel" id="panel-b" aria-labelledby="tab-b" aria-hidden="true">
+  <div class="rationale">
+    <h2>{{VARIANT_B_NAME}}</h2>
+    <div class="label">Positioning</div><div class="value">{{VARIANT_B_POSITIONING}}</div>
+    <div class="label">Tradeoff</div>   <div class="value">{{VARIANT_B_TRADEOFF}}</div>
+    <div class="label">Optimizes for</div><div class="value">{{VARIANT_B_OPTIMIZES}}</div>
+  </div>
+  <div class="variant-canvas">
+    <!-- Variant B markup goes here -->
+  </div>
+</section>
+
+<!-- === Panel C === -->
+<section class="design-panel" role="tabpanel" id="panel-c" aria-labelledby="tab-c" aria-hidden="true">
+  <div class="rationale">
+    <h2>{{VARIANT_C_NAME}}</h2>
+    <div class="label">Positioning</div><div class="value">{{VARIANT_C_POSITIONING}}</div>
+    <div class="label">Tradeoff</div>   <div class="value">{{VARIANT_C_TRADEOFF}}</div>
+    <div class="label">Optimizes for</div><div class="value">{{VARIANT_C_OPTIMIZES}}</div>
+  </div>
+  <div class="variant-canvas">
+    <!-- Variant C markup goes here -->
+  </div>
+</section>
+
+<script>
+  (function () {
+    const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+    const panels = tabs.map((t) => document.getElementById(t.getAttribute('aria-controls')));
+
+    function activate(index) {
+      tabs.forEach((tab, i) => {
+        const selected = i === index;
+        tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+        tab.setAttribute('tabindex', selected ? '0' : '-1');
+        panels[i].setAttribute('aria-hidden', selected ? 'false' : 'true');
+      });
+      tabs[index].focus();
+    }
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => activate(i));
+      tab.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight') { e.preventDefault(); activate((i + 1) % tabs.length); }
+        else if (e.key === 'ArrowLeft')  { e.preventDefault(); activate((i - 1 + tabs.length) % tabs.length); }
+        else if (e.key === 'Home')       { e.preventDefault(); activate(0); }
+        else if (e.key === 'End')        { e.preventDefault(); activate(tabs.length - 1); }
+      });
+    });
+  })();
+</script>
+
+</body>
+</html>

@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { Fragment, useMemo, useState, useEffect, type ChangeEvent, type FormEvent } from "react";
 import { createPortal } from "react-dom";
+import { Ban, CircleCheck, UserMinus, Trash2, ChevronRight, Users, Pencil } from "lucide-react";
 
 function parseError(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
@@ -101,7 +101,10 @@ export default function UsersClient() {
   const setActive = useMutation(api.users.setActive);
   const setPassword = useMutation(api.users.setPassword);
   const setTeam = useMutation(api.users.setTeam);
+  const removeUser = useMutation(api.users.remove);
   const addDepartment = useMutation(api.departments.add);
+  const renameDepartment = useMutation(api.departments.rename);
+  const removeDepartment = useMutation(api.departments.remove);
 
   const [form, setForm] = useState<UserFormState>(defaultFormState);
   const [errorMessage, setErrorMessage] = useState("");
@@ -115,6 +118,7 @@ export default function UsersClient() {
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
   const [teamError, setTeamError] = useState("");
+  const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
@@ -133,18 +137,32 @@ export default function UsersClient() {
   // Group the user list by team (department) for the "by team" view.
   const usersByTeam = useMemo(() => {
     const groups = new Map<string, UserAccount[]>();
+    // Seed every known team so empty teams still render (APO shows 0-member teams).
+    for (const dept of departments ?? []) groups.set(dept, []);
     for (const user of filteredUsers) {
       const team = user.department?.trim() || "Unassigned";
       const bucket = groups.get(team);
       if (bucket) bucket.push(user);
       else groups.set(team, [user]);
     }
-    return Array.from(groups.entries()).sort((a, b) => {
-      if (a[0] === "Unassigned") return 1;
-      if (b[0] === "Unassigned") return -1;
+    let entries = Array.from(groups.entries());
+    // While searching, hide empty teams so only matching results show.
+    if (userSearch.trim()) entries = entries.filter(([, members]) => members.length > 0);
+    return entries.sort((a, b) => {
+      if (a[0] === "Unassigned") return -1;
+      if (b[0] === "Unassigned") return 1;
       return a[0].localeCompare(b[0]);
     });
-  }, [filteredUsers]);
+  }, [filteredUsers, departments, userSearch]);
+
+  function toggleTeam(team: string) {
+    setExpandedTeams((prev) => {
+      const next = new Set(prev);
+      if (next.has(team)) next.delete(team);
+      else next.add(team);
+      return next;
+    });
+  }
 
 function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.target;
@@ -286,6 +304,76 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
     }
   }
 
+  async function handleRemoveFromTeam(user: UserAccount) {
+    if (!user.department) return;
+    try {
+      setBusyUserId(user._id);
+      setErrorMessage("");
+      setSuccessMessage("");
+      await setTeam({ userId: user._id, department: "" });
+      setSuccessMessage(`${user.displayName} removed from ${user.department}.`);
+    } catch (error) {
+      setErrorMessage(parseError(error, "Unable to remove user from team."));
+    } finally {
+      setBusyUserId("");
+    }
+  }
+
+  async function handleRenameTeam(team: string) {
+    const next = window.prompt(`Rename team "${team}" to:`, team);
+    if (next == null) return;
+    const name = next.trim();
+    if (!name || name === team) return;
+    try {
+      setErrorMessage("");
+      setSuccessMessage("");
+      await renameDepartment({ from: team, to: name });
+      setExpandedTeams((prev) => {
+        if (!prev.has(team)) return prev;
+        const nextSet = new Set(prev);
+        nextSet.delete(team);
+        nextSet.add(name);
+        return nextSet;
+      });
+      setSuccessMessage(`Team renamed to ${name}.`);
+    } catch (error) {
+      setErrorMessage(parseError(error, "Unable to rename team."));
+    }
+  }
+
+  async function handleDeleteTeam(team: string, memberCount: number) {
+    const message = memberCount > 0
+      ? `Delete team "${team}"? Its ${memberCount} member${memberCount === 1 ? "" : "s"} will become Unassigned.`
+      : `Delete team "${team}"?`;
+    if (!window.confirm(message)) return;
+    try {
+      setErrorMessage("");
+      setSuccessMessage("");
+      await removeDepartment({ name: team });
+      setSuccessMessage(`Team "${team}" deleted.`);
+    } catch (error) {
+      setErrorMessage(parseError(error, "Unable to delete team."));
+    }
+  }
+
+  async function handleDeleteUser(user: UserAccount) {
+    if (!window.confirm(`Delete ${user.displayName}? This permanently removes the account and cannot be undone.`)) {
+      return;
+    }
+    try {
+      setBusyUserId(user._id);
+      setErrorMessage("");
+      setSuccessMessage("");
+      await removeUser({ userId: user._id });
+      if (selectedUserId === user._id) setSelectedUserId(null);
+      setSuccessMessage(`${user.displayName} deleted.`);
+    } catch (error) {
+      setErrorMessage(parseError(error, "Unable to delete user."));
+    } finally {
+      setBusyUserId("");
+    }
+  }
+
   const selectedUser = users?.find((user) => user._id === selectedUserId);
   const totalMembers = (users ?? []).length;
   const adminCount = (users ?? []).filter((u) => normalizeRoleForSelect(u.role) === "admin").length;
@@ -300,13 +388,6 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
             Create account records and assign roles for request workflows.
           </p>
         </div>
-        <Link href="/users/settings" className="users-settings-btn" title="Manage teams & service groups">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-            <path d="M1,4.75H3.736a3.728,3.728,0,0,0,7.195,0H23a1,1,0,0,0,0-2H10.931a3.728,3.728,0,0,0-7.195,0H1a1,1,0,0,0,0,2ZM7.333,2a1.75,1.75,0,1,1-1.75,1.75A1.752,1.752,0,0,1,7.333,2Z"/>
-            <path d="M23,11H20.264a3.727,3.727,0,0,0-7.194,0H1a1,1,0,0,0,0,2H13.07a3.727,3.727,0,0,0,7.194,0H23a1,1,0,0,0,0-2Zm-6.333,2.75A1.75,1.75,0,1,1,18.417,12,1.752,1.752,0,0,1,16.667,13.75Z"/>
-            <path d="M23,19.25H10.931a3.728,3.728,0,0,0-7.195,0H1a1,1,0,0,0,0,2H3.736a3.728,3.728,0,0,0,7.195,0H23a1,1,0,0,0,0-2ZM7.333,22a1.75,1.75,0,1,1,1.75-1.75A1.753,1.753,0,0,1,7.333,22Z"/>
-          </svg>
-        </Link>
       </div>
 
       {/* Organization summary card (APO-style) */}
@@ -515,34 +596,63 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                     <th>Role</th>
                     <th>Team</th>
                     <th>Status</th>
+                    <th style={{ textAlign: "right" }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="ulist-empty">
+                      <td colSpan={5} className="ulist-empty">
                         {userSearch ? "No users match your search." : "No user accounts yet."}
                       </td>
                     </tr>
-                  ) : usersByTeam.map(([team, members]) => (
+                  ) : usersByTeam.map(([team, members]) => {
+                    const isExpanded = expandedTeams.has(team) || Boolean(userSearch.trim());
+                    const isUnassigned = team === "Unassigned";
+                    return (
                     <Fragment key={team}>
-                      <tr>
-                        <td
-                          colSpan={4}
-                          style={{
-                            background: "var(--surface-subtle, #f9fafb)",
-                            fontWeight: 800,
-                            fontSize: 11,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.04em",
-                            color: "var(--muted)",
-                            padding: "8px 16px",
-                          }}
-                        >
-                          {team} <span style={{ opacity: 0.7 }}>({members.length})</span>
+                      <tr className="team-group-row" onClick={() => toggleTeam(team)}>
+                        <td colSpan={5} style={{ padding: 0 }}>
+                          <div className="team-group-bar">
+                            <span className={`team-chevron${isExpanded ? " is-open" : ""}`}>
+                              <ChevronRight size={16} strokeWidth={2} />
+                            </span>
+                            <Users size={15} strokeWidth={1.75} className="team-group-icon" />
+                            <span className="team-group-name">{team}</span>
+                            {!isUnassigned ? (
+                              <span className="team-group-actions" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  className="roster-icon-btn team-mini"
+                                  title="Rename team"
+                                  aria-label={`Rename ${team}`}
+                                  onClick={() => void handleRenameTeam(team)}
+                                >
+                                  <Pencil size={14} strokeWidth={1.75} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="roster-icon-btn is-danger team-mini"
+                                  title="Delete team"
+                                  aria-label={`Delete ${team}`}
+                                  onClick={() => void handleDeleteTeam(team, members.length)}
+                                >
+                                  <Trash2 size={14} strokeWidth={1.75} />
+                                </button>
+                              </span>
+                            ) : null}
+                            <span className="team-group-count">
+                              {members.length} member{members.length === 1 ? "" : "s"}
+                            </span>
+                          </div>
                         </td>
                       </tr>
-                      {members.map((user) => {
+                      {isExpanded && members.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="team-empty-row">No members in this team yet.</td>
+                        </tr>
+                      ) : null}
+                      {isExpanded && members.map((user) => {
                         const initials = getInitials(user.displayName);
                         const avatarStyle = getAvatarStyle();
                         return (
@@ -562,8 +672,7 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                             </td>
                             <td onClick={(e) => e.stopPropagation()}>
                               <select
-                                className="input-base"
-                                style={{ fontSize: 12, padding: "4px 8px", height: 30, minWidth: 120 }}
+                                className="roster-select"
                                 value={normalizeRoleForSelect(user.role)}
                                 disabled={busyUserId === user._id}
                                 onChange={(e) => void handleRoleChange(user, normalizeRoleForSelect(e.target.value))}
@@ -574,8 +683,7 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                             </td>
                             <td onClick={(e) => e.stopPropagation()}>
                               <select
-                                className="input-base"
-                                style={{ fontSize: 12, padding: "4px 8px", height: 30, minWidth: 120 }}
+                                className="roster-select"
                                 value={user.department ?? ""}
                                 disabled={busyUserId === user._id}
                                 onChange={(e) => void handleTeamChange(user, e.target.value)}
@@ -590,11 +698,46 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
                                 {user.active ? "Active" : "Inactive"}
                               </span>
                             </td>
+                            <td onClick={(e) => e.stopPropagation()}>
+                              <div className="roster-actions">
+                                <button
+                                  type="button"
+                                  className="roster-icon-btn"
+                                  title={user.active ? "Deactivate user" : "Activate user"}
+                                  aria-label={user.active ? `Deactivate ${user.displayName}` : `Activate ${user.displayName}`}
+                                  disabled={busyUserId === user._id}
+                                  onClick={() => void handleActiveChange(user)}
+                                >
+                                  {user.active ? <Ban size={16} strokeWidth={1.75} /> : <CircleCheck size={16} strokeWidth={1.75} />}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="roster-icon-btn"
+                                  title={user.department ? "Remove from team" : "No team assigned"}
+                                  aria-label={`Remove ${user.displayName} from team`}
+                                  disabled={busyUserId === user._id || !user.department}
+                                  onClick={() => void handleRemoveFromTeam(user)}
+                                >
+                                  <UserMinus size={16} strokeWidth={1.75} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="roster-icon-btn is-danger"
+                                  title="Delete user"
+                                  aria-label={`Delete ${user.displayName}`}
+                                  disabled={busyUserId === user._id}
+                                  onClick={() => void handleDeleteUser(user)}
+                                >
+                                  <Trash2 size={16} strokeWidth={1.75} />
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
                     </Fragment>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -698,19 +841,41 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
             {(departments ?? []).length > 0 ? (
               <div className="member-panel-section">
                 <div className="member-panel-section-title">Handles requests for</div>
-                <div style={{ display: "grid", gap: 9 }}>
-                  {(departments ?? []).map((sg) => (
-                    <label key={sg} style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", fontSize: 13 }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedUser.serviceGroups.includes(sg)}
-                        onChange={() => void handleAccessToggle(selectedUser, sg)}
-                        disabled={busyUserId === selectedUser._id}
-                      />
-                      {sg}
-                    </label>
-                  ))}
-                </div>
+                {selectedUser.serviceGroups.length > 0 ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                    {selectedUser.serviceGroups.map((sg) => (
+                      <span
+                        key={sg}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 6px 3px 10px", borderRadius: 999, background: "var(--accent-soft)", color: "var(--accent-ink)", fontSize: 12, fontWeight: 500 }}
+                      >
+                        {sg}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${sg}`}
+                          disabled={busyUserId === selectedUser._id}
+                          onClick={() => void handleAccessToggle(selectedUser, sg)}
+                          style={{ display: "inline-flex", border: 0, background: "none", cursor: "pointer", color: "var(--accent-ink)", fontSize: 15, lineHeight: 1, padding: 0 }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <select
+                  className="input-base"
+                  value=""
+                  disabled={busyUserId === selectedUser._id}
+                  onChange={(e) => { if (e.target.value) void handleAccessToggle(selectedUser, e.target.value); }}
+                  aria-label="Add a team this user handles requests for"
+                >
+                  <option value="">Add a team…</option>
+                  {(departments ?? [])
+                    .filter((sg) => !selectedUser.serviceGroups.includes(sg))
+                    .map((sg) => (
+                      <option key={sg} value={sg}>{sg}</option>
+                    ))}
+                </select>
               </div>
             ) : null}
 
@@ -718,6 +883,11 @@ function handleFieldChange(event: ChangeEvent<HTMLInputElement | HTMLSelectEleme
               <div className="member-panel-section-title">
                 {selectedUser.passwordConfigured ? "Reset Password" : "Set Password"}
               </div>
+              <p style={{ fontSize: 11, color: "var(--muted)", margin: "0 0 8px", lineHeight: 1.5 }}>
+                {selectedUser.passwordConfigured
+                  ? `Password set${selectedUser.passwordUpdatedAt ? ` · last updated ${new Date(selectedUser.passwordUpdatedAt).toLocaleDateString()}` : ""}. For security it is encrypted and cannot be shown — set a new one below to change it.`
+                  : "No password set yet. Create one below."}
+              </p>
               <form onSubmit={handleSetPassword} style={{ display: "grid", gap: 8 }}>
                 <input
                   className="input-base"

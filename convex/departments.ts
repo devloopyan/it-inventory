@@ -89,6 +89,42 @@ export const add = mutation({
   },
 });
 
+// Rename a team and migrate every member referencing it (department is stored
+// by name on the user row, so a rename must cascade to keep members attached).
+export const rename = mutation({
+  args: { from: v.string(), to: v.string() },
+  handler: async (ctx, args) => {
+    const from = args.from.trim();
+    const to = args.to.trim();
+    if (!to) throw new Error("Team name cannot be empty.");
+    if (from === to) return;
+
+    const row = await ctx.db
+      .query("departments")
+      .filter((q) => q.eq(q.field("name"), from))
+      .first();
+    if (!row) throw new Error(`Team "${from}" not found.`);
+
+    const duplicate = await ctx.db
+      .query("departments")
+      .filter((q) => q.eq(q.field("name"), to))
+      .first();
+    if (duplicate && duplicate._id !== row._id && duplicate.active) {
+      throw new Error(`Team "${to}" already exists.`);
+    }
+
+    await ctx.db.patch(row._id, { name: to });
+
+    const members = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("department"), from))
+      .collect();
+    for (const member of members) {
+      await ctx.db.patch(member._id, { department: to, updatedAt: Date.now() });
+    }
+  },
+});
+
 export const remove = mutation({
   args: { name: v.string() },
   handler: async (ctx, args) => {
@@ -97,6 +133,16 @@ export const remove = mutation({
       .filter((q) => q.eq(q.field("name"), args.name))
       .first();
     if (!row) throw new Error(`Department "${args.name}" not found.`);
+
+    // Detach members so they don't orphan under a team that no longer exists.
+    const members = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("department"), args.name))
+      .collect();
+    for (const member of members) {
+      await ctx.db.patch(member._id, { department: undefined, updatedAt: Date.now() });
+    }
+
     await ctx.db.patch(row._id, { active: false });
   },
 });

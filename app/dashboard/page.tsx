@@ -537,7 +537,20 @@ export default function DashboardPage() {
     currentRole !== "member" &&
     !isHrAdminCalendarOnlyDashboard &&
     currentServiceGroups.includes("OSMD");
-  const shouldLoadHardwareDashboardData = currentRole === "member" || hasItDashboardAccess;
+  // Pure TO approvers (reviewer / team lead without IT access) have no asset or
+  // monitoring data, so the "Pending Actions" metrics strip is all zeros for them.
+  const isPureApproverDashboard =
+    (currentRole === "reviewer" || currentRole === "team_lead") && !hasItDashboardAccess;
+  // Show the Conference Room Schedule (instead of the inventory Activities feed)
+  // on every monitoring dashboard: OSMD approvers, pure reviewers / team leads,
+  // and admin / IT staff.
+  const showConferenceRoomPanel =
+    isOsmdApproverDashboard || isPureApproverDashboard || hasItDashboardAccess;
+  // Pure approvers see a read-only equipment borrowing availability panel instead
+  // of the full inventory management workspace.
+  const showEquipmentAvailabilityPanel = isPureApproverDashboard;
+  const shouldLoadHardwareDashboardData =
+    currentRole === "member" || hasItDashboardAccess || showEquipmentAvailabilityPanel;
   const shouldLoadSupportCalendar = !isHrAdminCalendarOnlyDashboard;
   // Travel order calendar visibility:
   //  - admins and approvers (team leaders/managers): see ALL travel orders
@@ -1423,7 +1436,7 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-page">
-      {!isHrAdminCalendarOnlyDashboard ? (
+      {!isHrAdminCalendarOnlyDashboard && !isPureApproverDashboard ? (
       <section className="panel dashboard-top-card">
         <div className="dashboard-top-card-head">
           <div className="dashboard-heading">
@@ -2039,9 +2052,9 @@ export default function DashboardPage() {
       <div className="dashboard-row dashboard-row-secondary">
         <div
           className="panel dashboard-panel dashboard-activity-panel"
-          style={isOsmdApproverDashboard ? { padding: 16, height: "auto", minHeight: 0 } : { padding: 16 }}
+          style={showConferenceRoomPanel ? { padding: 16, height: "auto", minHeight: 0 } : { padding: 16 }}
         >
-          {isOsmdApproverDashboard ? (
+          {showConferenceRoomPanel ? (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {/* Header */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
@@ -2270,7 +2283,93 @@ export default function DashboardPage() {
       </div>
       ) : null}
 
-      {!isHrAdminCalendarOnlyDashboard ? (
+      {isHrAdminCalendarOnlyDashboard ? null : showEquipmentAvailabilityPanel ? (
+      <section className="panel dashboard-panel dashboard-showcase-workspace">
+        <div className="dashboard-showcase-panel-head">
+          <div>
+            <h2 className="dashboard-showcase-panel-title">Equipment Availability</h2>
+            <p className="dashboard-showcase-panel-copy">
+              Check which IT equipment is free to borrow before approving or filing a request.
+            </p>
+          </div>
+        </div>
+        <div className="requester-dashboard-grid">
+          <section className="panel requester-dashboard-section">
+            <div className="requester-section-head">
+              <div>
+                <h2>Available Equipment</h2>
+                <p>Main storage items that can be borrowed right now.</p>
+              </div>
+              <span className="requester-count-pill">{requesterAvailableEquipment.length}</span>
+            </div>
+            <div className="requester-list">
+              {allRows === undefined ? (
+                <div className="requester-empty">Loading equipment...</div>
+              ) : requesterAvailableEquipment.length ? (
+                requesterAvailableEquipment.map((row) => (
+                  <div key={String(row._id)} className="requester-list-row">
+                    <div className="requester-row-main">
+                      <div className="requester-row-title">{row.assetNameDescription || row.assetTag}</div>
+                      <div className="requester-row-copy">
+                        {[row.assetTag, row.assetType, row.specifications].filter(Boolean).join(" - ")}
+                      </div>
+                    </div>
+                    <span className="requester-status-pill">Available</span>
+                  </div>
+                ))
+              ) : (
+                <div className="requester-empty">No equipment is available to borrow right now.</div>
+              )}
+            </div>
+          </section>
+
+          <section className="panel requester-dashboard-section">
+            <div className="requester-section-head">
+              <div>
+                <h2>Requested / Reserved / Borrowed Equipment</h2>
+                <p>Items that are not available to borrow right now.</p>
+              </div>
+            </div>
+            <div className="requester-list">
+              {allRows === undefined ? (
+                <div className="requester-empty">Loading equipment...</div>
+              ) : requesterUnavailableEquipment.length ? (
+                requesterUnavailableEquipment.map((row) => {
+                  const reserved = isReservedRecord(row as Record<string, unknown>);
+                  const requested =
+                    !reserved && row.status !== "Borrowed" && openBorrowingAssetIds.has(String(row._id));
+                  const borrower =
+                    row.borrower ||
+                    getReservationBorrower(row as Record<string, unknown>) ||
+                    row.turnoverTo ||
+                    "Not listed";
+                  return (
+                    <div key={String(row._id)} className="requester-list-row">
+                      <div className="requester-row-main">
+                        <div className="requester-row-title">{row.assetNameDescription || row.assetTag}</div>
+                        <div className="requester-row-copy">
+                          {row.assetTag} -{" "}
+                          {requested ? "Request pending" : `${reserved ? "Reserved for:" : "Borrower:"} ${borrower}`}
+                        </div>
+                      </div>
+                      <span
+                        className={`requester-status-pill${
+                          requested ? " is-requested" : reserved ? " is-reserved" : " is-borrowed"
+                        }`}
+                      >
+                        {requested ? "Requested" : reserved ? "Reserved" : "Borrowed"}
+                      </span>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="requester-empty">No requested, reserved, or borrowed equipment right now.</div>
+              )}
+            </div>
+          </section>
+        </div>
+      </section>
+      ) : (
       <section ref={workspaceSectionRef} className="panel dashboard-panel dashboard-showcase-workspace">
         <div className="dashboard-showcase-panel-head">
           <div>
@@ -2472,7 +2571,7 @@ export default function DashboardPage() {
           renderGroupedTables(groupedRows)
         )}
       </section>
-      ) : null}
+      )}
     </div>
   );
 }
