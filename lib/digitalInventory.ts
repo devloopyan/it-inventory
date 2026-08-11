@@ -14,6 +14,17 @@ export const ACCESS_ACCOUNT_STATUSES = [
   "Removed",
 ] as const;
 
+export const MFA_METHODS = [
+  "None",
+  "Authenticator App",
+  "SMS",
+  "Email",
+  "Hardware Key",
+  "Backup Codes",
+] as const;
+
+export const MFA_METHOD_NONE = "None";
+
 export const SUBSCRIPTION_STATUSES = [
   "Active",
   "For Renewal",
@@ -33,6 +44,7 @@ export const DIGITAL_INVENTORY_CURRENCIES = ["PHP", "USD"] as const;
 
 export type OfficeSoftwareStatus = (typeof OFFICE_SOFTWARE_STATUSES)[number];
 export type AccessAccountStatus = (typeof ACCESS_ACCOUNT_STATUSES)[number];
+export type MfaMethod = (typeof MFA_METHODS)[number];
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 export type SubscriptionBillingCycle = (typeof SUBSCRIPTION_BILLING_CYCLES)[number];
 export type DigitalInventoryCurrency = (typeof DIGITAL_INVENTORY_CURRENCIES)[number];
@@ -43,6 +55,15 @@ export function isOfficeSoftwareStatus(value: string): value is OfficeSoftwareSt
 
 export function isAccessAccountStatus(value: string): value is AccessAccountStatus {
   return (ACCESS_ACCOUNT_STATUSES as readonly string[]).includes(value);
+}
+
+export function isMfaMethod(value: string): value is MfaMethod {
+  return (MFA_METHODS as readonly string[]).includes(value);
+}
+
+export function normalizeMfaMethod(value?: string): MfaMethod {
+  const next = value?.trim() ?? "";
+  return isMfaMethod(next) ? next : MFA_METHOD_NONE;
 }
 
 export function isSubscriptionStatus(value: string): value is SubscriptionStatus {
