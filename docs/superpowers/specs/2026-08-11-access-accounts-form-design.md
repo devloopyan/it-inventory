@@ -24,8 +24,7 @@ Target field list, in form order:
 | Recovery Email/Phone | new `recoveryContact` | text |
 | Owner/Admin | `ownerName` renamed to `ownerUsername` | single-select |
 | Who Else Has Access | new `sharedWithUsernames` | multi-select |
-| MFA enabled | existing `mfaEnabled` | checkbox |
-| MFA Method | new `mfaMethod` | select |
+| MFA | new `mfaMethod` | select |
 | MFA Registered To | new `mfaRegisteredTo` | text |
 | Status | existing `status` | select |
 | Last Reviewed | existing `lastReviewedDate` | date |
@@ -40,9 +39,17 @@ mutations. Any values already stored in them are lost. This is intentional —
 free-text fields with no consumer outside this one table. If existing rows
 carry data worth keeping, export before deploying the schema change.
 
-`MFA_METHODS`: `Authenticator App`, `SMS`, `Email`, `Hardware Key`, `Backup Codes`.
-Added to `lib/digitalInventory.ts` alongside the existing status lists, with an
-`isMfaMethod` guard matching the existing pattern.
+MFA is a single control, not a checkbox plus a method select. `MFA_METHODS`:
+`None`, `Authenticator App`, `SMS`, `Email`, `Hardware Key`, `Backup Codes`.
+`None` is the default and means MFA is off. Added to `lib/digitalInventory.ts`
+alongside the existing status lists, with an `isMfaMethod` guard matching the
+existing pattern.
+
+`mfaMethod` is the single source of truth. The existing `mfaEnabled` boolean
+stays in the schema but is derived server-side on every write
+(`mfaEnabled = mfaMethod !== "None"`), so the table view and any existing
+consumers keep working without a boolean-to-string refactor. It is never set
+directly from the form.
 
 ## Schema
 
@@ -104,9 +111,9 @@ Leaving the password untouched on edit does not overwrite it. Only pressing
 Change and saving a new value re-encrypts. Saving an empty value through Change
 clears the stored credential.
 
-**MFA Method and MFA Registered To are disabled while MFA enabled is off**, and
-clear when it is switched off, so no account can carry a method without MFA.
-The server enforces this too — it does not rely on the disabled state.
+**MFA Registered To is disabled while MFA is `None`**, and clears when MFA is
+set back to `None`, so no account carries an MFA contact without MFA. The
+server enforces this too — it does not rely on the disabled state.
 
 **Owner/Admin and Who Else Has Access** are both pickers over active users from
 the `users` table. Owner is single-select; Who Else is multi-select chips. Owner
@@ -182,8 +189,8 @@ larger fix and is deliberately out of scope here.
 ## Validation and errors
 
 - `systemName` and `accountName` stay required
-- `mfaMethod` is validated against `MFA_METHODS`; both MFA detail fields are
-  cleared server-side when `mfaEnabled` is false
+- `mfaMethod` is validated against `MFA_METHODS`; `mfaRegisteredTo` is cleared
+  and `mfaEnabled` set to false server-side when `mfaMethod` is `None`
 - `sharedWithUsernames` is filtered against active users on write, so a deleted
   user does not linger on a record
 - Server action errors surface in the existing `digital-alert` band; a failed
