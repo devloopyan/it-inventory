@@ -395,6 +395,8 @@ export default function HardwareInventoryDetailPage() {
     api.hardwareInventory.getById,
     inventoryId ? { inventoryId } : "skip",
   );
+  // Teams come from the Users page so the asset edit dropdown matches the register form.
+  const teamList = useQuery(api.departments.list, {});
   const updateAsset = useMutation(api.hardwareInventory.update);
   const removeAsset = useMutation(api.hardwareInventory.remove);
   const generateUploadUrl = useMutation(api.hardwareInventory.generateUploadUrl);
@@ -908,8 +910,12 @@ export default function HardwareInventoryDetailPage() {
   const selectedAssetTypeInOptions = assetTypeOptions.includes(
     form.assetType as (typeof assetTypeOptions)[number],
   );
-  const selectedDepartmentInOptions = departmentOptions.includes(
-    form.department as (typeof departmentOptions)[number],
+  const teamSelectOptions: ReadonlyArray<ChecklistSelectOption> =
+    teamList && teamList.length
+      ? teamList.map((team) => ({ value: team, label: team }))
+      : departmentSelectOptions;
+  const selectedDepartmentInOptions = (teamList && teamList.length ? teamList : departmentOptions).includes(
+    form.department as string & (typeof departmentOptions)[number],
   );
   const assetTypeDropdownOptions = selectedAssetTypeInOptions || !form.assetType
     ? assetTypeSelectOptions
@@ -918,8 +924,8 @@ export default function HardwareInventoryDetailPage() {
     ? locationSelectOptions
     : [{ value: form.locationPersonAssigned, label: form.locationPersonAssigned }, ...locationSelectOptions];
   const departmentDropdownOptions = selectedDepartmentInOptions || !form.department
-    ? departmentSelectOptions
-    : [{ value: form.department, label: form.department }, ...departmentSelectOptions];
+    ? teamSelectOptions
+    : [{ value: form.department, label: form.department }, ...teamSelectOptions];
   const canEditBorrower = form.status === "Borrowed";
   const isDroneAssetSelected = form.assetType.trim().toLowerCase() === "drone";
 
@@ -1334,7 +1340,7 @@ export default function HardwareInventoryDetailPage() {
               <DetailItem label="Specifications" value={asset.specifications} multiline flat />
             )}
             <DetailItem label="Location" value={asset.location ?? asset.locationPersonAssigned} flat />
-            <DetailItem label="Department" value={asset.department} flat />
+            <DetailItem label="Team" value={asset.department} flat />
             <DetailItem label="Turnover To" value={asset.assignedTo ?? asset.turnoverTo} flat />
             <DetailItem label="Borrower" value={asset.borrower} flat />
             <DetailItem
@@ -1512,12 +1518,12 @@ export default function HardwareInventoryDetailPage() {
                 placeholder="Turnover To (optional)"
               />
             </EditField>
-            <EditField label="Department">
+            <EditField label="Team">
               <ChecklistSelect
                 value={form.department}
                 options={departmentDropdownOptions}
-                placeholder="Select department"
-                ariaLabel="Department"
+                placeholder="Select team"
+                ariaLabel="Team"
                 onChange={(value) => setForm((prev) => ({ ...prev, department: value }))}
               />
             </EditField>

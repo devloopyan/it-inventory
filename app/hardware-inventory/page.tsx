@@ -358,6 +358,21 @@ function workstationStatusClass(status?: string) {
   return "is-active";
 }
 
+// Card peek: desktop sets concatenate every component's specs/serials in one
+// string ("Specs Tier: … | System Unit (…): … | Monitor (…): … | …"). Show only
+// the System Unit specs; laptops/general have a plain spec string, shown as-is.
+function workstationSpecPeek(specifications?: string) {
+  const raw = specifications?.trim();
+  if (!raw) return "No specifications recorded";
+  const segments = raw.split("|").map((part) => part.trim());
+  const systemUnit = segments.find((part) => /^system unit/i.test(part));
+  if (systemUnit) {
+    const match = systemUnit.match(/^system unit[^:]*:\s*(.+)$/i);
+    return match ? match[1].trim() : systemUnit;
+  }
+  return raw;
+}
+
 function buildDesktopSpecificationsSummary(args: {
   specsTier?: string;
   monitorAssetTag?: string;
@@ -2975,7 +2990,7 @@ export default function HardwareInventoryPage() {
                     </div>
                     <div className="ws-pcard-model">{formatValue(row.assetNameDescription ?? "")}</div>
                     <div className="ws-pcard-peek">
-                      {row.specifications?.trim() || "No specifications recorded"}
+                      {workstationSpecPeek(row.specifications)}
                     </div>
                   </article>
                 );
