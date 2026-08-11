@@ -4169,7 +4169,9 @@ select.input-base:not([multiple]):not([size])::-ms-expand {
 
 .checklist-select-menu {
   position: fixed;
-  z-index: 160;
+  /* Above modal overlays (e.g. the Add Asset register modal, z 1000) so the
+     dropdown menu is never trapped behind the backdrop. */
+  z-index: 1100;
   max-height: 260px;
   overflow-y: auto;
   overflow-x: hidden;
