@@ -1,5 +1,5 @@
 import "./globals.css";
-import { Inter, Nunito } from "next/font/google";
+import { Nunito } from "next/font/google";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
 import Providers from "./providers";
@@ -12,13 +12,8 @@ const nunito = Nunito({
   variable: "--font-nunito",
 });
 
-// APO design system uses Inter as the primary UI font.
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-  variable: "--font-inter",
-});
+// The brand kit specifies Helvetica Neue with a system fallback stack, set on
+// --font-family-sans in globals.css. No webfont is loaded for the UI face.
 
 async function getCurrentUser() {
   const cookieStore = await cookies();
@@ -45,7 +40,7 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${inter.className} ${inter.variable} ${nunito.variable}`}>
+      <body className={nunito.variable}>
         <Providers>
           <AppShell currentUser={currentUser}>{children}</AppShell>
         </Providers>

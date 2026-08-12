@@ -2,34 +2,36 @@
 
 :root {
   /* Calm Operations brand system */
-  --font-family-sans: var(--font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-family-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font-family-sans: "Helvetica Neue", Helvetica, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-family-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* APO foundation palette — Linear-style: neutral-on-light, single violet accent */
-  --color-primary-700: #5e5ce6;        /* primary violet — the only saturated accent */
-  --color-primary-600: #4b49c2;        /* accent-ink (hover/active) */
-  --color-primary-100: #ebeafd;        /* soft violet tint */
-  --color-text-primary: #1c1c22;       /* ink-800 — default body */
-  --color-text-strong: #0b0b0f;        /* ink-900 — headings */
-  --color-text-secondary: #6b6b74;     /* ink-500 — secondary/meta */
-  --color-text-muted: #8a8a93;         /* ink-400 — placeholder */
-  --color-canvas: #fafafa;             /* app background */
+  /* IT Operations Hub brand kit — vibrant violet accent on neutral greys.
+     Every semantic token below derives from these primitives, so the whole
+     app re-skins from this block alone. */
+  --color-primary-700: #7c4dff;        /* violet-500 — accent, the only action color */
+  --color-primary-600: #6b3aee;        /* violet-600 — accent hover / brand text */
+  --color-primary-100: #f1ecff;        /* violet-50 — soft violet tint */
+  --color-text-primary: #1a1a1a;       /* black-800 — default body */
+  --color-text-strong: #111111;        /* black-900 — headings */
+  --color-text-secondary: #6b6b6b;     /* grey-600 — secondary/meta */
+  --color-text-muted: #8a8a8a;         /* grey-500 — placeholder */
+  --color-canvas: #fafaf8;             /* app background */
   --color-surface-base: #ffffff;       /* card / popover */
-  --color-surface-subtle: #f4f4f5;     /* secondary / muted */
-  --color-surface-elevated: #ececef;   /* accent */
-  --color-border-strong: rgba(11, 11, 15, 0.08);  /* hairline border */
-  --color-border-soft: rgba(11, 11, 15, 0.04);
-  --color-border-ui: #dcdce0;          /* ink-200 */
-  --color-focus-ring: #5e5ce6;         /* violet ring */
-  --color-hover-soft: #f1f1f2;         /* bg-hover */
-  --color-success-strong: #1f9d55;
-  --color-success-soft: rgba(31, 157, 85, 0.12);
-  --color-warning-strong: #b8860b;
-  --color-warning-soft: rgba(184, 134, 11, 0.12);
-  --color-danger-strong: #c23d3d;
-  --color-danger-soft: rgba(194, 61, 61, 0.12);
-  --color-info-strong: #225c86;
-  --color-info-soft: #e8f1f8;
+  --color-surface-subtle: #f5f5f5;     /* grey-50 — secondary / muted */
+  --color-surface-elevated: #ededed;   /* grey-100 — inset */
+  --color-border-strong: #e0e0e0;      /* grey-200 — the default hairline */
+  --color-border-soft: #ededed;        /* grey-100 — softer divider */
+  --color-border-ui: #cfcfcf;          /* grey-300 — input/control border */
+  --color-focus-ring: #7c4dff;         /* violet ring */
+  --color-hover-soft: rgba(17, 17, 17, 0.04);
+  --color-success-strong: #1e9e62;
+  --color-success-soft: #e6f6ee;
+  --color-warning-strong: #c87a16;
+  --color-warning-soft: #fdf2e0;
+  --color-danger-strong: #d33a34;
+  --color-danger-soft: #fbeae9;
+  --color-info-strong: #2f6fd0;
+  --color-info-soft: #e9f0fc;
 
   /* Semantic application colors */
   --background: var(--color-canvas);
@@ -37,9 +39,9 @@
   --muted: var(--color-text-secondary);
   --muted-strong: var(--color-text-strong);
   --brand-900: var(--color-primary-700);
-  --brand-900-rgb: 94, 92, 230;
+  --brand-900-rgb: 124, 77, 255;
   --brand-700: var(--color-primary-600);
-  --brand-700-rgb: 75, 73, 194;
+  --brand-700-rgb: 107, 58, 238;
   --brand-500: var(--color-primary-100);
   --surface: var(--color-surface-base);
   --surface-subtle: var(--color-surface-subtle);
@@ -74,7 +76,7 @@
   --dropdown-outline-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
   --dropdown-outline-shadow-strong: 0 0 0 3px rgba(0, 0, 0, 0.08);
   --dropdown-card-outline: inset 0 0 0 1px rgba(255, 255, 255, 0.72), 0 0 0 1px rgba(0, 0, 0, 0.12);
-  --dropdown-card-shadow: 0 10px 32px rgba(11, 11, 15, 0.24), 0 2px 8px rgba(11, 11, 15, 0.12);
+  --dropdown-card-shadow: 0 10px 32px rgba(17, 17, 17, 0.24), 0 2px 8px rgba(17, 17, 17, 0.12);
   --dropdown-trigger-bg: var(--surface);
   --dropdown-trigger-hover-bg: var(--surface);
   --dropdown-trigger-border-hover: rgba(0, 0, 0, 0.16);
@@ -118,14 +120,14 @@
   --space-6: 24px;
   --space-7: 32px;
   --space-8: 40px;
-  --radius-control: 7px;
-  --radius-interactive: 6px;
+  --radius-control: 9px;
+  --radius-interactive: 9px;
   --radius-pill: 999px;
-  --radius-card: 10px;
+  --radius-card: 12px;
   --radius-panel: 12px;
   --radius-ui: var(--radius-control);
   /* APO: content is flat — shadows live only on floating overlays (menus, popovers). */
-  --shadow-floating: 0 10px 32px rgba(11, 11, 15, 0.24), 0 2px 8px rgba(11, 11, 15, 0.12);
+  --shadow-floating: 0 10px 32px rgba(17, 17, 17, 0.24), 0 2px 8px rgba(17, 17, 17, 0.12);
   --shadow-xs: none;
   --shadow-sm: none;
   --shadow-md: none;
@@ -138,64 +140,66 @@
   --topbar-height: 54px;
 
   /* APO ink ramp — use for text/icon hierarchy instead of opacity */
-  --ink-900: #0b0b0f;
-  --ink-800: #1c1c22;
-  --ink-700: #2e2e36;
-  --ink-500: #6b6b74;
-  --ink-400: #8a8a93;
-  --ink-300: #b5b5bc;
-  --ink-200: #dcdce0;
-  --ink-100: #ebebee;
+  --ink-900: #111111;
+  --ink-800: #1a1a1a;
+  --ink-700: #262626;
+  --ink-500: #6b6b6b;
+  --ink-400: #8a8a8a;
+  --ink-300: #cfcfcf;
+  --ink-200: #e0e0e0;
+  --ink-100: #ededed;
   /* APO surface states */
-  --bg-hover: #f1f1f2;
-  --bg-active: #ececef;
-  --bg-selected: #f4f2ff;
+  --bg-hover: rgba(17, 17, 17, 0.04);
+  --bg-active: rgba(124, 77, 255, 0.10);
+  --bg-selected: rgba(124, 77, 255, 0.10);
   /* APO soft accent tints */
-  --accent-soft: rgba(94, 92, 230, 0.12);
-  --accent-ink: #4b49c2;
-  --ok-soft: rgba(31, 157, 85, 0.12);
-  --warn-soft: rgba(184, 134, 11, 0.12);
-  --danger-soft: rgba(194, 61, 61, 0.12);
+  --accent-soft: rgba(124, 77, 255, 0.12);
+  --accent-ink: #6b3aee;
+  --ok-soft: rgba(30, 158, 98, 0.12);
+  --warn-soft: rgba(200, 122, 22, 0.12);
+  --danger-soft: rgba(211, 58, 52, 0.12);
   /* APO motion */
   --motion-instant: 100ms;
-  --motion-fast: 150ms;
-  --ease: cubic-bezier(0.3, 0.8, 0.4, 1);
+  --motion-fast: 140ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
 :root[data-theme="dark"] {
-  --color-primary-700: #3794ff;
-  --color-primary-600: #0e7ad6;
-  --color-primary-100: #d6ebff;
-  --color-text-primary: #d4d4d4;
-  --color-text-strong: #e2e2e2;
-  --color-text-secondary: #a9a9a9;
-  --color-text-muted: #858585;
-  --color-canvas: #1e1e1e;
-  --color-surface-base: #252526;
-  --color-surface-subtle: #2d2d30;
-  --color-surface-elevated: #313135;
-  --color-border-strong: #3c3c3c;
-  --color-border-soft: #333333;
+  /* Brand kit dark: the violet accent holds, surfaces go to the black ramp.
+     Accent lightens one step so it keeps contrast against a dark surface. */
+  --color-primary-700: #7c4dff;        /* violet-500 — accent stays constant */
+  --color-primary-600: #9a7bff;        /* violet-400 — hover lightens in dark */
+  --color-primary-100: #b29bff;        /* violet-300 — brand text on dark */
+  --color-text-primary: #f5f5f5;       /* grey-50 */
+  --color-text-strong: #ffffff;
+  --color-text-secondary: #a8a8a8;     /* grey-400 */
+  --color-text-muted: #8a8a8a;         /* grey-500 */
+  --color-canvas: #0e0e0e;
+  --color-surface-base: #1a1a1a;       /* black-800 */
+  --color-surface-subtle: #262626;     /* black-700 */
+  --color-surface-elevated: #333333;   /* black-600 */
+  --color-border-strong: #333333;
+  --color-border-soft: #262626;
   --color-border-ui: #454545;
-  --color-focus-ring: #3794ff;
-  --color-hover-soft: #2a2d2e;
-  --color-success-strong: #89d185;
-  --color-success-soft: #233124;
-  --color-warning-strong: #d7ba7d;
-  --color-warning-soft: #352d1f;
-  --color-danger-strong: #f48771;
-  --color-danger-soft: #3a2421;
-  --color-info-strong: #9cdcfe;
-  --color-info-soft: #22333d;
+  --color-focus-ring: #7c4dff;
+  --color-hover-soft: rgba(255, 255, 255, 0.06);
+  --color-success-strong: #4cc38a;
+  --color-success-soft: rgba(30, 158, 98, 0.16);
+  --color-warning-strong: #e0a244;
+  --color-warning-soft: rgba(200, 122, 22, 0.16);
+  --color-danger-strong: #f06a64;
+  --color-danger-soft: rgba(211, 58, 52, 0.16);
+  --color-info-strong: #6fa3e8;
+  --color-info-soft: rgba(47, 111, 208, 0.16);
 
   --background: var(--color-canvas);
   --foreground: var(--color-text-primary);
   --muted: var(--color-text-secondary);
   --muted-strong: var(--color-text-strong);
   --brand-900: var(--color-primary-700);
-  --brand-900-rgb: 55, 148, 255;
+  --brand-900-rgb: 124, 77, 255;
   --brand-700: var(--color-primary-600);
-  --brand-700-rgb: 14, 122, 214;
+  --brand-700-rgb: 154, 123, 255;
   --brand-500: var(--color-primary-100);
   --surface: var(--color-surface-base);
   --surface-subtle: var(--color-surface-subtle);
@@ -240,7 +244,7 @@
   --dropdown-menu-border: var(--border);
   --dropdown-row-radius: 8px;
   --dropdown-menu-hover-bg: rgba(255, 255, 255, 0.04);
-  --dropdown-menu-selected-bg: rgba(55, 148, 255, 0.12);
+  --dropdown-menu-selected-bg: rgba(124, 77, 255, 0.12);
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.24);
   --shadow-sm: var(--shadow-xs);
   --shadow-md: 0 10px 22px rgba(0, 0, 0, 0.24);
@@ -3014,7 +3018,7 @@ a {
   grid-column: 1 / -1;
   padding: 28px 0;
   text-align: center;
-  color: var(--ink-400, #8a8a93);
+  color: var(--ink-400, #8a8a8a);
   font-size: 13px;
 }
 
@@ -3055,7 +3059,7 @@ a {
 .ws-pcard-owner {
   font-size: 14px;
   font-weight: 600;
-  color: var(--ink-900, #0b0b0f);
+  color: var(--ink-900, #111111);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3099,8 +3103,8 @@ a {
   white-space: nowrap;
 }
 .ws-pcard-status::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
-.ws-pcard-status.is-active { background: var(--color-success-soft, rgba(31,157,85,0.12)); color: var(--color-success-strong, #1f9d55); }
-.ws-pcard-status.is-repair { background: var(--color-warning-soft, rgba(184,134,11,0.12)); color: var(--color-warning-strong, #b8860b); }
+.ws-pcard-status.is-active { background: var(--color-success-soft, rgba(30, 158, 98, 0.12)); color: var(--color-success-strong, #1e9e62); }
+.ws-pcard-status.is-repair { background: var(--color-warning-soft, rgba(200, 122, 22, 0.12)); color: var(--color-warning-strong, #c87a16); }
 .ws-pcard-status.is-storage { background: var(--color-info-soft, #e8f1f8); color: var(--color-info-strong, #225c86); }
 .ws-pcard-status.is-borrowed { background: var(--accent-soft); color: var(--accent-ink); }
 
@@ -3117,7 +3121,7 @@ a {
   border-top: 1px solid var(--border-subtle);
   font-family: var(--font-family-mono);
   font-size: 11px;
-  color: var(--ink-500, #6b6b74);
+  color: var(--ink-500, #6b6b6b);
   line-height: 1.5;
 }
 
@@ -3174,7 +3178,7 @@ a {
 }
 .ws-rail-owner-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-rail-owner-count { margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 600; }
-.ws-rail-empty { padding: 12px 8px; font-size: 12px; color: var(--ink-400, #8a8a93); }
+.ws-rail-empty { padding: 12px 8px; font-size: 12px; color: var(--ink-400, #8a8a8a); }
 
 @media (max-width: 880px) {
   .ws-card-layout { grid-template-columns: 1fr; }
@@ -3186,7 +3190,7 @@ a {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(11, 11, 15, 0.45);
+  background: rgba(17, 17, 17, 0.45);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -3201,7 +3205,7 @@ a {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 14px;
-  box-shadow: var(--shadow-floating, 0 24px 64px rgba(11, 11, 15, 0.26));
+  box-shadow: var(--shadow-floating, 0 24px 64px rgba(17, 17, 17, 0.26));
   padding: 22px 24px;
 }
 
@@ -3832,7 +3836,7 @@ a {
   max-width: 168px;
   height: 34px;
   padding: 0 32px 0 12px;
-  font-family: var(--font-inter), system-ui, sans-serif;
+  font-family: var(--font-family-sans);
   font-size: 13px;
   font-weight: 500;
   color: var(--ink-800, #2a2a30);
@@ -3843,7 +3847,7 @@ a {
   background-repeat: no-repeat;
   background-position: right 11px center;
   background-size: 14px 14px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.25 5.5L7 9.25L10.75 5.5' stroke='%238a8a93' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.25 5.5L7 9.25L10.75 5.5' stroke='%238a8a8a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
@@ -3856,7 +3860,7 @@ a {
 .roster-select:focus-visible {
   outline: none;
   border-color: var(--ring);
-  box-shadow: 0 0 0 3px var(--accent-soft, rgba(94, 92, 230, 0.12));
+  box-shadow: 0 0 0 3px var(--accent-soft, rgba(124, 77, 255, 0.12));
 }
 
 .roster-select:disabled {
@@ -3879,7 +3883,7 @@ a {
   width: 30px;
   height: 30px;
   padding: 0;
-  color: var(--ink-500, #6b6b74);
+  color: var(--ink-500, #6b6b6b);
   background-color: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
@@ -3890,7 +3894,7 @@ a {
 .roster-icon-btn:hover {
   border-color: var(--ink-300, #b5b5bc);
   background-color: var(--bg-hover, #f1f1f2);
-  color: var(--ink-900, #0b0b0f);
+  color: var(--ink-900, #111111);
 }
 
 .roster-icon-btn.is-danger:hover {
@@ -3907,7 +3911,7 @@ a {
 .roster-icon-btn:disabled:hover {
   border-color: var(--border);
   background-color: var(--surface);
-  color: var(--ink-500, #6b6b74);
+  color: var(--ink-500, #6b6b6b);
 }
 
 /* APO-style collapsible team group ("dropdown" card rows) in the Users roster. */
@@ -3936,7 +3940,7 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink-400, #8a8a93);
+  color: var(--ink-400, #8a8a8a);
   transition: transform 160ms ease;
 }
 
@@ -3945,15 +3949,15 @@ a {
 }
 
 .team-group-icon {
-  color: var(--ink-500, #6b6b74);
+  color: var(--ink-500, #6b6b6b);
   flex: none;
 }
 
 .team-group-name {
-  font-family: var(--font-inter), system-ui, sans-serif;
+  font-family: var(--font-family-sans);
   font-size: 14px;
   font-weight: 600;
-  color: var(--ink-900, #0b0b0f);
+  color: var(--ink-900, #111111);
 }
 
 .team-group-actions {
@@ -3989,8 +3993,8 @@ a {
   padding: 0 10px;
   border-radius: var(--radius-pill, 999px);
   background-color: var(--ink-100, #ebebee);
-  color: var(--ink-500, #6b6b74);
-  font-family: var(--font-inter), system-ui, sans-serif;
+  color: var(--ink-500, #6b6b6b);
+  font-family: var(--font-family-sans);
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
@@ -3998,7 +4002,7 @@ a {
 
 .team-empty-row {
   padding: 12px 16px 12px 48px;
-  color: var(--ink-400, #8a8a93);
+  color: var(--ink-400, #8a8a8a);
   font-size: 13px;
   border-top: 1px solid var(--border);
 }
@@ -7797,7 +7801,7 @@ select.status-select optgroup {
 
 :root[data-theme="dark"] .account-trigger-avatar,
 :root[data-theme="dark"] .account-dropdown-avatar {
-  background: #f4f4f5;
+  background: var(--surface-subtle);
   color: #09090b;
 }
 
