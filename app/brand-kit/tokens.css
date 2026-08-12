@@ -80,8 +80,11 @@
   --solid-hover:  var(--black-900);
   --on-solid:     var(--white);
 
-  /* ---------- TYPE (Helvetica / system sans) ---------- */
-  --font-sans: "Helvetica Neue", Helvetica, -apple-system, "Segoe UI", Arial, sans-serif;
+  /* ---------- TYPE ---------- */
+  /* Kit specifies Helvetica Neue; this project uses Inter instead. Inter is
+     loaded as a webfont in layout.tsx, so it renders the same on Windows,
+     where Helvetica Neue is not installed and silently falls back. */
+  --font-sans: var(--font-inter), Inter, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   --text-h1: 600 34px/1.15 var(--font-sans);

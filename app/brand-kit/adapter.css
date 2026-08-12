@@ -186,6 +186,83 @@ select.input-base {
   background: var(--bg-hover);
 }
 
+/* ---------- SIDEBAR -> .sidebar / .nav-item ---------- */
+.app-sidebar {
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+}
+
+.sidebar-section-label {
+  padding: var(--space-4) 10px var(--space-2);
+  font: 600 11px/1 var(--font-sans);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.side-link {
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font: 500 14px/1 var(--font-sans);
+  transition:
+    background var(--dur-fast),
+    color var(--dur-fast);
+}
+
+.side-link:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.side-link.active {
+  background: var(--bg-active);
+  color: var(--text-brand);
+}
+
+.side-link:hover svg,
+.side-link.active svg {
+  color: currentColor;
+}
+
+.side-link-badge {
+  margin-left: auto;
+  font: var(--text-caption);
+  color: var(--text-muted);
+}
+
+/* ---------- TOPBAR -> .topbar ---------- */
+.app-topbar {
+  gap: var(--space-4);
+  padding: 0 var(--space-5);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.top-breadcrumbs,
+.top-breadcrumb-item {
+  font: var(--text-body-sm);
+  color: var(--text-secondary);
+}
+
+.top-breadcrumb-link:hover {
+  color: var(--text-brand);
+}
+
+.top-breadcrumb-separator {
+  color: var(--text-muted);
+}
+
+/* The kit's account chip: pill, soft accent fill, brand ink. */
+.avatar-dot {
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--text-brand);
+  font: 600 12px var(--font-sans);
+}
+
 /* ---------- ACCESS & ACCOUNTS FORM ---------- */
 /* The kit labels fields with .label (13px medium, sentence case) and
    reserves uppercase for .eyebrow section labels. */

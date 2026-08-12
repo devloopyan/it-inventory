@@ -4,7 +4,7 @@ import "./brand-kit/tokens.css";
 import "./brand-kit/components.css";
 import "./globals.css";
 import "./brand-kit/adapter.css";
-import { Nunito } from "next/font/google";
+import { Inter, Nunito } from "next/font/google";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";
 import Providers from "./providers";
@@ -17,8 +17,15 @@ const nunito = Nunito({
   variable: "--font-nunito",
 });
 
-// The brand kit specifies Helvetica Neue with a system fallback stack, set on
-// --font-family-sans in globals.css. No webfont is loaded for the UI face.
+// Inter is the UI face. It is exposed as --font-inter and consumed by the kit's
+// --font-sans token; it is deliberately NOT applied via inter.className, which
+// would set font-family on body directly and override the token.
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-inter",
+});
 
 async function getCurrentUser() {
   const cookieStore = await cookies();
@@ -45,7 +52,7 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
-      <body className={nunito.variable}>
+      <body className={`${inter.variable} ${nunito.variable}`}>
         <Providers>
           <AppShell currentUser={currentUser}>{children}</AppShell>
         </Providers>
