@@ -72,6 +72,8 @@ export function canAccessAppPath(role: string | undefined, pathname: string, ser
     pathname.startsWith("/hardware-inventory/") ||
     pathname === "/digital-inventory" ||
     pathname.startsWith("/digital-inventory/") ||
+    pathname === "/inventory" ||
+    pathname.startsWith("/inventory/") ||
     pathname === "/operations" ||
     pathname.startsWith("/operations/")
   ) {
