@@ -17028,6 +17028,10 @@ select.status-select optgroup {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  /* Each field sizes to its own content. Without this a tall neighbour (the
+     shared-access picker) stretches its partner and strands the in-field
+     glyph below the control it belongs to. */
+  align-items: start;
 }
 
 .acct-field {
