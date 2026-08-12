@@ -16917,6 +16917,30 @@ select.status-select optgroup {
   color: var(--foreground);
 }
 
+/* Even expanded, the list is capped and scrolls so the section around it keeps
+   a stable height instead of growing with every person added. */
+.digital-chip-list.expanded {
+  max-height: 124px;
+  overflow-y: auto;
+}
+
+.digital-chip-more {
+  justify-self: start;
+  padding: 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.digital-chip-more:hover {
+  border-style: solid;
+  color: var(--foreground);
+}
+
 .digital-password-row {
   display: flex;
   align-items: center;
