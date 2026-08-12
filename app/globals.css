@@ -17182,7 +17182,9 @@ select.status-select optgroup {
 .digital-modal-shell {
   position: relative;
   z-index: 1;
-  width: min(1120px, 100%);
+  /* Forms read better in a narrow column: the stepped sections stack, so the
+     extra width only stretched fields past a comfortable scan length. */
+  width: min(780px, 100%);
   max-height: min(88vh, 860px);
   overflow: auto;
 }
