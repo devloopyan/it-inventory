@@ -16899,7 +16899,7 @@ select.status-select optgroup {
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--surface-muted, transparent);
+  background: var(--surface-subtle);
   font-size: 12px;
 }
 
