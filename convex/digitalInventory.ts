@@ -1,10 +1,13 @@
 import { mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 import {
   DIGITAL_INVENTORY_CURRENCIES,
   OFFICE_SOFTWARE_STATUSES,
   ACCESS_ACCOUNT_STATUSES,
+  MFA_METHOD_NONE,
+  normalizeMfaMethod,
   SUBSCRIPTION_BILLING_CYCLES,
   SUBSCRIPTION_STATUSES,
   isAccessAccountStatus,
@@ -53,6 +56,48 @@ function ensureAccessAccountStatus(value?: string) {
     throw new Error("Invalid access account status.");
   }
   return status;
+}
+
+async function buildAccessAccountFields(
+  ctx: MutationCtx,
+  args: {
+    systemName: string;
+    accountName: string;
+    recoveryContact?: string;
+    ownerUsername?: string;
+    sharedWithUsernames?: string[];
+    mfaMethod?: string;
+    mfaRegisteredTo?: string;
+    lastReviewedDate?: string;
+    status?: string;
+    notes?: string;
+  },
+) {
+  const mfaMethod = normalizeMfaMethod(args.mfaMethod);
+  const mfaEnabled = mfaMethod !== MFA_METHOD_NONE;
+
+  const activeUsernames = new Set(
+    (await ctx.db.query("users").collect())
+      .filter((row) => row.active)
+      .map((row) => row.username),
+  );
+  const sharedWithUsernames = (args.sharedWithUsernames ?? [])
+    .map((username) => username.trim())
+    .filter((username) => username && activeUsernames.has(username));
+
+  return {
+    systemName: normalizeRequired(args.systemName, "System name"),
+    accountName: normalizeRequired(args.accountName, "Email or username"),
+    recoveryContact: normalizeOptional(args.recoveryContact),
+    ownerUsername: normalizeOptional(args.ownerUsername),
+    sharedWithUsernames: sharedWithUsernames.length ? sharedWithUsernames : undefined,
+    mfaEnabled,
+    mfaMethod,
+    mfaRegisteredTo: mfaEnabled ? normalizeOptional(args.mfaRegisteredTo) : undefined,
+    lastReviewedDate: normalizeOptional(args.lastReviewedDate),
+    status: ensureAccessAccountStatus(args.status),
+    notes: normalizeOptional(args.notes),
+  };
 }
 
 function ensureSubscriptionStatus(value?: string) {
@@ -108,14 +153,14 @@ function matchesAccessAccountSearch(row: AccessAccountDoc, search?: string) {
     [
       row.systemName,
       row.accountName,
-      row.accountType,
-      row.ownerName,
-      row.department,
-      row.accessLevel,
+      row.recoveryContact,
+      row.ownerUsername,
+      ...(row.sharedWithUsernames ?? []),
+      row.mfaMethod,
+      row.mfaRegisteredTo,
       row.mfaEnabled ? "mfa yes enabled" : "mfa no disabled",
       row.lastReviewedDate,
       row.status,
-      row.vaultReference,
       row.notes,
     ],
     search,
@@ -236,38 +281,35 @@ export const listAccessAccounts = query({
   },
   handler: async (ctx, args) => {
     const rows = await ctx.db.query("accessAccountsInventory").withIndex("by_updatedAt").order("desc").collect();
-    return rows.filter((row) => matchesAccessAccountSearch(row, args.search));
+    return rows
+      .filter((row) => matchesAccessAccountSearch(row, args.search))
+      .map(({ passwordCipher, ...row }) => ({
+        ...row,
+        hasPassword: Boolean(passwordCipher),
+      }));
   },
 });
 
+const accessAccountWriteArgs = {
+  systemName: v.string(),
+  accountName: v.string(),
+  recoveryContact: v.optional(v.string()),
+  ownerUsername: v.optional(v.string()),
+  sharedWithUsernames: v.optional(v.array(v.string())),
+  mfaMethod: v.optional(v.string()),
+  mfaRegisteredTo: v.optional(v.string()),
+  lastReviewedDate: v.optional(v.string()),
+  status: v.optional(v.string()),
+  notes: v.optional(v.string()),
+};
+
 export const createAccessAccount = mutation({
-  args: {
-    systemName: v.string(),
-    accountName: v.string(),
-    accountType: v.optional(v.string()),
-    ownerName: v.optional(v.string()),
-    department: v.optional(v.string()),
-    accessLevel: v.optional(v.string()),
-    mfaEnabled: v.boolean(),
-    lastReviewedDate: v.optional(v.string()),
-    status: v.optional(v.string()),
-    vaultReference: v.optional(v.string()),
-    notes: v.optional(v.string()),
-  },
+  args: accessAccountWriteArgs,
   handler: async (ctx, args) => {
     const now = Date.now();
+    const fields = await buildAccessAccountFields(ctx, args);
     return await ctx.db.insert("accessAccountsInventory", {
-      systemName: normalizeRequired(args.systemName, "System name"),
-      accountName: normalizeRequired(args.accountName, "Account name"),
-      accountType: normalizeOptional(args.accountType),
-      ownerName: normalizeOptional(args.ownerName),
-      department: normalizeOptional(args.department),
-      accessLevel: normalizeOptional(args.accessLevel),
-      mfaEnabled: args.mfaEnabled,
-      lastReviewedDate: normalizeOptional(args.lastReviewedDate),
-      status: ensureAccessAccountStatus(args.status),
-      vaultReference: normalizeOptional(args.vaultReference),
-      notes: normalizeOptional(args.notes),
+      ...fields,
       createdAt: now,
       updatedAt: now,
     });
@@ -277,31 +319,12 @@ export const createAccessAccount = mutation({
 export const updateAccessAccount = mutation({
   args: {
     recordId: v.id("accessAccountsInventory"),
-    systemName: v.string(),
-    accountName: v.string(),
-    accountType: v.optional(v.string()),
-    ownerName: v.optional(v.string()),
-    department: v.optional(v.string()),
-    accessLevel: v.optional(v.string()),
-    mfaEnabled: v.boolean(),
-    lastReviewedDate: v.optional(v.string()),
-    status: v.optional(v.string()),
-    vaultReference: v.optional(v.string()),
-    notes: v.optional(v.string()),
+    ...accessAccountWriteArgs,
   },
   handler: async (ctx, args) => {
+    const fields = await buildAccessAccountFields(ctx, args);
     await ctx.db.patch(args.recordId, {
-      systemName: normalizeRequired(args.systemName, "System name"),
-      accountName: normalizeRequired(args.accountName, "Account name"),
-      accountType: normalizeOptional(args.accountType),
-      ownerName: normalizeOptional(args.ownerName),
-      department: normalizeOptional(args.department),
-      accessLevel: normalizeOptional(args.accessLevel),
-      mfaEnabled: args.mfaEnabled,
-      lastReviewedDate: normalizeOptional(args.lastReviewedDate),
-      status: ensureAccessAccountStatus(args.status),
-      vaultReference: normalizeOptional(args.vaultReference),
-      notes: normalizeOptional(args.notes),
+      ...fields,
       updatedAt: Date.now(),
     });
     return { success: true };
@@ -314,6 +337,61 @@ export const removeAccessAccount = mutation({
   },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.recordId);
+    return { success: true };
+  },
+});
+
+export const getAccountCipher = query({
+  args: {
+    recordId: v.id("accessAccountsInventory"),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.recordId);
+    if (!row) return null;
+    return { passwordCipher: row.passwordCipher ?? null };
+  },
+});
+
+export const setAccountPassword = mutation({
+  args: {
+    recordId: v.id("accessAccountsInventory"),
+    passwordCipher: v.optional(v.string()),
+    actorUsername: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const cleared = !args.passwordCipher;
+
+    await ctx.db.patch(args.recordId, {
+      passwordCipher: args.passwordCipher,
+      passwordUpdatedAt: cleared ? undefined : now,
+      passwordUpdatedBy: cleared ? undefined : args.actorUsername,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("credentialAccessLog", {
+      recordId: args.recordId,
+      actorUsername: args.actorUsername,
+      action: cleared ? "clear" : "update",
+      at: now,
+    });
+
+    return { success: true };
+  },
+});
+
+export const logCredentialReveal = mutation({
+  args: {
+    recordId: v.id("accessAccountsInventory"),
+    actorUsername: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("credentialAccessLog", {
+      recordId: args.recordId,
+      actorUsername: args.actorUsername,
+      action: "reveal",
+      at: Date.now(),
+    });
     return { success: true };
   },
 });
