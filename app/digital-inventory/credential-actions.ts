@@ -43,6 +43,22 @@ export async function saveAccountPassword(recordId: string, plaintext: string) {
     throw new Error("Credential storage not configured.");
   }
 
+  const client = getConvexClient();
+
+  if (!value) {
+    // Nothing was typed. If nothing was stored either, this is a no-op — skip
+    // the Convex write so we don't append a spurious "clear" row to the audit
+    // log for a record that never had a password. Reusing getAccountCipher
+    // (already used by revealAccountPassword) avoids adding a new public
+    // Convex function just to answer "is one stored?".
+    const existing = await client.query(api.digitalInventory.getAccountCipher, {
+      recordId: recordId as Id<"accessAccountsInventory">,
+    });
+    if (!existing?.passwordCipher) {
+      return { ok: true as const };
+    }
+  }
+
   let passwordCipher: string | undefined;
   if (value) {
     try {
@@ -54,7 +70,7 @@ export async function saveAccountPassword(recordId: string, plaintext: string) {
     }
   }
 
-  await getConvexClient().mutation(api.digitalInventory.setAccountPassword, {
+  await client.mutation(api.digitalInventory.setAccountPassword, {
     recordId: recordId as Id<"accessAccountsInventory">,
     passwordCipher,
     actorUsername: session.username,
