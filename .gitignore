@@ -39,6 +39,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# convex snapshot exports (backups, never commit)
+convex-backup-*.zip
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

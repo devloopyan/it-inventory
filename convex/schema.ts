@@ -443,21 +443,30 @@ export default defineSchema({
   accessAccountsInventory: defineTable({
     systemName: v.string(),
     accountName: v.string(),
-    accountType: v.optional(v.string()),
-    ownerName: v.optional(v.string()),
-    department: v.optional(v.string()),
-    accessLevel: v.optional(v.string()),
+    recoveryContact: v.optional(v.string()),
+    ownerUsername: v.optional(v.string()),
+    sharedWithUsernames: v.optional(v.array(v.string())),
     mfaEnabled: v.boolean(),
+    mfaMethod: v.optional(v.string()),
+    mfaRegisteredTo: v.optional(v.string()),
     lastReviewedDate: v.optional(v.string()),
     status: v.string(),
-    vaultReference: v.optional(v.string()),
     notes: v.optional(v.string()),
+    passwordCipher: v.optional(v.string()),
+    passwordUpdatedAt: v.optional(v.number()),
+    passwordUpdatedBy: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_status", ["status"])
     .index("by_lastReviewedDate", ["lastReviewedDate"])
     .index("by_updatedAt", ["updatedAt"]),
+  credentialAccessLog: defineTable({
+    recordId: v.id("accessAccountsInventory"),
+    actorUsername: v.string(),
+    action: v.string(),
+    at: v.number(),
+  }).index("by_recordId", ["recordId"]),
   clearanceForms: defineTable({
     employeeId: v.id("users"),
     employeeName: v.string(),
