@@ -4,6 +4,13 @@ const decoder = new TextDecoder();
 const CIPHER_VERSION = "v1";
 const IV_BYTES = 12;
 
+// SHA-256(secret) with no key stretching means secret strength is the only
+// thing protecting the ciphertext. A secret shorter than this is treated the
+// same as an unset secret (storage reports unconfigured, Password field
+// disables) rather than being accepted and used as a weak key, or thrown as
+// a surprising error at encrypt time.
+const MIN_SECRET_LENGTH = 32;
+
 export class CredentialCryptoError extends Error {}
 
 function toBase64Url(bytes: Uint8Array) {
@@ -16,7 +23,8 @@ function fromBase64Url(value: string) {
 
 function getCredentialSecret() {
   const value = process.env.IT_CREDENTIAL_SECRET?.trim();
-  return value ? value : "";
+  if (!value || value.length < MIN_SECRET_LENGTH) return "";
+  return value;
 }
 
 export function isCredentialStorageConfigured() {
