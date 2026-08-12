@@ -800,18 +800,23 @@ export default function DigitalInventoryClient({
     );
   }
 
+  function staffLabel(username?: string) {
+    if (!username) return "-";
+    return staffOptions.find((option) => option.username === username)?.displayName ?? username;
+  }
+
   function renderAccountsTable() {
     return (
       <table className="saas-table digital-table">
         <thead>
           <tr>
             <th>System</th>
-            <th>Account</th>
+            <th>Email / Username</th>
             <th>Owner</th>
-            <th>Department</th>
-            <th>Access</th>
+            <th>Shared With</th>
             <th>MFA</th>
             <th>Reviewed</th>
+            <th>Status</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -820,14 +825,18 @@ export default function DigitalInventoryClient({
             <tr key={record._id}>
               <td>
                 <strong>{record.systemName}</strong>
-                <span>{record.status}</span>
+                <span>{record.hasPassword ? "Password on file" : "No password saved"}</span>
               </td>
               <td>{record.accountName}</td>
-              <td>{record.ownerName || "-"}</td>
-              <td>{record.department || "-"}</td>
-              <td>{record.accessLevel || record.accountType || "-"}</td>
-              <td>{record.mfaEnabled ? "Yes" : "No"}</td>
+              <td>{staffLabel(record.ownerUsername)}</td>
+              <td>
+                {record.sharedWithUsernames?.length
+                  ? `${record.sharedWithUsernames.length} ${record.sharedWithUsernames.length === 1 ? "person" : "people"}`
+                  : "-"}
+              </td>
+              <td>{record.mfaEnabled ? record.mfaMethod || "Yes" : "No"}</td>
               <td>{formatDate(record.lastReviewedDate)}</td>
+              <td><span className={getStatusClass(record.status)}>{record.status}</span></td>
               <td>
                 <div className="digital-row-actions">
                   <button className="btn-secondary" type="button" onClick={() => editAccount(record)}>Edit</button>
