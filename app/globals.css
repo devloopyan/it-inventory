@@ -2755,7 +2755,7 @@ a {
 }
 
 .hw-form-req {
-  color: #dc2626;
+  color: var(--danger-text);
 }
 
 @media (max-width: 860px) {
@@ -2800,7 +2800,7 @@ a {
 .hardware-register-copy {
   margin: 0;
   max-width: 720px;
-  color: #667085;
+  color: var(--muted);
 }
 
 .hardware-register-panel .input-base,
@@ -2858,7 +2858,7 @@ a {
 .hardware-master-panel-layout .type-section-copy {
   font-size: 12px;
   line-height: 1.4;
-  color: #667085;
+  color: var(--muted);
 }
 
 .asset-master-toolbar-row {
@@ -3638,13 +3638,15 @@ a {
   border-bottom: 1px solid #e4e7ec;
   padding: 10px 12px;
   font-size: 13px;
-  color: #101828;
+  /* Token, not a literal: the dark override below restyles the cell background
+     but not its text, so a hardcoded ink here goes near-black on dark surfaces. */
+  color: var(--foreground);
   vertical-align: middle;
   background: #ffffff;
 }
 
 .saas-table td strong {
-  color: #101828;
+  color: var(--muted-strong);
   font-weight: 600;
 }
 
@@ -3758,7 +3760,7 @@ a {
 
 .saas-table tbody tr:hover td,
 .table-row-hover:hover td {
-  background: #f9fbff;
+  background: var(--hover-bg);
 }
 
 .monitoring-row-unopened td {
@@ -4902,16 +4904,16 @@ select.status-select optgroup {
   padding-right: 10px;
   border-radius: 8px;
   font-size: 12px;
-  color: #101828;
+  color: var(--foreground);
 }
 
 .hardware-master-toolbar-controls .search-field .input-base::placeholder {
-  color: #667085;
+  color: var(--placeholder);
 }
 
 .hardware-master-toolbar-controls .search-field .search-icon {
   left: 12px;
-  color: #667085;
+  color: var(--muted);
 }
 
 .hardware-master-toolbar-controls .checklist-select.is-compact .checklist-select-trigger {
@@ -4924,7 +4926,7 @@ select.status-select optgroup {
 .hardware-master-toolbar-controls .checklist-select.is-compact .checklist-select-trigger-label {
   font-size: 12px;
   font-weight: 500;
-  color: #101828;
+  color: var(--foreground);
 }
 
 .hardware-master-toolbar-controls .checklist-select.is-compact .checklist-select-trigger-count {
@@ -4935,7 +4937,7 @@ select.status-select optgroup {
 }
 
 .hardware-master-toolbar-controls .checklist-select-trigger-icon {
-  color: #667085;
+  color: var(--muted);
 }
 
 .theme-toggle {
@@ -17122,8 +17124,8 @@ select.status-select optgroup {
 }
 
 .digital-inventory-page .digital-table th {
-  background: #ffffff;
-  color: #101828;
+  background: var(--surface);
+  color: var(--foreground);
 }
 
 :root[data-theme="dark"] .app-content > .digital-inventory-page {
