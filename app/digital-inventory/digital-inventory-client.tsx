@@ -438,6 +438,8 @@ export default function DigitalInventoryClient({
       notes: optionalText(accountForm.notes),
     };
 
+    const wasCreate = !editingId;
+
     let recordId: string;
     if (editingId) {
       await updateAccessAccount({
@@ -447,6 +449,11 @@ export default function DigitalInventoryClient({
       recordId = editingId;
     } else {
       recordId = await createAccessAccount(payload);
+      // Switch into edit mode for this record immediately, before the password
+      // write is attempted. If the password write below throws, the form stays
+      // open (see handleSubmit) but editingId now points at the record we just
+      // created, so a retry updates it instead of inserting a duplicate.
+      setEditingId(recordId);
     }
 
     if (passwordDraft === null) return;
@@ -456,7 +463,7 @@ export default function DigitalInventoryClient({
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown error.";
       throw new Error(
-        `${editingId ? "Record saved" : "Record created"}, but the password could not be stored. ${reason}`,
+        `${wasCreate ? "Record created" : "Record saved"}, but the password could not be stored. ${reason}`,
       );
     }
   }
