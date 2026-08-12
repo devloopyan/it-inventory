@@ -7,14 +7,23 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import {
   ACCESS_ACCOUNT_STATUSES,
   DIGITAL_INVENTORY_CURRENCIES,
+  MFA_METHODS,
+  MFA_METHOD_NONE,
   OFFICE_SOFTWARE_STATUSES,
   SUBSCRIPTION_BILLING_CYCLES,
   SUBSCRIPTION_STATUSES,
 } from "@/lib/digitalInventory";
+import { isAdminRole } from "@/lib/roles";
+import { useCurrentUser } from "@/app/current-user-context";
+import { saveAccountPassword } from "./credential-actions";
+import PasswordField from "./password-field";
+import { OwnerSelect, SharedAccessPicker, type StaffOption } from "./staff-picker";
 
 type TabKey = "software" | "accounts" | "subscriptions";
 type OfficeSoftwareRecord = Doc<"officeSoftwareInventory">;
-type AccessAccountRecord = Doc<"accessAccountsInventory">;
+type AccessAccountRecord = Omit<Doc<"accessAccountsInventory">, "passwordCipher"> & {
+  hasPassword: boolean;
+};
 type SubscriptionRecord = Doc<"subscriptionsInventory">;
 
 type OfficeSoftwareFormState = {
@@ -34,14 +43,13 @@ type OfficeSoftwareFormState = {
 type AccessAccountFormState = {
   systemName: string;
   accountName: string;
-  accountType: string;
-  ownerName: string;
-  department: string;
-  accessLevel: string;
-  mfaEnabled: boolean;
-  lastReviewedDate: string;
+  recoveryContact: string;
+  ownerUsername: string;
+  sharedWithUsernames: string[];
+  mfaMethod: string;
+  mfaRegisteredTo: string;
   status: string;
-  vaultReference: string;
+  lastReviewedDate: string;
   notes: string;
 };
 
@@ -96,14 +104,13 @@ const defaultSoftwareForm: OfficeSoftwareFormState = {
 const defaultAccountForm: AccessAccountFormState = {
   systemName: "",
   accountName: "",
-  accountType: "",
-  ownerName: "",
-  department: "",
-  accessLevel: "",
-  mfaEnabled: true,
-  lastReviewedDate: "",
+  recoveryContact: "",
+  ownerUsername: "",
+  sharedWithUsernames: [],
+  mfaMethod: MFA_METHOD_NONE,
+  mfaRegisteredTo: "",
   status: ACCESS_ACCOUNT_STATUSES[0],
-  vaultReference: "",
+  lastReviewedDate: "",
   notes: "",
 };
 
@@ -221,14 +228,13 @@ function accountToForm(record: AccessAccountRecord): AccessAccountFormState {
   return {
     systemName: record.systemName,
     accountName: record.accountName,
-    accountType: record.accountType ?? "",
-    ownerName: record.ownerName ?? "",
-    department: record.department ?? "",
-    accessLevel: record.accessLevel ?? "",
-    mfaEnabled: record.mfaEnabled,
-    lastReviewedDate: record.lastReviewedDate ?? "",
+    recoveryContact: record.recoveryContact ?? "",
+    ownerUsername: record.ownerUsername ?? "",
+    sharedWithUsernames: record.sharedWithUsernames ?? [],
+    mfaMethod: record.mfaMethod ?? MFA_METHOD_NONE,
+    mfaRegisteredTo: record.mfaRegisteredTo ?? "",
     status: record.status,
-    vaultReference: record.vaultReference ?? "",
+    lastReviewedDate: record.lastReviewedDate ?? "",
     notes: record.notes ?? "",
   };
 }
@@ -263,7 +269,11 @@ function EmptyState({ label, colSpan = 8 }: { label: string; colSpan?: number })
   );
 }
 
-export default function DigitalInventoryClient() {
+export default function DigitalInventoryClient({
+  credentialStorageConfigured,
+}: {
+  credentialStorageConfigured: boolean;
+}) {
   const [activeTab, setActiveTab] = useState<TabKey>("software");
   const [search, setSearch] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -273,6 +283,13 @@ export default function DigitalInventoryClient() {
   const [softwareForm, setSoftwareForm] = useState(defaultSoftwareForm);
   const [accountForm, setAccountForm] = useState(defaultAccountForm);
   const [subscriptionForm, setSubscriptionForm] = useState(defaultSubscriptionForm);
+  const [passwordDraft, setPasswordDraft] = useState<string | null>(null);
+
+  const currentUser = useCurrentUser();
+  const canRevealPasswords = isAdminRole(currentUser?.role);
+  const staffOptions: StaffOption[] = (useQuery(api.users.list, {}) ?? [])
+    .filter((user) => user.active)
+    .map((user) => ({ username: user.username, displayName: user.displayName }));
 
   const allOfficeSoftware = useQuery(api.digitalInventory.listOfficeSoftware, {}) ?? [];
   const allAccessAccounts = useQuery(api.digitalInventory.listAccessAccounts, {}) ?? [];
@@ -309,7 +326,10 @@ export default function DigitalInventoryClient() {
     setEditingId(null);
     setErrorMessage(null);
     if (tab === "software") setSoftwareForm(defaultSoftwareForm);
-    if (tab === "accounts") setAccountForm(defaultAccountForm);
+    if (tab === "accounts") {
+      setAccountForm(defaultAccountForm);
+      setPasswordDraft(null);
+    }
     if (tab === "subscriptions") setSubscriptionForm(defaultSubscriptionForm);
   }
 
@@ -339,8 +359,13 @@ export default function DigitalInventoryClient() {
     setAccountForm((current) => ({ ...current, [name]: value }));
   }
 
-  function handleAccountMfaChange(event: ChangeEvent<HTMLInputElement>) {
-    setAccountForm((current) => ({ ...current, mfaEnabled: event.target.checked }));
+  function handleAccountMfaMethodChange(event: ChangeEvent<HTMLSelectElement>) {
+    const mfaMethod = event.target.value;
+    setAccountForm((current) => ({
+      ...current,
+      mfaMethod,
+      mfaRegisteredTo: mfaMethod === MFA_METHOD_NONE ? "" : current.mfaRegisteredTo,
+    }));
   }
 
   function handleSubscriptionChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
@@ -361,6 +386,7 @@ export default function DigitalInventoryClient() {
     setAccountForm(accountToForm(record));
     setEditingId(record._id);
     setErrorMessage(null);
+    setPasswordDraft(null);
     setFormOpen(true);
   }
 
@@ -402,26 +428,37 @@ export default function DigitalInventoryClient() {
     const payload = {
       systemName: accountForm.systemName,
       accountName: accountForm.accountName,
-      accountType: optionalText(accountForm.accountType),
-      ownerName: optionalText(accountForm.ownerName),
-      department: optionalText(accountForm.department),
-      accessLevel: optionalText(accountForm.accessLevel),
-      mfaEnabled: accountForm.mfaEnabled,
+      recoveryContact: optionalText(accountForm.recoveryContact),
+      ownerUsername: optionalText(accountForm.ownerUsername),
+      sharedWithUsernames: accountForm.sharedWithUsernames,
+      mfaMethod: accountForm.mfaMethod,
+      mfaRegisteredTo: optionalText(accountForm.mfaRegisteredTo),
       lastReviewedDate: optionalText(accountForm.lastReviewedDate),
       status: accountForm.status,
-      vaultReference: optionalText(accountForm.vaultReference),
       notes: optionalText(accountForm.notes),
     };
 
+    let recordId: string;
     if (editingId) {
       await updateAccessAccount({
         recordId: editingId as Id<"accessAccountsInventory">,
         ...payload,
       });
-      return;
+      recordId = editingId;
+    } else {
+      recordId = await createAccessAccount(payload);
     }
 
-    await createAccessAccount(payload);
+    if (passwordDraft === null) return;
+
+    try {
+      await saveAccountPassword(recordId, passwordDraft);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown error.";
+      throw new Error(
+        `${editingId ? "Record saved" : "Record created"}, but the password could not be stored. ${reason}`,
+      );
+    }
   }
 
   async function submitSubscription() {
@@ -540,57 +577,106 @@ export default function DigitalInventoryClient() {
   }
 
   function renderAccountForm() {
+    const editingRecord = editingId
+      ? allAccessAccounts.find((record) => record._id === editingId)
+      : undefined;
+
     return (
       <>
-        <label className="digital-form-field">
-          <span>System Name</span>
-          <input className="input-base" name="systemName" value={accountForm.systemName} onChange={handleAccountChange} required />
-        </label>
-        <label className="digital-form-field">
-          <span>Account Name</span>
-          <input className="input-base" name="accountName" value={accountForm.accountName} onChange={handleAccountChange} required />
-        </label>
-        <label className="digital-form-field">
-          <span>Account Type</span>
-          <input className="input-base" name="accountType" value={accountForm.accountType} onChange={handleAccountChange} placeholder="Admin, user, shared" />
-        </label>
-        <label className="digital-form-field">
-          <span>Owner</span>
-          <input className="input-base" name="ownerName" value={accountForm.ownerName} onChange={handleAccountChange} />
-        </label>
-        <label className="digital-form-field">
-          <span>Department</span>
-          <input className="input-base" name="department" value={accountForm.department} onChange={handleAccountChange} />
-        </label>
-        <label className="digital-form-field">
-          <span>Access Level</span>
-          <input className="input-base" name="accessLevel" value={accountForm.accessLevel} onChange={handleAccountChange} placeholder="Admin, editor, viewer" />
-        </label>
-        <label className="digital-form-field">
-          <span>Last Reviewed</span>
-          <input className="input-base" name="lastReviewedDate" type="date" value={accountForm.lastReviewedDate} onChange={handleAccountChange} />
-        </label>
-        <label className="digital-form-field">
-          <span>Status</span>
-          <select className="input-base" name="status" value={accountForm.status} onChange={handleAccountChange}>
-            {ACCESS_ACCOUNT_STATUSES.map((status) => (
-              <option key={status} value={status}>{status}</option>
-            ))}
-          </select>
-        </label>
-        <label className="digital-checkbox-field">
-          <input type="checkbox" checked={accountForm.mfaEnabled} onChange={handleAccountMfaChange} />
-          <span>MFA enabled</span>
-        </label>
-        <label className="digital-form-field digital-form-field-full">
-          <span>Password Vault Reference</span>
-          <input className="input-base" name="vaultReference" value={accountForm.vaultReference} onChange={handleAccountChange} placeholder="Example: Vault / IT / Microsoft Admin" />
-          <small>Do not store passwords here. Store only where the credential can be found.</small>
-        </label>
-        <label className="digital-form-field digital-form-field-full">
-          <span>Notes</span>
-          <textarea className="input-base digital-textarea" name="notes" value={accountForm.notes} onChange={handleAccountChange} />
-        </label>
+        <section className="digital-form-section">
+          <h3 className="digital-form-section-title">Identity</h3>
+          <label className="digital-form-field">
+            <span>System / Platform</span>
+            <input className="input-base" name="systemName" value={accountForm.systemName} onChange={handleAccountChange} required placeholder="Microsoft 365, Canva, PLDT portal" />
+          </label>
+          <label className="digital-form-field">
+            <span>Email / Username</span>
+            <input className="input-base" name="accountName" value={accountForm.accountName} onChange={handleAccountChange} required />
+          </label>
+        </section>
+
+        <section className="digital-form-section">
+          <h3 className="digital-form-section-title">Credential</h3>
+          <PasswordField
+            mode={editingId ? "edit" : "create"}
+            recordId={editingId}
+            storageConfigured={credentialStorageConfigured}
+            canReveal={canRevealPasswords}
+            hasStoredPassword={Boolean(editingRecord?.hasPassword)}
+            passwordUpdatedAt={editingRecord?.passwordUpdatedAt}
+            passwordUpdatedBy={editingRecord?.passwordUpdatedBy}
+            draft={passwordDraft}
+            onDraftChange={setPasswordDraft}
+            onError={setErrorMessage}
+          />
+          <label className="digital-form-field digital-form-field-full">
+            <span>Recovery Email / Phone</span>
+            <input className="input-base" name="recoveryContact" value={accountForm.recoveryContact} onChange={handleAccountChange} placeholder="Where reset codes are sent" />
+          </label>
+        </section>
+
+        <section className="digital-form-section">
+          <h3 className="digital-form-section-title">Ownership</h3>
+          <label className="digital-form-field">
+            <span>Owner / Admin</span>
+            <OwnerSelect
+              value={accountForm.ownerUsername}
+              onChange={(username) => setAccountForm((current) => ({ ...current, ownerUsername: username }))}
+              options={staffOptions}
+            />
+          </label>
+          <div className="digital-form-field">
+            <span>Who Else Has Access</span>
+            <SharedAccessPicker
+              value={accountForm.sharedWithUsernames}
+              onChange={(usernames) => setAccountForm((current) => ({ ...current, sharedWithUsernames: usernames }))}
+              options={staffOptions}
+            />
+          </div>
+        </section>
+
+        <section className="digital-form-section">
+          <h3 className="digital-form-section-title">Security</h3>
+          <label className="digital-form-field">
+            <span>MFA</span>
+            <select className="input-base" name="mfaMethod" value={accountForm.mfaMethod} onChange={handleAccountMfaMethodChange}>
+              {MFA_METHODS.map((method) => (
+                <option key={method} value={method}>{method}</option>
+              ))}
+            </select>
+          </label>
+          <label className="digital-form-field">
+            <span>MFA Registered To</span>
+            <input
+              className="input-base"
+              name="mfaRegisteredTo"
+              value={accountForm.mfaRegisteredTo}
+              onChange={handleAccountChange}
+              disabled={accountForm.mfaMethod === MFA_METHOD_NONE}
+              placeholder="Phone or device holding the second factor"
+            />
+          </label>
+        </section>
+
+        <section className="digital-form-section">
+          <h3 className="digital-form-section-title">Record</h3>
+          <label className="digital-form-field">
+            <span>Status</span>
+            <select className="input-base" name="status" value={accountForm.status} onChange={handleAccountChange}>
+              {ACCESS_ACCOUNT_STATUSES.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+          </label>
+          <label className="digital-form-field">
+            <span>Last Reviewed</span>
+            <input className="input-base" name="lastReviewedDate" type="date" value={accountForm.lastReviewedDate} onChange={handleAccountChange} />
+          </label>
+          <label className="digital-form-field digital-form-field-full">
+            <span>Notes</span>
+            <textarea className="input-base digital-textarea" name="notes" value={accountForm.notes} onChange={handleAccountChange} />
+          </label>
+        </section>
       </>
     );
   }
@@ -904,7 +990,7 @@ export default function DigitalInventoryClient() {
                   <h2>{isEditing ? "Edit" : "Add"} {getActiveTabLabel(activeTab)}</h2>
                   <p>
                     {activeTab === "accounts"
-                      ? "Track access details only. Do not save passwords or secret keys here."
+                      ? "Passwords are encrypted. Only IT admins can reveal them, and every reveal is logged."
                       : "Fill in the useful fields now. Optional fields can be completed later."}
                   </p>
                 </div>
