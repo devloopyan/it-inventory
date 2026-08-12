@@ -17,7 +17,18 @@ import { isAdminRole } from "@/lib/roles";
 import { useCurrentUser } from "@/app/current-user-context";
 import { saveAccountPassword } from "./credential-actions";
 import PasswordField from "./password-field";
+import Glyph, { type GlyphName } from "./form-icons";
 import { OwnerSelect, SharedAccessPicker, type StaffOption } from "./staff-picker";
+
+// Each MFA method gets a glyph so the tiles read at a glance rather than by label alone.
+const MFA_GLYPHS: Record<(typeof MFA_METHODS)[number], GlyphName> = {
+  None: "ban",
+  "Authenticator App": "device",
+  SMS: "sms",
+  Email: "mail",
+  "Hardware Key": "key",
+  "Backup Codes": "hash",
+};
 
 type TabKey = "software" | "accounts" | "subscriptions";
 type OfficeSoftwareRecord = Doc<"officeSoftwareInventory">;
@@ -359,7 +370,7 @@ export default function DigitalInventoryClient({
     setAccountForm((current) => ({ ...current, [name]: value }));
   }
 
-  function handleAccountMfaMethodChange(event: ChangeEvent<HTMLSelectElement>) {
+  function handleAccountMfaMethodChange(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const mfaMethod = event.target.value;
     setAccountForm((current) => ({
       ...current,
@@ -587,102 +598,187 @@ export default function DigitalInventoryClient({
     const editingRecord = editingId
       ? allAccessAccounts.find((record) => record._id === editingId)
       : undefined;
+    const mfaOff = accountForm.mfaMethod === MFA_METHOD_NONE;
 
     return (
       <>
-        <section className="digital-form-section">
-          <h3 className="digital-form-section-title">Identity</h3>
-          <label className="digital-form-field">
-            <span>System / Platform</span>
-            <input className="input-base" name="systemName" value={accountForm.systemName} onChange={handleAccountChange} required placeholder="Microsoft 365, Canva, PLDT portal" />
-          </label>
-          <label className="digital-form-field">
-            <span>Email / Username</span>
-            <input className="input-base" name="accountName" value={accountForm.accountName} onChange={handleAccountChange} required />
-          </label>
-        </section>
-
-        <section className="digital-form-section">
-          <h3 className="digital-form-section-title">Credential</h3>
-          <PasswordField
-            mode={editingId ? "edit" : "create"}
-            recordId={editingId}
-            storageConfigured={credentialStorageConfigured}
-            canReveal={canRevealPasswords}
-            hasStoredPassword={Boolean(editingRecord?.hasPassword)}
-            passwordUpdatedAt={editingRecord?.passwordUpdatedAt}
-            passwordUpdatedBy={editingRecord?.passwordUpdatedBy}
-            draft={passwordDraft}
-            onDraftChange={setPasswordDraft}
-            onError={setErrorMessage}
-          />
-          <label className="digital-form-field digital-form-field-full">
-            <span>Recovery Email / Phone</span>
-            <input className="input-base" name="recoveryContact" value={accountForm.recoveryContact} onChange={handleAccountChange} placeholder="Where reset codes are sent" />
-          </label>
-        </section>
-
-        <section className="digital-form-section">
-          <h3 className="digital-form-section-title">Ownership</h3>
-          <label className="digital-form-field">
-            <span>Owner / Admin</span>
-            <OwnerSelect
-              value={accountForm.ownerUsername}
-              onChange={(username) => setAccountForm((current) => ({ ...current, ownerUsername: username }))}
-              options={staffOptions}
-            />
-          </label>
-          <div className="digital-form-field">
-            <span>Who Else Has Access</span>
-            <SharedAccessPicker
-              value={accountForm.sharedWithUsernames}
-              onChange={(usernames) => setAccountForm((current) => ({ ...current, sharedWithUsernames: usernames }))}
-              options={staffOptions}
-            />
+        <section className="acct-section">
+          <div className="acct-section-head">
+            <span className="acct-step" aria-hidden="true">1</span>
+            <div>
+              <h3 className="acct-section-title">Identity</h3>
+              <p className="acct-section-note">What the account is, and how you sign in.</p>
+            </div>
+          </div>
+          <div className="acct-fields">
+            <label className="acct-field">
+              <span className="acct-label">
+                System / Platform <em className="acct-req">required</em>
+              </span>
+              <span className="acct-input-wrap">
+                <Glyph name="app" />
+                <input className="input-base" name="systemName" value={accountForm.systemName} onChange={handleAccountChange} required placeholder="Microsoft 365, Canva, PLDT portal" />
+              </span>
+            </label>
+            <label className="acct-field">
+              <span className="acct-label">
+                Email / Username <em className="acct-req">required</em>
+              </span>
+              <span className="acct-input-wrap">
+                <Glyph name="mail" />
+                <input className="input-base" name="accountName" value={accountForm.accountName} onChange={handleAccountChange} required placeholder="name@envicomm.org" />
+              </span>
+            </label>
           </div>
         </section>
 
-        <section className="digital-form-section">
-          <h3 className="digital-form-section-title">Security</h3>
-          <label className="digital-form-field">
-            <span>MFA</span>
-            <select className="input-base" name="mfaMethod" value={accountForm.mfaMethod} onChange={handleAccountMfaMethodChange}>
-              {MFA_METHODS.map((method) => (
-                <option key={method} value={method}>{method}</option>
-              ))}
-            </select>
-          </label>
-          <label className="digital-form-field">
-            <span>MFA Registered To</span>
-            <input
-              className="input-base"
-              name="mfaRegisteredTo"
-              value={accountForm.mfaRegisteredTo}
-              onChange={handleAccountChange}
-              disabled={accountForm.mfaMethod === MFA_METHOD_NONE}
-              placeholder="Phone or device holding the second factor"
+        <section className="acct-section acct-section-guard">
+          <div className="acct-section-head">
+            <span className="acct-step" aria-hidden="true">2</span>
+            <div>
+              <h3 className="acct-section-title">Credential</h3>
+              <p className="acct-section-note">Encrypted before it is stored. Only IT admins can reveal it, and every reveal is logged.</p>
+            </div>
+          </div>
+          <div className="acct-fields">
+            <PasswordField
+              mode={editingId ? "edit" : "create"}
+              recordId={editingId}
+              storageConfigured={credentialStorageConfigured}
+              canReveal={canRevealPasswords}
+              hasStoredPassword={Boolean(editingRecord?.hasPassword)}
+              passwordUpdatedAt={editingRecord?.passwordUpdatedAt}
+              passwordUpdatedBy={editingRecord?.passwordUpdatedBy}
+              draft={passwordDraft}
+              onDraftChange={setPasswordDraft}
+              onError={setErrorMessage}
             />
-          </label>
+            <label className="acct-field acct-field-full">
+              <span className="acct-label">Recovery Email / Phone</span>
+              <span className="acct-input-wrap">
+                <Glyph name="recovery" />
+                <input className="input-base" name="recoveryContact" value={accountForm.recoveryContact} onChange={handleAccountChange} placeholder="Where reset codes are sent" />
+              </span>
+            </label>
+          </div>
         </section>
 
-        <section className="digital-form-section">
-          <h3 className="digital-form-section-title">Record</h3>
-          <label className="digital-form-field">
-            <span>Status</span>
-            <select className="input-base" name="status" value={accountForm.status} onChange={handleAccountChange}>
-              {ACCESS_ACCOUNT_STATUSES.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
-          </label>
-          <label className="digital-form-field">
-            <span>Last Reviewed</span>
-            <input className="input-base" name="lastReviewedDate" type="date" value={accountForm.lastReviewedDate} onChange={handleAccountChange} />
-          </label>
-          <label className="digital-form-field digital-form-field-full">
-            <span>Notes</span>
-            <textarea className="input-base digital-textarea" name="notes" value={accountForm.notes} onChange={handleAccountChange} />
-          </label>
+        <section className="acct-section">
+          <div className="acct-section-head">
+            <span className="acct-step" aria-hidden="true">3</span>
+            <div>
+              <h3 className="acct-section-title">Ownership</h3>
+              <p className="acct-section-note">Who is responsible for the account, and who else can get in.</p>
+            </div>
+          </div>
+          <div className="acct-fields">
+            <label className="acct-field">
+              <span className="acct-label">Owner / Admin</span>
+              <span className="acct-input-wrap">
+                <Glyph name="user" />
+                <OwnerSelect
+                  value={accountForm.ownerUsername}
+                  onChange={(username) => setAccountForm((current) => ({ ...current, ownerUsername: username }))}
+                  options={staffOptions}
+                />
+              </span>
+            </label>
+            <div className="acct-field">
+              <span className="acct-label acct-label-inline">
+                <Glyph name="users" />
+                Who Else Has Access
+              </span>
+              <SharedAccessPicker
+                value={accountForm.sharedWithUsernames}
+                onChange={(usernames) => setAccountForm((current) => ({ ...current, sharedWithUsernames: usernames }))}
+                options={staffOptions}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="acct-section">
+          <div className="acct-section-head">
+            <span className="acct-step" aria-hidden="true">4</span>
+            <div>
+              <h3 className="acct-section-title">Security</h3>
+              <p className="acct-section-note">How the account is protected beyond the password.</p>
+            </div>
+          </div>
+          <div className="acct-fields">
+            <fieldset className="acct-field acct-field-full acct-mfa">
+              <legend className="acct-label">Multi-factor authentication</legend>
+              <div className="acct-mfa-grid">
+                {MFA_METHODS.map((method) => (
+                  <label
+                    key={method}
+                    className={`acct-mfa-tile${accountForm.mfaMethod === method ? " selected" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="mfaMethod"
+                      value={method}
+                      checked={accountForm.mfaMethod === method}
+                      onChange={handleAccountMfaMethodChange}
+                    />
+                    <Glyph name={MFA_GLYPHS[method]} />
+                    <span>{method}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <label className="acct-field acct-field-full">
+              <span className="acct-label">MFA Registered To</span>
+              <span className="acct-input-wrap">
+                <Glyph name="device" />
+                <input
+                  className="input-base"
+                  name="mfaRegisteredTo"
+                  value={accountForm.mfaRegisteredTo}
+                  onChange={handleAccountChange}
+                  disabled={mfaOff}
+                  placeholder={mfaOff ? "Choose a method above first" : "Phone or device holding the second factor"}
+                />
+              </span>
+            </label>
+          </div>
+        </section>
+
+        <section className="acct-section">
+          <div className="acct-section-head">
+            <span className="acct-step" aria-hidden="true">5</span>
+            <div>
+              <h3 className="acct-section-title">Record</h3>
+              <p className="acct-section-note">Keeps the access review trail current.</p>
+            </div>
+          </div>
+          <div className="acct-fields">
+            <label className="acct-field">
+              <span className="acct-label">Status</span>
+              <span className="acct-input-wrap">
+                <Glyph name="status" />
+                <select className="input-base" name="status" value={accountForm.status} onChange={handleAccountChange}>
+                  {ACCESS_ACCOUNT_STATUSES.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </span>
+            </label>
+            <label className="acct-field">
+              <span className="acct-label">Last Reviewed</span>
+              <span className="acct-input-wrap">
+                <Glyph name="calendar" />
+                <input className="input-base" name="lastReviewedDate" type="date" value={accountForm.lastReviewedDate} onChange={handleAccountChange} />
+              </span>
+            </label>
+            <label className="acct-field acct-field-full">
+              <span className="acct-label acct-label-inline">
+                <Glyph name="note" />
+                Notes
+              </span>
+              <textarea className="input-base digital-textarea" name="notes" value={accountForm.notes} onChange={handleAccountChange} placeholder="Anything the next person needs to know" />
+            </label>
+          </div>
         </section>
       </>
     );
@@ -1006,7 +1102,7 @@ export default function DigitalInventoryClient({
                   <h2>{isEditing ? "Edit" : "Add"} {getActiveTabLabel(activeTab)}</h2>
                   <p>
                     {activeTab === "accounts"
-                      ? "Passwords are encrypted. Only IT admins can reveal them, and every reveal is logged."
+                      ? "Only the system and sign-in are required. Fill in the rest as you learn it."
                       : "Fill in the useful fields now. Optional fields can be completed later."}
                   </p>
                 </div>
@@ -1024,9 +1120,16 @@ export default function DigitalInventoryClient({
                   Cancel
                 </button>
                 <button className="btn-primary" type="submit" disabled={isSubmitting}>
+                  {activeTab === "accounts" && !isSubmitting ? <Glyph name="lock" /> : null}
                   {isSubmitting ? "Saving..." : "Save Record"}
                 </button>
               </div>
+              {activeTab === "accounts" ? (
+                <p className="acct-reassure">
+                  <Glyph name="lock" />
+                  The password is encrypted on the server before it is stored. Every reveal is logged.
+                </p>
+              ) : null}
             </form>
           </div>
         </div>

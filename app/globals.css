@@ -16940,6 +16940,220 @@ select.status-select optgroup {
   white-space: nowrap;
 }
 
+/* ==========================================================================
+   Access & Accounts form — stepped sections, in-field glyphs, MFA tiles.
+   Scoped to .acct-* so the Office Software and Subscriptions forms, which
+   share .digital-form-field, keep their flat grid untouched.
+   ========================================================================== */
+
+.acct-section {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-subtle);
+}
+
+.acct-section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.acct-step {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 999px;
+  background: var(--brand-900);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.acct-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+
+.acct-section-note {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* The credential step is the only one whose data is encrypted and audit-logged.
+   The accent rail marks it as the guarded part of the record. */
+.acct-section-guard {
+  border-color: var(--brand-900);
+  box-shadow: inset 3px 0 0 var(--brand-900);
+}
+
+.acct-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.acct-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.acct-field-full {
+  grid-column: 1 / -1;
+}
+
+.acct-label {
+  padding: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+}
+
+.acct-label-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.acct-req {
+  margin-left: 4px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--danger-text);
+}
+
+.acct-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.acct-input-wrap > .acct-glyph {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.acct-input-wrap .input-base {
+  width: 100%;
+  padding-left: 34px;
+}
+
+.acct-input-wrap .input-base:disabled {
+  cursor: not-allowed;
+}
+
+/* MFA tiles — the security posture is the one thing worth seeing without
+   opening a menu, so it gets the boldest treatment on the form. */
+.acct-mfa-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.acct-mfa-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 66px;
+  padding: 10px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    background-color var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
+}
+
+.acct-mfa-tile input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+
+.acct-mfa-tile:hover {
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+.acct-mfa-tile.selected {
+  border-color: var(--brand-900);
+  background: var(--accent-soft);
+  color: var(--foreground);
+}
+
+.acct-mfa-tile:has(input:focus-visible) {
+  outline: 2px solid var(--brand-900);
+  outline-offset: 2px;
+}
+
+.acct-reassure {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.digital-form-actions .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 900px) {
+  .acct-fields,
+  .acct-mfa-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .acct-reassure {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acct-mfa-tile {
+    transition: none;
+  }
+}
+
 .digital-form-actions,
 .digital-row-actions {
   display: flex;
