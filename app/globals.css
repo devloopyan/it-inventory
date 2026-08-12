@@ -16848,6 +16848,98 @@ select.status-select optgroup {
   resize: vertical;
 }
 
+.digital-form-section {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.digital-form-section-title {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.digital-form-section:first-of-type .digital-form-section-title {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.digital-chip-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.digital-chip-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.digital-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.digital-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted, transparent);
+  font-size: 12px;
+}
+
+.digital-chip-remove {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--muted-strong);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.digital-chip-remove:hover {
+  color: var(--foreground);
+}
+
+.digital-password-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.digital-password-row .input-base {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.digital-password-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
 .digital-form-actions,
 .digital-row-actions {
   display: flex;
@@ -17007,7 +17099,8 @@ select.status-select optgroup {
 
   .digital-metrics,
   .digital-tabs,
-  .digital-form-grid {
+  .digital-form-grid,
+  .digital-form-section {
     grid-template-columns: 1fr;
   }
 
