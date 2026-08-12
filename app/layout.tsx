@@ -1,4 +1,9 @@
+// Order matters: kit tokens and components first, then the app's own styles,
+// then the adapter that maps legacy class names onto the kit's components.
+import "./brand-kit/tokens.css";
+import "./brand-kit/components.css";
 import "./globals.css";
+import "./brand-kit/adapter.css";
 import { Nunito } from "next/font/google";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth";

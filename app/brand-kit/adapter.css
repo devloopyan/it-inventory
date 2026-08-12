@@ -1,0 +1,280 @@
+/* ============================================================
+   BRAND KIT ADAPTER
+   Loads AFTER globals.css. Points the app's legacy class names at
+   the brand kit's component styles, so existing markup inherits the
+   kit's shape (40px controls, 9px/12px radii, real elevation, 8px
+   spacing) without rewriting every page.
+
+   Nothing here invents a value: every declaration is a kit token.
+   When a page is migrated to the kit classes proper (.btn, .input,
+   .card, .field), delete its mapping from this file.
+   ============================================================ */
+
+/* ---------- BUTTONS -> .btn ---------- */
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn-success {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 18px;
+  border-radius: var(--radius-md);
+  font: 500 14px/1 var(--font-sans);
+  white-space: nowrap;
+  transition:
+    background var(--dur-fast) var(--ease-in-out),
+    border-color var(--dur-fast) var(--ease-in-out),
+    color var(--dur-fast) var(--ease-in-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.btn-primary {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.btn-primary:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--accent-hover);
+  box-shadow: none;
+}
+.btn-primary:active:not(:disabled) {
+  background: var(--accent-press);
+  transform: scale(0.985);
+}
+
+.btn-secondary {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+.btn-danger {
+  border: 1px solid transparent;
+  background: var(--danger);
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(0.93);
+}
+
+.btn-success {
+  border: 1px solid transparent;
+  background: var(--success);
+  color: #fff;
+}
+
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-danger:focus-visible,
+.btn-success:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Row-level actions stay compact — the kit's .btn-sm size. */
+.digital-row-actions .btn-secondary,
+.digital-row-actions .btn-danger,
+.saas-table .btn-secondary,
+.saas-table .btn-danger {
+  min-height: var(--control-sm);
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+/* ---------- INPUTS -> .input / .textarea / .select ---------- */
+.input-base {
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: 400 14px/1 var(--font-sans);
+  transition:
+    border-color var(--dur-fast) var(--ease-in-out),
+    box-shadow var(--dur-fast) var(--ease-in-out);
+}
+
+.input-base::placeholder {
+  color: var(--text-muted);
+}
+
+.input-base:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.input-base:focus {
+  outline: none;
+  border-color: var(--border-brand);
+  box-shadow: var(--focus-ring);
+}
+
+.input-base:disabled {
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+textarea.input-base {
+  height: auto;
+  min-height: 96px;
+  padding: var(--space-3);
+  line-height: 1.55;
+}
+
+select.input-base {
+  appearance: none;
+  padding-right: 34px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B6B6B' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+[data-theme="dark"] select.input-base {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23A8A8A8' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* ---------- PANELS -> .card ---------- */
+.panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.digital-metric-card,
+.digital-modal-card {
+  border-radius: var(--radius-lg);
+}
+
+.digital-metric-card {
+  box-shadow: var(--shadow-sm);
+}
+
+.digital-modal-card {
+  box-shadow: var(--shadow-lg);
+}
+
+/* ---------- TABLES -> .table ---------- */
+.saas-table th {
+  padding: 12px var(--space-4);
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+}
+
+.saas-table td {
+  padding: 14px var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  font: var(--text-body-sm);
+  color: var(--text-primary);
+}
+
+.saas-table tbody tr:hover td {
+  background: var(--bg-hover);
+}
+
+/* ---------- ACCESS & ACCOUNTS FORM ---------- */
+/* The kit labels fields with .label (13px medium, sentence case) and
+   reserves uppercase for .eyebrow section labels. */
+.acct-label {
+  font: var(--text-label);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-primary);
+}
+
+.acct-req {
+  font: var(--text-caption);
+  color: var(--danger);
+}
+
+.acct-section {
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  border-color: var(--border);
+}
+
+.acct-section-guard {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.acct-fields {
+  gap: var(--space-4);
+}
+
+.acct-step {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.acct-section-note {
+  font: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+/* Kit icon inset is 38px, not 34px. */
+.acct-input-wrap .input-base {
+  padding-left: 38px;
+}
+
+.acct-input-wrap > .acct-glyph {
+  left: 12px;
+  color: var(--text-muted);
+}
+
+.acct-mfa-tile {
+  border-radius: var(--radius-md);
+  border-color: var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+}
+
+.acct-mfa-tile.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-brand);
+}
+
+.acct-reassure {
+  font: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.digital-chip {
+  border-radius: var(--radius-pill);
+  border-color: var(--border);
+  background: var(--bg-inset);
+  font: var(--text-caption);
+}
+
+.digital-chip-more {
+  border-radius: var(--radius-pill);
+  border-color: var(--border-strong);
+  font: var(--text-caption);
+  color: var(--text-secondary);
+}
+
+.digital-alert {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(211, 58, 52, 0.25);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font: var(--text-body-sm);
+}

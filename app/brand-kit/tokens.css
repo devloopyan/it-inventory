@@ -1,0 +1,173 @@
+/* ============================================================
+   IT OPERATIONS HUB — DESIGN TOKENS
+   Light is the default. Dark applies via [data-theme="dark"].
+   Never hardcode a hex in a component — always use a token.
+
+   Source of truth from the brand kit. Do not edit to suit a
+   feature: add a token here instead, or override in adapter.css.
+   ============================================================ */
+
+:root {
+  /* ---------- BRAND ---------- */
+  --violet-50:  #F1ECFF;
+  --violet-100: #E3DAFF;
+  --violet-200: #CBBBFF;
+  --violet-300: #B29BFF;
+  --violet-400: #9A7BFF;
+  --violet-500: #7C4DFF;  /* VIBRANT VIOLET — primary */
+  --violet-600: #6B3AEE;
+  --violet-700: #572CC9;
+  --violet-800: #42219A;
+  --violet-900: #2C1668;
+
+  --black-900: #111111;
+  --black-800: #1A1A1A;  /* DEEP BLACK — primary surface-dark */
+  --black-700: #262626;
+  --black-600: #333333;
+
+  /* ---------- NEUTRALS ---------- */
+  --grey-50:  #F5F5F5;   /* OFF-WHITE */
+  --grey-100: #EDEDED;
+  --grey-200: #E0E0E0;
+  --grey-300: #CFCFCF;
+  --grey-400: #A8A8A8;
+  --grey-500: #8A8A8A;
+  --grey-600: #6B6B6B;
+  --grey-700: #4A4A4A;
+  --grey-800: #2E2E2E;
+  --white: #FFFFFF;
+
+  /* ---------- STATUS ---------- */
+  --success: #1E9E62;
+  --success-bg: #E6F6EE;
+  --warning: #C87A16;
+  --warning-bg: #FDF2E0;
+  --danger:  #D33A34;
+  --danger-bg: #FBEAE9;
+  --info:    #2F6FD0;
+  --info-bg: #E9F0FC;
+
+  /* ---------- SEMANTIC (LIGHT) ---------- */
+  --bg-app:        #FAFAF8;
+  --bg-surface:    var(--white);
+  --bg-subtle:     var(--grey-50);
+  --bg-inset:      var(--grey-100);
+  --bg-hover:      rgba(17, 17, 17, 0.04);
+  --bg-active:     rgba(124, 77, 255, 0.10);
+  --bg-overlay:    rgba(17, 17, 17, 0.45);
+
+  --text-primary:   var(--black-800);
+  --text-secondary: var(--grey-600);
+  --text-muted:     var(--grey-500);
+  --text-inverse:   var(--white);
+  --text-brand:     var(--violet-600);
+  --text-link:      var(--violet-600);
+  --text-link-hover: var(--violet-700);
+
+  --border:        var(--grey-200);
+  --border-strong: var(--grey-300);
+  --border-brand:  var(--violet-500);
+  --focus-ring:    0 0 0 3px rgba(124, 77, 255, 0.30);
+
+  --accent:         var(--violet-500);
+  --accent-hover:   var(--violet-600);
+  --accent-press:   var(--violet-700);
+  --accent-soft:    var(--violet-50);
+  --accent-soft-br: var(--violet-200);
+  --on-accent:      var(--white);
+
+  --solid:        var(--black-800);   /* black button fill */
+  --solid-hover:  var(--black-900);
+  --on-solid:     var(--white);
+
+  /* ---------- TYPE (Helvetica / system sans) ---------- */
+  --font-sans: "Helvetica Neue", Helvetica, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --text-h1: 600 34px/1.15 var(--font-sans);
+  --text-h2: 600 26px/1.2  var(--font-sans);
+  --text-h3: 600 20px/1.3  var(--font-sans);
+  --text-h4: 600 16px/1.35 var(--font-sans);
+  --text-body:      400 15px/1.6 var(--font-sans);
+  --text-body-sm:   400 13.5px/1.55 var(--font-sans);
+  --text-label:     500 13px/1.3 var(--font-sans);
+  --text-caption:   400 12px/1.45 var(--font-sans);
+  --tracking-caps: 0.08em;
+
+  /* ---------- SPACING (8px baseline) ---------- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+
+  /* ---------- RADII (moderate) ---------- */
+  --radius-sm: 6px;
+  --radius-md: 9px;    /* buttons, inputs — the default */
+  --radius-lg: 12px;   /* cards, modals */
+  --radius-pill: 999px;
+
+  /* ---------- CONTROL SIZES (comfortable) ---------- */
+  --control-sm: 32px;
+  --control-md: 40px;   /* default */
+  --control-lg: 48px;
+
+  /* ---------- ELEVATION ---------- */
+  --shadow-xs: 0 1px 2px rgba(17, 17, 17, 0.06);
+  --shadow-sm: 0 1px 3px rgba(17, 17, 17, 0.08), 0 1px 2px rgba(17, 17, 17, 0.04);
+  --shadow-md: 0 4px 14px rgba(17, 17, 17, 0.10), 0 2px 4px rgba(17, 17, 17, 0.04);
+  --shadow-lg: 0 16px 40px rgba(17, 17, 17, 0.16);
+  --shadow-accent: 0 8px 20px rgba(124, 77, 255, 0.28);
+
+  /* ---------- MOTION ---------- */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 140ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+
+  --z-sticky: 100; --z-dropdown: 400; --z-modal: 800; --z-toast: 900;
+}
+
+/* ============================================================
+   DARK MODE
+   ============================================================ */
+[data-theme="dark"] {
+  --bg-app:      #0E0E0E;
+  --bg-surface:  var(--black-800);
+  --bg-subtle:   var(--black-700);
+  --bg-inset:    var(--black-600);
+  --bg-hover:    rgba(255, 255, 255, 0.06);
+  --bg-active:   rgba(124, 77, 255, 0.22);
+  --bg-overlay:  rgba(0, 0, 0, 0.65);
+
+  --text-primary:   var(--grey-50);
+  --text-secondary: var(--grey-400);
+  --text-muted:     var(--grey-500);
+  --text-inverse:   var(--black-800);
+  --text-brand:     var(--violet-300);
+  --text-link:      var(--violet-300);
+  --text-link-hover: var(--violet-200);
+
+  --border:        #333333;
+  --border-strong: #454545;
+  --focus-ring:    0 0 0 3px rgba(124, 77, 255, 0.45);
+
+  --accent:       var(--violet-500);
+  --accent-hover: var(--violet-400);
+  --accent-press: var(--violet-600);
+  --accent-soft:  rgba(124, 77, 255, 0.16);
+  --accent-soft-br: rgba(124, 77, 255, 0.38);
+  --on-accent:    var(--white);
+
+  --solid:       var(--grey-50);   /* inverts: black button becomes light */
+  --solid-hover: var(--white);
+  --on-solid:    var(--black-800);
+
+  --success-bg: rgba(30, 158, 98, 0.16);
+  --warning-bg: rgba(200, 122, 22, 0.16);
+  --danger-bg:  rgba(211, 58, 52, 0.16);
+  --info-bg:    rgba(47, 111, 208, 0.16);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.65);
+}
