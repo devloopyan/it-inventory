@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { revealAccountPassword } from "./credential-actions";
 
 const REVEAL_SECONDS = 30;
@@ -41,6 +41,8 @@ export default function PasswordField({
   const [revealed, setRevealed] = useState<string | null>(null);
   const [isRevealing, setIsRevealing] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const labelId = useId();
+  const inputId = `${labelId}-input`;
 
   useEffect(() => {
     return () => {
@@ -67,11 +69,11 @@ export default function PasswordField({
 
   if (!storageConfigured) {
     return (
-      <label className="digital-form-field digital-form-field-full">
-        <span>Password</span>
-        <input className="input-base" value="" disabled readOnly />
+      <div className="digital-form-field digital-form-field-full">
+        <label htmlFor={inputId}>Password</label>
+        <input id={inputId} className="input-base" value="" disabled readOnly />
         <small>Credential storage not configured.</small>
-      </label>
+      </div>
     );
   }
 
@@ -79,8 +81,8 @@ export default function PasswordField({
 
   if (isEditingStored) {
     return (
-      <div className="digital-form-field digital-form-field-full">
-        <span>Password</span>
+      <div className="digital-form-field digital-form-field-full" role="group" aria-labelledby={labelId}>
+        <span id={labelId}>Password</span>
         <div className="digital-password-row">
           <code className="digital-password-value">
             {revealed ?? (hasStoredPassword ? "•".repeat(10) : "Not set")}
@@ -90,9 +92,11 @@ export default function PasswordField({
               {isRevealing ? "Revealing..." : revealed ? "Revealed" : "Reveal"}
             </button>
           ) : null}
-          <button className="btn-secondary" type="button" onClick={() => onDraftChange("")}>
-            {hasStoredPassword ? "Change" : "Set password"}
-          </button>
+          {canReveal ? (
+            <button className="btn-secondary" type="button" onClick={() => onDraftChange("")}>
+              {hasStoredPassword ? "Change" : "Set password"}
+            </button>
+          ) : null}
         </div>
         <small>
           {hasStoredPassword && passwordUpdatedAt
@@ -106,11 +110,27 @@ export default function PasswordField({
     );
   }
 
+  // Reached either in create mode (no record yet, so there is nothing to mask)
+  // or in edit mode after the gated "Change"/"Set password" button above set a
+  // draft. canReveal is a UI-only hint — the server action is the real
+  // boundary — but a non-admin should still never be shown a live password
+  // input, including on record creation, so guard it here too.
+  if (!canReveal) {
+    return (
+      <div className="digital-form-field digital-form-field-full">
+        <label htmlFor={inputId}>Password</label>
+        <input id={inputId} className="input-base" value="" disabled readOnly placeholder="IT admin only" />
+        <small>Only IT admins can set or change account passwords.</small>
+      </div>
+    );
+  }
+
   return (
     <div className="digital-form-field digital-form-field-full">
-      <span>Password</span>
+      <label htmlFor={inputId}>Password</label>
       <div className="digital-password-row">
         <input
+          id={inputId}
           className="input-base"
           type={visible ? "text" : "password"}
           autoComplete="new-password"
